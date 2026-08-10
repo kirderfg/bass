@@ -72,7 +72,7 @@ button{font-family:inherit;}
   border-radius:10px; padding:8px 12px; min-height:44px; font-size:14px; font-weight:600; cursor:pointer;
 }
 .seg button.on{background:#2b3242; color:var(--text); border-color:#4b5570;}
-.seg.compact button{min-height:38px; padding:6px 10px; font-size:13px;}
+.seg.compact button{min-height:44px; min-width:44px; padding:6px 10px; font-size:13px;}
 select{
   background:var(--panel2); color:var(--text); border:1px solid var(--line);
   border-radius:10px; padding:10px 8px; font-size:15px; min-height:44px;
@@ -156,12 +156,13 @@ input[type=range]{width:100%; accent-color:var(--root); min-height:44px;}
 .tcard p{margin:0; font-size:14px; color:#c6cddc;}
 .tcard .dismiss{
   position:absolute; top:6px; right:6px; background:transparent; border:0;
-  color:var(--dim); font-size:18px; width:38px; height:38px; cursor:pointer; border-radius:8px;
+  color:var(--dim); font-size:18px; width:44px; height:44px; cursor:pointer; border-radius:8px;
 }
 /* ---------- practice ---------- */
 .pitem{display:flex; gap:10px; align-items:flex-start; padding:10px 0; border-bottom:1px solid var(--line);}
 .pitem:last-child{border-bottom:0;}
-.pitem input{margin-top:2px;}
+.pitem input{margin-top:2px; width:26px; height:26px;}
+.pitem .pmain{cursor:pointer; display:block;}
 .pitem.done .ptext{color:var(--dim); text-decoration:line-through;}
 .ptext{flex:1;}
 .ptime{color:var(--root); font-weight:700; font-size:13px;}
@@ -294,8 +295,8 @@ function defaultState(){
     scales:{ root:'E', type:'minPent', view:'open', labels:'names' },
     chords:{ root:'E', type:'power', labels:'names' },
     trainer:{
-      tier:0, mode:'study',
-      study:{ show:true, strings:null, naturalsOnly:true }
+      tier:0, mode:'study', focus:null,
+      study:{ show:true, strings:null, naturalsOnly:true, maxFret:12 }
     },
     stats:{
       answered:0, correct:0, bestStreak:0,
@@ -425,7 +426,7 @@ function drawFretboard(el, cfg){
       cell.style.setProperty('--strh', strh + 'px');
       cell.dataset.s = si; cell.dataset.f = f;
       if (cfg.disable && cfg.disable(si, f)) cell.classList.add('dis');
-      if (cfg.boxWindow && f !== 0 && (f < cfg.boxWindow[0] || f > cfg.boxWindow[1])) cell.classList.add('boxout');
+      if (cfg.boxWindow && (f < cfg.boxWindow[0] || f > cfg.boxWindow[1])) cell.classList.add('boxout');
       const m = cfg.mark ? cfg.mark(si, f) : null;
       if (m){
         const n = document.createElement('span');
@@ -643,6 +644,8 @@ function renderScales(){
     '<button data-k="' + r + '" class="' + (r === S.scales.root ? 'on' : '') + '">' + r + '</button>').join('') + '</div>';
   h += '</div>';
 
+  h += theoryCard('degrees');
+
   h += '<div class="card">';
   h += '<div style="font-size:17px; font-weight:700">' + S.scales.root + ' ' + sc.name.toLowerCase() + '</div>';
   h += '<p class="muted" style="margin:4px 0 8px">' + sc.blurb + '</p>';
@@ -652,7 +655,6 @@ function renderScales(){
     '<br><span class="muted">Each number = how many frets (= half steps) to the next note. Same recipe from ANY root — that\'s why shapes are moveable.</span></p>';
   h += '</div>';
 
-  h += theoryCard('degrees');
   h += theoryCard('fretHalfStep');
 
   h += '<div class="card">';
@@ -779,6 +781,8 @@ function renderChords(){
   h += '<h3>Root note</h3><div class="seg compact" id="chRoot">' + ALL_ROOTS.map(r =>
     '<button data-k="' + r + '" class="' + (r === S.chords.root ? 'on' : '') + '">' + r + '</button>').join('') + '</div>';
   h += '</div>';
+
+  h += theoryCard('degrees');
 
   h += '<div class="card">';
   h += '<div style="font-size:17px; font-weight:700">' + S.chords.root + ch.sym + ' — ' + ch.name.toLowerCase() + '</div>';
@@ -912,7 +916,12 @@ function stringIdxByName(name){ return TUNINGS[S.tuning].names.indexOf(name); }
 
 function trainerPool(tier){
   const pool = [];
-  for (const sn of tier.strings){
+  let strs = tier.strings;
+  if (S.trainer.focus && S.trainer.focus.length){
+    const focused = strs.filter(s => S.trainer.focus.includes(s));
+    if (focused.length) strs = focused;
+  }
+  for (const sn of strs){
     const si = stringIdxByName(sn);
     if (si < 0) continue;
     for (let f = 0; f <= tier.maxFret; f++){
@@ -932,13 +941,17 @@ function newQuestion(){
     pool = pool.filter(p => p.si + 2 < nStr && p.f + 2 <= 12);
   }
   if (!pool.length){ T.q = null; return; }
-  let q, guard = 0;
-  do {
-    const p = pool[Math.floor(Math.random() * pool.length)];
-    q = { mode, si: p.si, f: p.f, midi: p.midi, sn: p.sn, name: NAMES_S[pc(p.midi)] };
-    guard++;
-  } while (guard < 12 && (q.sn + q.name + q.f) === T.lastQ);
-  T.lastQ = q.sn + q.name + q.f;
+  // draw from a shuffled bag so every position comes up before repeats
+  const bagKey = mode + '|' + S.trainer.tier + '|' + S.tuning + '|' + (S.trainer.focus || []).join(',');
+  if (T.bagKey !== bagKey || !T.bag || !T.bag.length){
+    T.bagKey = bagKey;
+    T.bag = shuffle(pool.slice());
+    if (T.bag.length > 1 && (T.bag[0].sn + ':' + T.bag[0].f) === T.lastQ)
+      T.bag.push(T.bag.shift());
+  }
+  const p = T.bag.shift();
+  const q = { mode, si: p.si, f: p.f, midi: p.midi, sn: p.sn, name: NAMES_S[pc(p.midi)] };
+  T.lastQ = q.sn + ':' + q.f;
   if (mode === 'name'){
     const correct = tier.accidentals ? bothNames(q.midi) : q.name;
     const opts = new Set([correct]);
@@ -966,6 +979,9 @@ function recordAnswer(ok, q){
   if (ok) S.stats.correct++;
   const bs = S.stats.byString[q.sn] || (S.stats.byString[q.sn] = { a:0, c:0 });
   bs.a++; if (ok) bs.c++;
+  if (!bs.recent) bs.recent = [];
+  bs.recent.push(ok ? 1 : 0);
+  if (bs.recent.length > 20) bs.recent.shift();
   if (ok){
     T.session.streak++;
     T.session.score++;
@@ -1019,7 +1035,7 @@ function renderTrainer(){
   bindSeg('trMode', k => { S.trainer.mode = k; save(); renderTrainer(); });
   const tsel = document.getElementById('trTier');
   if (tsel) tsel.addEventListener('change', () => {
-    S.trainer.tier = +tsel.value; save(); renderTrainer();
+    S.trainer.tier = +tsel.value; S.trainer.focus = null; save(); renderTrainer();
   });
   const rst = document.getElementById('trReset');
   if (rst) rst.addEventListener('click', trainerResetStats);
@@ -1040,10 +1056,12 @@ function studyHtml(){
   h += '<div class="seg compact" id="stShow"><button data-k="1" class="' + (st.show ? 'on' : '') + '">Names on</button><button data-k="0" class="' + (!st.show ? 'on' : '') + '">Names hidden</button></div>';
   h += '<div class="seg compact" id="stNat"><button data-k="1" class="' + (st.naturalsOnly ? 'on' : '') + '">Naturals only</button><button data-k="0" class="' + (!st.naturalsOnly ? 'on' : '') + '">All 12 notes</button></div>';
   h += '</div>';
+  h += '<div class="row" style="margin-bottom:6px"><div class="seg compact" id="stFrets"><button data-k="5" class="' + ((st.maxFret || 12) === 5 ? 'on' : '') + '">Frets 0–5</button><button data-k="12" class="' + ((st.maxFret || 12) === 12 ? 'on' : '') + '">Frets 0–12</button></div></div>';
   h += '<div class="seg compact" id="stStrings">' + names.slice().reverse().map(n => {
     const on = !st.strings || st.strings.includes(n);
     return '<button data-k="' + n + '" class="' + (on ? 'on' : '') + '">' + n + ' string</button>';
   }).join('') + '</div>';
+  h += '<p class="muted small" style="margin:6px 2px 0">Tap the string buttons to show/hide strings — start with just E and A.</p>';
   h += '<div id="studyFb" style="margin-top:8px"></div>' + fbCaption();
   if (!st.show) h += '<p class="muted small">Names hidden — tap a fret to reveal + hear it. Self-quiz!</p>';
   h += '</div>';
@@ -1054,7 +1072,7 @@ function mountStudy(){
   const names = TUNINGS[S.tuning].names;
   const active = st.strings ? st.strings.filter(n => names.includes(n)) : names.slice();
   trainerFb = drawFretboard(document.getElementById('studyFb'), {
-    frets:12,
+    frets: st.maxFret || 12,
     disable(si, f){ return !active.includes(names[si]); },
     mark(si, f){
       if (!active.includes(names[si])) return null;
@@ -1076,6 +1094,7 @@ function mountStudy(){
   });
   bindSeg('stShow', k => { st.show = k === '1'; save(); renderTrainer(); });
   bindSeg('stNat', k => { st.naturalsOnly = k === '1'; save(); renderTrainer(); });
+  bindSeg('stFrets', k => { st.maxFret = +k; save(); renderTrainer(); });
   const ss = document.getElementById('stStrings');
   ss.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
     let cur = st.strings ? st.strings.slice() : names.slice();
@@ -1092,6 +1111,9 @@ function quizShellHtml(mode, tier){
   h += '<div class="row between" style="margin-bottom:4px">';
   h += '<span class="small muted">Session: <b id="qScore" style="color:var(--text)">0</b> pts · streak <b id="qStreak" style="color:var(--root)">0</b></span>';
   h += '<button class="btn small ghost" id="qSkip">Skip →</button></div>';
+  if (S.trainer.focus && S.trainer.focus.length){
+    h += '<div class="row" style="margin-bottom:4px"><span class="small" style="background:#2b3242; border-radius:99px; padding:6px 12px">🎯 Focus: ' + S.trainer.focus.join(' + ') + ' string only <button class="btn small ghost" id="qFocusOff" style="min-height:30px; padding:2px 8px; margin-left:4px">✕ clear</button></span></div>';
+  }
   h += '<div class="quiz-q" id="qText"></div>';
   h += '<div id="quizFb"></div>' + fbCaption();
   h += '<div id="qChoices"></div>';
@@ -1103,6 +1125,8 @@ function mountQuiz(){
   drawQuiz();
   const skip = document.getElementById('qSkip');
   if (skip) skip.addEventListener('click', () => { newQuestion(); drawQuiz(); });
+  const foff = document.getElementById('qFocusOff');
+  if (foff) foff.addEventListener('click', () => { S.trainer.focus = null; save(); renderTrainer(); });
 }
 function drawQuiz(){
   clearTimeout(T.timer);
@@ -1149,7 +1173,7 @@ function drawQuiz(){
     Audio_.note(q.midi);
   }
   if (q.mode === 'octave'){
-    qText.innerHTML = 'This is <b>' + q.name + '</b>. Find the <b>same note one octave up</b>: 2 strings up + 2 frets up.';
+    qText.innerHTML = 'This is <b>' + q.name + '</b>. Find the <b>same note one octave up</b>: 2 strings up + 2 frets up.<br><span class="muted small" style="font-weight:400">The question starts on the tier\'s strings — the answer lands 2 strings higher, so all strings are open for tapping.</span>';
     trainerFb = drawFretboard(document.getElementById('quizFb'), {
       frets,
       mark(si, f){ return (si === q.si && f === q.f) ? { cls:'hl', label:q.name } : null; },
@@ -1239,9 +1263,16 @@ function statsHtml(){
   const perStr = names.slice().reverse().map(n => {
     const s = st.byString[n];
     if (!s || !s.a) return null;
-    return n + ' string: ' + Math.round(100 * s.c / s.a) + '% (' + s.c + '/' + s.a + ')';
+    const rec = s.recent && s.recent.length ? Math.round(100 * s.recent.reduce((x, y) => x + y, 0) / s.recent.length) : null;
+    let line = '<b>' + n + ' string:</b> ';
+    if (rec != null) line += rec + '% on last ' + s.recent.length + (s.recent.length >= 20 && rec >= 90 ? ' ✓' : '');
+    line += ' <span class="muted">(lifetime ' + Math.round(100 * s.c / s.a) + '%, ' + s.c + '/' + s.a + ')</span>';
+    return line;
   }).filter(Boolean);
-  if (perStr.length) h += '<p class="small muted" style="margin:4px 0">' + perStr.join(' · ') + '</p>';
+  if (perStr.length){
+    h += '<p class="small" style="margin:4px 0">' + perStr.join('<br>') + '</p>';
+    h += '<p class="muted small" style="margin:4px 0">The week 2–3 checkpoints look at your <b>last 20</b> answers per string — old mistakes stop counting against you.</p>';
+  }
   // heatmap
   const hasHeat = Object.keys(st.heat).length > 0;
   if (hasHeat){
@@ -1341,10 +1372,10 @@ const WEEKS = [
     goal:'Get your hands working and learn where the notes are on E and A.',
     items:[
       { id:'w1a', cat:'Warm-up', min:5,
-        text:'Chromatic 1-2-3-4: on each string play frets 1-2-3-4, one finger per fret (index-middle-ring-pinky), then move to the next string. Up all strings and back. Slow + clean beats fast + sloppy.', met:60 },
+        text:'Chromatic 1-2-3-4 ("chromatic" just means every fret, no skips): on each string play frets 1-2-3-4, one finger per fret (index-middle-ring-pinky), then move to the next string. Up all strings and back. Slow + clean beats fast + sloppy.', met:60 },
       { id:'w1b', cat:'Fretboard', min:5,
         text:'Note names on the E and A strings, frets 0–5. Study first, then try a few rounds of "Find the note".',
-        link:{ label:'Open note trainer (E+A, 0–5)', spec:{ tab:'trainer', trainer:{ tier:0, mode:'study' } } } },
+        link:{ label:'Open note trainer (E+A, 0–5)', spec:{ tab:'trainer', trainer:{ tier:0, mode:'study', focus:null, study:{ show:true, strings:['E','A'], naturalsOnly:true, maxFret:5 } } } } },
       { id:'w1c', cat:'Technique', min:10,
         text:'Plucking: alternate index-middle fingers on the OPEN E string, one note per click at 60 bpm, ~2 min. Then the same on A. Rest your plucking thumb on the B string the whole time (floating thumb) so it never rings.', met:60 },
       { id:'w1d', cat:'Music', min:10,
@@ -1375,7 +1406,7 @@ const WEEKS = [
     checkpoints:[
       { id:'w2cp0', text:'2 minutes of clean, even eighth notes at 70 bpm' },
       { id:'w2cp1', text:'E minor pentatonic memorized, up AND down, without looking' },
-      { id:'w2cp2', text:'Over 90% accuracy on E-string naturals in the trainer' }
+      { id:'w2cp2', text:'Over 90% on my last 20 E-string answers in the trainer (see "Your stats")' }
     ],
     theory:['rootsJob','octave'] },
   { n:3, title:'First song: T.N.T. 🎉',
@@ -1384,7 +1415,8 @@ const WEEKS = [
       { id:'w3a', cat:'Warm-up', min:5,
         text:'Chromatic warmup at 70 bpm, or E minor pentatonic up/down twice as a warmup.', met:70 },
       { id:'w3b', cat:'Scales', min:5,
-        text:'The MOVEABLE pentatonic box, anchored at fret 5. Same shape as open position, just slid up the neck — that\'s the whole point of moveable shapes.',
+        text:'The MOVEABLE pentatonic box. On your 5-string, the root E sits on the B string at fret 5 — the box anchors there. Same note recipe as the open position, packed into one closed shape with no open strings, so you can slide it anywhere.',
+        note4:'On a 4-string, E\'s box anchors at fret 12 — or practice the identical shape as A minor pentatonic at fret 5.',
         link:{ label:'Open the moveable box', spec:{ tab:'scales', scales:{ root:'E', type:'minPent', view:'box', labels:'names' } } } },
       { id:'w3c', cat:'Technique', min:10,
         text:'TNT chorus moves: roots E → A → G as eighth notes, 4 beats each, at 60 then 70 bpm. These three notes are the roots of the song\'s chords — and all three live in E minor pentatonic.', met:70 },
@@ -1392,13 +1424,13 @@ const WEEKS = [
         text:'T.N.T.: verse = steady eighth notes on E (palm-relaxed, locked to click). Chorus = the E→A→G shifts. Loop verse → chorus. Full speed is ~126 bpm — start at 70 and work up.',
         link:{ label:'TNT bass tab (Songsterr)', href:'https://www.songsterr.com/a/wsa/acdc-tnt-bass-tab-s407' } },
       { id:'w3e', cat:'Bonus', min:5,
-        text:'Note trainer: A-string naturals to 90%+. (In Study mode you can show ONLY the A string.)',
-        link:{ label:'Note trainer', spec:{ tab:'trainer', trainer:{ tier:0, mode:'find' } } } }
+        text:'Note trainer: "Find the note" focused on the A string only. Get your last 20 answers above 90%.',
+        link:{ label:'Find the note (A string)', spec:{ tab:'trainer', trainer:{ tier:1, mode:'find', focus:['A'] } } } }
     ],
     checkpoints:[
       { id:'w3cp0', text:'TNT verse + chorus at full speed, locked to the beat' },
       { id:'w3cp1', text:'Moveable box shape playable from fret 5 without looking at a diagram' },
-      { id:'w3cp2', text:'Over 90% accuracy on A-string naturals in the trainer' }
+      { id:'w3cp2', text:'Over 90% on my last 20 A-string answers in the trainer (see "Your stats")' }
     ],
     theory:['relative'] }
 ];
@@ -1460,7 +1492,8 @@ function renderPractice(){
     const done = log.items.includes(it.id);
     h += '<div class="pitem ' + (done ? 'done' : '') + '">';
     h += '<input type="checkbox" data-item="' + it.id + '" ' + (done ? 'checked' : '') + ' aria-label="done">';
-    h += '<div class="ptext"><span class="pcat">' + it.cat + ' · ' + it.min + ' min</span><br>' + it.text;
+    h += '<div class="ptext"><span class="pmain" data-toggle="' + it.id + '"><span class="pcat">' + it.cat + ' · ' + it.min + ' min</span><br>' + it.text +
+      (it.note4 && S.tuning === 4 ? '<br><span class="muted small">' + it.note4 + '</span>' : '') + '</span>';
     h += '<div class="plink row">';
     if (it.met) h += '<button class="btn small" data-met="' + it.met + '">🎵 Metronome ' + it.met + '</button>';
     if (it.link && it.link.spec) h += '<button class="btn small" data-dl="' + encodeURIComponent(JSON.stringify(it.link.spec)) + '">↪ ' + it.link.label + '</button>';
@@ -1500,6 +1533,11 @@ function renderPractice(){
     h += '</div>';
   }
 
+  // restore dismissed tips
+  if (S.practice.dismissed.length){
+    h += '<div class="row" style="margin:8px 2px"><button class="btn small ghost" id="restoreTips">💡 Restore ' + S.practice.dismissed.length + ' dismissed theory tip' + (S.practice.dismissed.length > 1 ? 's' : '') + '</button></div>';
+  }
+
   // resources
   h += '<div class="card resource"><b>Resources</b><ul style="margin:8px 0 0; padding-left:18px">' +
     '<li><a href="https://www.studybass.com/study-guide/" target="_blank" rel="noopener">StudyBass study guide</a> — structured free lessons, great theory grounding</li>' +
@@ -1515,12 +1553,15 @@ function renderPractice(){
   el.querySelectorAll('[data-wk]').forEach(b => b.addEventListener('click', () => {
     S.practice.week = +b.dataset.wk; save(); renderPractice();
   }));
-  el.querySelectorAll('[data-item]').forEach(c => c.addEventListener('change', () => {
+  function toggleItem(id, force){
     const log2 = dayLog();
-    if (c.checked){ if (!log2.items.includes(c.dataset.item)) log2.items.push(c.dataset.item); }
-    else log2.items = log2.items.filter(x => x !== c.dataset.item);
+    const on = force != null ? force : !log2.items.includes(id);
+    if (on){ if (!log2.items.includes(id)) log2.items.push(id); }
+    else log2.items = log2.items.filter(x => x !== id);
     save(); renderPractice();
-  }));
+  }
+  el.querySelectorAll('[data-item]').forEach(c => c.addEventListener('change', () => toggleItem(c.dataset.item, c.checked)));
+  el.querySelectorAll('.pmain').forEach(p => p.addEventListener('click', () => toggleItem(p.dataset.toggle)));
   el.querySelectorAll('[data-cp]').forEach(c => c.addEventListener('change', () => {
     S.practice.checkpoints[c.dataset.cp] = c.checked; save(); renderPractice();
   }));
@@ -1532,6 +1573,8 @@ function renderPractice(){
   el.querySelectorAll('[data-dl]').forEach(b => b.addEventListener('click', () => {
     deepLink(JSON.parse(decodeURIComponent(b.dataset.dl)));
   }));
+  const rt = document.getElementById('restoreTips');
+  if (rt) rt.addEventListener('click', () => { S.practice.dismissed = []; save(); renderPractice(); });
   const cpBtn = document.getElementById('copyReport');
   if (cpBtn) cpBtn.addEventListener('click', () => {
     const txt = document.getElementById('reportBox').textContent;
