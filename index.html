@@ -163,7 +163,7 @@ input[type=range]{width:100%; accent-color:var(--root); min-height:44px;}
 .pitem:last-child{border-bottom:0;}
 .pitem input{margin-top:2px; width:26px; height:26px;}
 .pitem .pmain{cursor:pointer; display:block;}
-.pitem.done .ptext{color:var(--dim); text-decoration:line-through;}
+.pitem.done .pmain{color:var(--dim); text-decoration:line-through;}
 .ptext{flex:1;}
 .ptime{color:var(--root); font-weight:700; font-size:13px;}
 .pcat{font-size:11.5px; letter-spacing:.8px; text-transform:uppercase; color:var(--dim); font-weight:700;}
@@ -1211,6 +1211,7 @@ function afterAnswer(ok, revealFn){
   } else {
     qFeed.className = 'feedback no';
     if (revealFn) revealFn(qFeed);
+    qFeed.scrollIntoView({ block:'nearest', behavior:'smooth' });
   }
   T.lock = true;
   const wrap = document.getElementById('statsWrap');
