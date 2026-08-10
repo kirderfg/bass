@@ -1,0 +1,1589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<title>Bass Theory Trainer</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎸</text></svg>">
+<style>
+:root{
+  --bg:#0f1115; --panel:#171a21; --panel2:#1e222c; --line:#2a2f3c;
+  --text:#e8eaf0; --dim:#9aa3b5;
+  --root:#ffb02e;          /* roots */
+  --tone:#4cc9f0;          /* other scale / chord tones */
+  --hl:#c792ff;            /* new / highlighted notes */
+  --good:#3ddc84; --bad:#ff6b6b;
+  --radius:14px;
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+html,body{margin:0; padding:0;}
+body{
+  background:var(--bg); color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  font-size:16px; line-height:1.45;
+  padding-bottom:calc(76px + env(safe-area-inset-bottom));
+}
+header{
+  position:sticky; top:0; z-index:30;
+  background:linear-gradient(180deg,#12151c 80%,rgba(18,21,28,0));
+  padding:10px 14px 8px;
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+}
+header h1{font-size:18px; margin:0; letter-spacing:.3px;}
+header h1 span{color:var(--root);}
+.tune-toggle{
+  display:flex; border:1px solid var(--line); border-radius:999px; overflow:hidden; flex:0 0 auto;
+}
+.tune-toggle button{
+  background:transparent; color:var(--dim); border:0; padding:8px 12px;
+  font-size:13px; font-weight:600; min-height:40px; cursor:pointer;
+}
+.tune-toggle button.on{background:var(--panel2); color:var(--text);}
+main{padding:0 12px; max-width:860px; margin:0 auto;}
+section.tab{display:none;}
+section.tab.on{display:block; animation:fade .18s ease;}
+@keyframes fade{from{opacity:.4; transform:translateY(3px);} to{opacity:1; transform:none;}}
+h2{font-size:17px; margin:14px 2px 8px;}
+h3{font-size:15px; margin:12px 2px 6px; color:var(--dim); font-weight:600; text-transform:uppercase; letter-spacing:.6px;}
+.card{
+  background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+  padding:12px; margin:10px 0;
+}
+.card.tight{padding:10px 12px;}
+.muted{color:var(--dim); font-size:14px;}
+.small{font-size:13px;}
+button{font-family:inherit;}
+.btn{
+  background:var(--panel2); color:var(--text); border:1px solid var(--line);
+  border-radius:12px; padding:10px 14px; font-size:15px; font-weight:600;
+  min-height:44px; cursor:pointer;
+}
+.btn:active{transform:scale(.97);}
+.btn.primary{background:var(--root); border-color:var(--root); color:#1a1204;}
+.btn.ghost{background:transparent;}
+.btn.small{min-height:38px; padding:7px 11px; font-size:13.5px; border-radius:10px;}
+.btn[disabled]{opacity:.45; pointer-events:none;}
+.row{display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
+.row.between{justify-content:space-between;}
+.seg{display:flex; flex-wrap:wrap; gap:6px;}
+.seg button{
+  background:var(--panel2); border:1px solid var(--line); color:var(--dim);
+  border-radius:10px; padding:8px 12px; min-height:44px; font-size:14px; font-weight:600; cursor:pointer;
+}
+.seg button.on{background:#2b3242; color:var(--text); border-color:#4b5570;}
+.seg.compact button{min-height:38px; padding:6px 10px; font-size:13px;}
+select{
+  background:var(--panel2); color:var(--text); border:1px solid var(--line);
+  border-radius:10px; padding:10px 8px; font-size:15px; min-height:44px;
+}
+label.chk{
+  display:flex; align-items:center; gap:10px; min-height:44px; cursor:pointer; font-size:15px;
+}
+input[type=checkbox]{width:22px; height:22px; accent-color:var(--root); flex:0 0 auto;}
+input[type=range]{width:100%; accent-color:var(--root); min-height:44px;}
+/* ---------- pills / note chips ---------- */
+.chips{display:flex; flex-wrap:wrap; gap:6px;}
+.chip{
+  display:inline-flex; flex-direction:column; align-items:center; justify-content:center;
+  min-width:44px; min-height:44px; padding:4px 8px; border-radius:10px;
+  background:var(--panel2); border:1px solid var(--line); font-weight:700; font-size:15px;
+}
+.chip small{font-weight:600; font-size:11px; color:var(--dim);}
+.chip.root{background:var(--root); border-color:var(--root); color:#1a1204;}
+.chip.root small{color:#5c430e;}
+.chip.tone{background:#123c4e; border-color:var(--tone); color:var(--tone);}
+.chip.dim{opacity:.38;}
+/* ---------- legend ---------- */
+.legend{display:flex; gap:14px; flex-wrap:wrap; font-size:12.5px; color:var(--dim); margin:6px 2px;}
+.legend i{display:inline-block; width:12px; height:12px; border-radius:50%; margin-right:5px; vertical-align:-1px;}
+.legend .l-root i{background:var(--root);} .legend .l-tone i{background:var(--tone);} .legend .l-hl i{background:var(--hl);}
+/* ---------- fretboard ---------- */
+.fb-wrap{position:relative; margin:8px 0 2px;}
+.fb-scroll{overflow-x:auto; -webkit-overflow-scrolling:touch; padding-bottom:4px; border-radius:10px;}
+.fb-hint{font-size:12px; color:var(--dim); text-align:right; margin:2px 4px 0;}
+.fb{display:grid; user-select:none;}
+.fb .lbl{
+  position:sticky; left:0; z-index:2;
+  display:flex; align-items:center; justify-content:center;
+  font-weight:800; font-size:13px; color:var(--dim);
+  background:var(--panel); border-right:1px solid var(--line);
+}
+.fb .lbl.low{color:#c9834a;}
+.fb .cell{
+  position:relative; border:0; background:#20242e; cursor:pointer; padding:0;
+  min-height:46px;
+}
+.fb .cell::before{ /* the string */
+  content:""; position:absolute; left:0; right:0; top:50%;
+  height:var(--strh,2px); transform:translateY(-50%);
+  background:#5a6170; opacity:.85; pointer-events:none;
+}
+.fb .cell{border-right:2px solid #3a4152;} /* fret wire */
+.fb .cell.f0{background:#161920; border-right:6px solid #cdd3e0;} /* nut */
+.fb .cell:active{filter:brightness(1.3);}
+.fb .note{
+  position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+  width:34px; height:34px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  font-size:12.5px; font-weight:800; z-index:1; pointer-events:none;
+  background:#39404f; color:var(--text);
+}
+.fb .note.root{background:var(--root); color:#221703;}
+.fb .note.tone{background:var(--tone); color:#04222e;}
+.fb .note.hl{background:var(--hl); color:#241040;}
+.fb .note.ghost{background:transparent; border:2px dashed #4a5163; color:var(--dim);}
+.fb .note.good{background:var(--good); color:#03290f;}
+.fb .note.bad{background:var(--bad); color:#330606;}
+.fb .note.playing{box-shadow:0 0 0 5px rgba(199,146,255,.45); background:var(--hl); color:#241040;}
+.fb .note .fing{position:absolute; bottom:-4px; right:-4px; background:#0f1115; border:1px solid var(--line); color:var(--dim); font-size:9.5px; width:16px; height:16px; border-radius:50%; display:flex; align-items:center; justify-content:center;}
+.fb .fnum{
+  display:flex; flex-direction:column; align-items:center; justify-content:flex-start; gap:2px;
+  font-size:11.5px; color:var(--dim); padding:4px 0 2px; background:var(--bg);
+  border-right:2px solid transparent;
+}
+.fb .fnum .mk{width:7px; height:7px; border-radius:50%; background:#4a5163;}
+.fb .fnum .mk.dbl{box-shadow:9px 0 0 #4a5163; margin-right:9px;}
+.fb .cell.dis{opacity:.28; pointer-events:none;}
+.fb .cell.boxout .note{opacity:.25;}
+/* ---------- theory cards ---------- */
+.tcard{
+  background:linear-gradient(135deg,#1d2230,#171d2b);
+  border:1px solid #34405c; border-radius:var(--radius);
+  padding:12px 12px 12px 14px; margin:10px 0; position:relative;
+}
+.tcard h4{margin:0 0 4px; font-size:14.5px; color:var(--hl);}
+.tcard p{margin:0; font-size:14px; color:#c6cddc;}
+.tcard .dismiss{
+  position:absolute; top:6px; right:6px; background:transparent; border:0;
+  color:var(--dim); font-size:18px; width:38px; height:38px; cursor:pointer; border-radius:8px;
+}
+/* ---------- practice ---------- */
+.pitem{display:flex; gap:10px; align-items:flex-start; padding:10px 0; border-bottom:1px solid var(--line);}
+.pitem:last-child{border-bottom:0;}
+.pitem input{margin-top:2px;}
+.pitem.done .ptext{color:var(--dim); text-decoration:line-through;}
+.ptext{flex:1;}
+.ptime{color:var(--root); font-weight:700; font-size:13px;}
+.pcat{font-size:11.5px; letter-spacing:.8px; text-transform:uppercase; color:var(--dim); font-weight:700;}
+.plink{margin-top:6px;}
+.progressbar{height:8px; background:var(--panel2); border-radius:99px; overflow:hidden; margin:8px 0 2px;}
+.progressbar i{display:block; height:100%; background:var(--good); border-radius:99px; transition:width .3s;}
+.statgrid{display:grid; grid-template-columns:repeat(auto-fit,minmax(90px,1fr)); gap:8px; margin:8px 0;}
+.stat{background:var(--panel2); border-radius:10px; padding:8px; text-align:center;}
+.stat b{display:block; font-size:20px; color:var(--root);}
+.stat span{font-size:11.5px; color:var(--dim);}
+.weekpick{display:flex; gap:6px; margin:8px 0;}
+.weekpick button{flex:1;}
+/* ---------- trainer ---------- */
+.quiz-q{
+  font-size:17px; text-align:center; padding:10px 6px; font-weight:600;
+}
+.quiz-q b{color:var(--hl);}
+.choices{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px;}
+.choices .btn{font-size:17px;}
+.choices .btn.good{background:var(--good); border-color:var(--good); color:#03290f;}
+.choices .btn.bad{background:var(--bad); border-color:var(--bad); color:#330606;}
+.feedback{min-height:24px; text-align:center; font-weight:700; margin-top:6px;}
+.feedback.ok{color:var(--good);} .feedback.no{color:var(--bad);}
+.heat td{width:calc(100%/14); height:26px; text-align:center; font-size:10px; color:var(--dim); border:1px solid #232836; border-radius:4px;}
+.heat{width:100%; border-collapse:separate; border-spacing:2px; margin-top:6px;}
+.heat .hh{font-weight:700;}
+/* ---------- metronome ---------- */
+.bpm-big{font-size:40px; font-weight:800; text-align:center; font-variant-numeric:tabular-nums;}
+.bpm-big small{font-size:14px; color:var(--dim); font-weight:600;}
+.beatdots{display:flex; gap:10px; justify-content:center; margin:6px 0;}
+.beatdots i{width:14px; height:14px; border-radius:50%; background:var(--panel2); border:1px solid var(--line);}
+.beatdots i.on{background:var(--root); border-color:var(--root);}
+#metrobar{
+  position:fixed; left:10px; right:10px; bottom:calc(66px + env(safe-area-inset-bottom));
+  background:#242a38; border:1px solid #3a4358; border-radius:12px;
+  display:none; align-items:center; gap:10px; padding:6px 6px 6px 14px; z-index:40;
+  box-shadow:0 6px 18px rgba(0,0,0,.45);
+}
+#metrobar.on{display:flex;}
+#metrobar .mb-bpm{font-weight:800; font-size:16px;}
+#metrobar .mb-dot{width:10px; height:10px; border-radius:50%; background:var(--root); opacity:.25;}
+#metrobar .mb-dot.tick{opacity:1;}
+#metrobar button{margin-left:auto;}
+/* ---------- tab bar ---------- */
+nav.tabbar{
+  position:fixed; bottom:0; left:0; right:0; z-index:50;
+  display:flex; background:#141821; border-top:1px solid var(--line);
+  padding-bottom:env(safe-area-inset-bottom);
+}
+nav.tabbar button{
+  flex:1; background:transparent; border:0; color:var(--dim);
+  padding:8px 2px 9px; font-size:11.5px; font-weight:700; cursor:pointer;
+  display:flex; flex-direction:column; align-items:center; gap:2px; min-height:58px;
+}
+nav.tabbar button .ic{font-size:21px; line-height:1;}
+nav.tabbar button.on{color:var(--root);}
+.copybox{
+  background:#10131a; border:1px dashed #3a4358; border-radius:10px; padding:10px;
+  font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; white-space:pre-wrap;
+  max-height:220px; overflow:auto; margin:8px 0;
+}
+.resource a{color:var(--tone); text-decoration:none; font-weight:600;}
+.resource li{margin:7px 0;}
+.checkpoint{border-left:3px solid var(--root); padding-left:10px; margin:8px 0;}
+.okmark{color:var(--good); font-weight:800;}
+@media (min-width:700px){
+  header h1{font-size:21px;}
+  .choices{grid-template-columns:repeat(4,1fr);}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>🎸 Bass <span>Theory</span> Trainer</h1>
+  <div class="tune-toggle" id="tuneToggle">
+    <button data-t="5" class="on">5-str BEADG</button>
+    <button data-t="4">4-str EADG</button>
+  </div>
+</header>
+<main>
+  <section class="tab" id="tab-practice"></section>
+  <section class="tab" id="tab-scales"></section>
+  <section class="tab" id="tab-chords"></section>
+  <section class="tab" id="tab-trainer"></section>
+</main>
+<div id="metrobar">
+  <span class="mb-dot" id="mbDot"></span>
+  <span class="mb-bpm" id="mbBpm">60 bpm</span>
+  <button class="btn small" id="mbStop">■ Stop</button>
+</div>
+<nav class="tabbar" id="tabbar">
+  <button data-tab="practice"><span class="ic">📋</span>Practice</button>
+  <button data-tab="scales"><span class="ic">🎼</span>Scales</button>
+  <button data-tab="chords"><span class="ic">🤘</span>Chords</button>
+  <button data-tab="trainer"><span class="ic">🧠</span>Trainer</button>
+</nav>
+<script>
+"use strict";
+/* ================= CORE: notes, state, audio, fretboard ================= */
+const NAMES_S = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const NAMES_F = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+const FLAT_ROOTS = new Set(['F','Bb','Eb','Ab','Db']); // keys spelled with flats
+const NATURALS = new Set(['C','D','E','F','G','A','B']);
+const ALL_ROOTS = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+
+// open-string MIDI numbers, low to high
+const TUNINGS = {
+  5:{ midi:[23,28,33,38,43], names:['B','E','A','D','G'] },   // B0 E1 A1 D2 G2
+  4:{ midi:[28,33,38,43],    names:['E','A','D','G'] }
+};
+function pc(midi){ return ((midi % 12) + 12) % 12; }
+function noteName(midi, useFlats){ return (useFlats ? NAMES_F : NAMES_S)[pc(midi)]; }
+function bothNames(midi){
+  const s = NAMES_S[pc(midi)], f = NAMES_F[pc(midi)];
+  return s === f ? s : s + '/' + f;
+}
+function rootPc(rootName){
+  let i = NAMES_S.indexOf(rootName);
+  if (i < 0) i = NAMES_F.indexOf(rootName);
+  return i;
+}
+function freq(midi){ return 440 * Math.pow(2, (midi - 69) / 12); }
+
+/* ---------------- state ---------------- */
+const LS_KEY = 'bassTheoryTrainer.v1';
+function defaultState(){
+  return {
+    tuning:5,
+    scales:{ root:'E', type:'minPent', view:'open', labels:'names' },
+    chords:{ root:'E', type:'power', labels:'names' },
+    trainer:{
+      tier:0, mode:'study',
+      study:{ show:true, strings:null, naturalsOnly:true }
+    },
+    stats:{
+      answered:0, correct:0, bestStreak:0,
+      byString:{},        // 'E': {a:0,c:0}
+      heat:{},            // 'E:3' -> mistakes
+      tierDone:{}         // tier index -> best % this tier
+    },
+    practice:{
+      week:1,
+      log:{},             // '2026-08-10' -> {items:['w1a'], done:false}
+      checkpoints:{},     // 'w1cp0' -> true
+      dismissed:[]        // theory card ids
+    }
+  };
+}
+let S = loadState();
+function loadState(){
+  try{
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return defaultState();
+    const st = defaultState();
+    const saved = JSON.parse(raw);
+    // deep-merge saved over defaults (one level is enough for our shape)
+    for (const k in saved){
+      if (saved[k] && typeof saved[k] === 'object' && !Array.isArray(saved[k]))
+        st[k] = Object.assign({}, st[k], saved[k]);
+      else st[k] = saved[k];
+    }
+    return st;
+  }catch(e){ return defaultState(); }
+}
+function save(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(S)); }catch(e){} }
+function todayKey(){
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+/* ---------------- audio ---------------- */
+const Audio_ = (() => {
+  let ctx = null, master = null;
+  function ensure(){
+    if (!ctx){
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctx = new AC();
+      master = ctx.createGain();
+      master.gain.value = 0.9;
+      // gentle limiter so stacked notes don't clip on phone speakers
+      const comp = ctx.createDynamicsCompressor();
+      master.connect(comp); comp.connect(ctx.destination);
+    }
+    if (ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+  // bass pluck: saw fundamental + octave partial through a lowpass.
+  // The octave partial matters: phone speakers can't reproduce 31 Hz,
+  // so the upper harmonics carry the pitch.
+  function note(midi, dur = 0.6, when = 0, vel = 1){
+    const c = ensure(); const t = c.currentTime + when;
+    const f = freq(midi);
+    const out = c.createGain();
+    out.gain.setValueAtTime(0.0001, t);
+    out.gain.exponentialRampToValueAtTime(0.55 * vel, t + 0.012);
+    out.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    const lp = c.createBiquadFilter();
+    lp.type = 'lowpass'; lp.Q.value = 2;
+    lp.frequency.setValueAtTime(Math.min(Math.max(f * 16, 700), 2600), t);
+    lp.frequency.exponentialRampToValueAtTime(Math.max(f * 6, 400), t + dur * 0.7);
+    const o1 = c.createOscillator(); o1.type = 'sawtooth'; o1.frequency.value = f;
+    const o2 = c.createOscillator(); o2.type = 'square'; o2.frequency.value = f * 2;
+    const g2 = c.createGain(); g2.gain.value = 0.38;
+    const o3 = c.createOscillator(); o3.type = 'sine'; o3.frequency.value = f * 4;
+    const g3 = c.createGain(); g3.gain.value = 0.10;
+    o1.connect(lp); o2.connect(g2); g2.connect(lp); o3.connect(g3); g3.connect(lp);
+    lp.connect(out); out.connect(master);
+    o1.start(t); o2.start(t); o3.start(t);
+    const end = t + dur + 0.08;
+    o1.stop(end); o2.stop(end); o3.stop(end);
+  }
+  function click(accent, when = 0){
+    const c = ensure(); const t = c.currentTime + when;
+    const o = c.createOscillator(); o.type = 'square';
+    o.frequency.value = accent ? 1800 : 1150;
+    const g = c.createGain();
+    g.gain.setValueAtTime(accent ? 0.5 : 0.32, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t + 0.06);
+  }
+  return { ensure, note, click, now:() => (ctx ? ctx.currentTime : 0) };
+})();
+
+/* ---------------- fretboard component ----------------
+   cfg = {
+     frets: 12,
+     strings: [indices into tuning, low->high] or null = all,
+     mark(stringIdx, fret) -> null | {cls:'root|tone|hl|ghost|good|bad', label, finger},
+     onTap(stringIdx, fret, midi),
+     disable(stringIdx, fret) -> bool,
+     boxWindow: [lo, hi] or null  (frets outside get dimmed)
+   }
+   stringIdx is index into TUNINGS[S.tuning].midi (0 = lowest string).
+   Rendered top row = HIGHEST string (like reading tab).
+------------------------------------------------------- */
+function drawFretboard(el, cfg){
+  const tun = TUNINGS[S.tuning];
+  const nStr = tun.midi.length;
+  const frets = cfg.frets != null ? cfg.frets : 12;
+  const wrap = document.createElement('div');
+  wrap.className = 'fb-wrap';
+  const scroll = document.createElement('div');
+  scroll.className = 'fb-scroll';
+  const fb = document.createElement('div');
+  fb.className = 'fb';
+  fb.style.gridTemplateColumns = '36px repeat(' + (frets + 1) + ', minmax(46px,1fr))';
+  // string rows: top = highest
+  for (let si = nStr - 1; si >= 0; si--){
+    const lbl = document.createElement('div');
+    lbl.className = 'lbl' + (si === 0 ? ' low' : '');
+    lbl.textContent = tun.names[si];
+    fb.appendChild(lbl);
+    // thicker visual for lower strings
+    const strh = (1.5 + (nStr - 1 - si) * 0.9).toFixed(1);
+    for (let f = 0; f <= frets; f++){
+      const cell = document.createElement('button');
+      cell.type = 'button';
+      cell.className = 'cell' + (f === 0 ? ' f0' : '');
+      cell.style.setProperty('--strh', strh + 'px');
+      cell.dataset.s = si; cell.dataset.f = f;
+      if (cfg.disable && cfg.disable(si, f)) cell.classList.add('dis');
+      if (cfg.boxWindow && f !== 0 && (f < cfg.boxWindow[0] || f > cfg.boxWindow[1])) cell.classList.add('boxout');
+      const m = cfg.mark ? cfg.mark(si, f) : null;
+      if (m){
+        const n = document.createElement('span');
+        n.className = 'note ' + (m.cls || '');
+        n.textContent = m.label != null ? m.label : '';
+        if (m.finger){
+          const fg = document.createElement('span');
+          fg.className = 'fing'; fg.textContent = m.finger;
+          n.appendChild(fg);
+        }
+        cell.appendChild(n);
+      }
+      const midi = tun.midi[si] + f;
+      cell.addEventListener('click', () => {
+        if (cfg.onTap) cfg.onTap(si, f, midi);
+        else Audio_.note(midi);
+      });
+      fb.appendChild(cell);
+    }
+  }
+  // fret number / marker row
+  const corner = document.createElement('div');
+  corner.className = 'fnum'; corner.style.position = 'sticky'; corner.style.left = '0';
+  fb.appendChild(corner);
+  for (let f = 0; f <= frets; f++){
+    const d = document.createElement('div');
+    d.className = 'fnum';
+    const num = document.createElement('span');
+    num.textContent = f === 0 ? 'open' : f;
+    d.appendChild(num);
+    if ([3,5,7,9,15,17,19,21].includes(f)){
+      const mk = document.createElement('span'); mk.className = 'mk'; d.appendChild(mk);
+    }
+    if (f === 12 || f === 24){
+      const mk = document.createElement('span'); mk.className = 'mk dbl'; d.appendChild(mk);
+    }
+    fb.appendChild(d);
+  }
+  scroll.appendChild(fb);
+  wrap.appendChild(scroll);
+  if (frets > 6){
+    const hint = document.createElement('div');
+    hint.className = 'fb-hint';
+    hint.textContent = 'swipe fretboard for higher frets →';
+    wrap.appendChild(hint);
+  }
+  el.innerHTML = '';
+  el.appendChild(wrap);
+  return {
+    el: fb,
+    cellAt(si, f){ return fb.querySelector('.cell[data-s="' + si + '"][data-f="' + f + '"]'); },
+    setNote(si, f, cls, label){
+      const cell = this.cellAt(si, f);
+      if (!cell) return;
+      let n = cell.querySelector('.note');
+      if (!n){ n = document.createElement('span'); n.className = 'note'; cell.appendChild(n); }
+      n.className = 'note ' + cls;
+      if (label != null) n.textContent = label;
+    },
+    clearNote(si, f){
+      const cell = this.cellAt(si, f);
+      const n = cell && cell.querySelector('.note');
+      if (n) n.remove();
+    },
+    scrollToFret(f){
+      const cell = this.cellAt(0, Math.max(0, f - 1)) || fb.querySelector('.cell');
+      if (cell) scroll.scrollLeft = Math.max(0, cell.offsetLeft - 60);
+    }
+  };
+}
+
+/* orientation helper line shown under fretboards */
+function fbCaption(){
+  const low = S.tuning === 5 ? 'B' : 'E';
+  return '<div class="muted small" style="margin:2px 4px 6px">Reads like tab: thin G string on top, thick low ' + low + ' at the bottom. Tap any fret to hear it.</div>';
+}
+
+/* ---------------- theory cards ---------------- */
+const CARDS = {
+  degrees:{ title:'Degrees 101: what "R, b3, 5" means',
+    body:'Notes in a scale get numbers counted from the root: R (root) = 1, then 2, 3… A "b" (flat) means one fret lower. So b3 = "the 3rd, lowered one fret" — that single fret is what makes minor sound dark instead of happy.' },
+  bcef:{ title:'The B–C and E–F rule',
+    body:'Between most letter names there\'s a sharp note (one fret apart). B→C and E→F are the exceptions: NO sharp in between — they sit on neighboring frets. Memorize those two pairs and the whole fretboard gets easier.' },
+  octave:{ title:'The octave shape',
+    body:'Same note one octave up = 2 strings up + 2 frets up. It\'s one moveable shape that works everywhere on the neck. Find a root, and you instantly know a second place to play it.' },
+  fifth:{ title:'Why metal loves the 5th',
+    body:'The 5th is the interval in a power chord (R + 5). It\'s neither major nor minor — no 3rd — so it sounds huge and neutral under distortion. As a bassist: root and 5th are your two best friends.' },
+  relative:{ title:'Em and G major are twins',
+    body:'E minor and G major contain the exact same 7 notes — they just treat a different note as home base. That\'s called relative major/minor. It\'s why TNT (in E minor) can lean on a G: it\'s family.' },
+  enharm:{ title:'C# and Db are the same fret',
+    body:'One fret, two names. Which name you use depends on the key you\'re in — but under your finger it\'s identical. Don\'t let double names scare you.' },
+  flat7:{ title:'"7" means flat 7 (by default)',
+    body:'When a chord is written E7 or Em7, the 7 means the FLAT 7th — the rock/blues flavor. The "pretty" natural 7th gets a longer name: maj7. Default 7 = b7. That\'s why rock is full of 7 chords.' },
+  rootsJob:{ title:'Roots are the bassist\'s job',
+    body:'When the band plays an E chord, your job #1 is to land on E. Nail the root on beat 1, keep the rhythm locked, and you\'re already a real bassist. Everything else (5ths, octaves, fills) is decoration on top.' },
+  bstring:{ title:'Taming the low B string',
+    body:'The B string is the E string\'s mirror, 5 frets up: any note on the E string also lives on the B string 5 frets HIGHER. Example: E is B-string fret 5, G is B-string fret 8. Learn E-string notes and the B string comes free.' },
+  fretHalfStep:{ title:'1 fret = a half step',
+    body:'Every fret raises the pitch by one half step (semitone) — the smallest step in Western music. 2 frets = whole step. All scale formulas are just recipes of half steps, which is why shapes are moveable.' }
+};
+function theoryCard(id){
+  if (S.practice.dismissed.includes(id) || !CARDS[id]) return '';
+  const c = CARDS[id];
+  return '<div class="tcard" data-card="' + id + '">' +
+    '<button class="dismiss" title="Dismiss" onclick="dismissCard(\'' + id + '\')">✕</button>' +
+    '<h4>💡 ' + c.title + '</h4><p>' + c.body + '</p></div>';
+}
+function dismissCard(id){
+  if (!S.practice.dismissed.includes(id)) S.practice.dismissed.push(id);
+  save();
+  document.querySelectorAll('[data-card="' + id + '"]').forEach(e => e.remove());
+}
+
+/* ---------------- routing ---------------- */
+const TABS = ['practice','scales','chords','trainer'];
+let currentTab = 'practice';
+function show(tab){
+  currentTab = tab;
+  TABS.forEach(t => {
+    document.getElementById('tab-' + t).classList.toggle('on', t === tab);
+  });
+  document.querySelectorAll('#tabbar button').forEach(b =>
+    b.classList.toggle('on', b.dataset.tab === tab));
+  render(tab);
+  window.scrollTo(0, 0);
+}
+function render(tab){
+  if (tab === 'practice') renderPractice();
+  if (tab === 'scales') renderScales();
+  if (tab === 'chords') renderChords();
+  if (tab === 'trainer') renderTrainer();
+}
+function deepLink(spec){
+  if (spec.scales) Object.assign(S.scales, spec.scales);
+  if (spec.chords) Object.assign(S.chords, spec.chords);
+  if (spec.trainer) Object.assign(S.trainer, spec.trainer);
+  save();
+  show(spec.tab);
+}
+/* ================= FEATURE 1: SCALE EXPLORER ================= */
+const SCALES = {
+  minPent:{ name:'Minor pentatonic', iv:[0,3,5,7,10], deg:['R','b3','4','5','b7'],
+    blurb:'The skeleton of ~80% of rock & metal riffs. If you learn ONE scale, it\'s this one.' },
+  natMinor:{ name:'Natural minor', iv:[0,2,3,5,7,8,10], deg:['R','2','b3','4','5','b6','b7'],
+    blurb:'Minor pentatonic + two extra notes (2 and b6). The full "dark/heavy" scale.' },
+  majPent:{ name:'Major pentatonic', iv:[0,2,4,7,9], deg:['R','2','3','5','6'],
+    blurb:'The bright cousin of minor pentatonic — same shape, different home note.' },
+  major:{ name:'Major scale', iv:[0,2,4,5,7,9,11], deg:['R','2','3','4','5','6','7'],
+    blurb:'The "do-re-mi" ruler that every formula is measured against.' },
+  blues:{ name:'Blues scale', iv:[0,3,5,6,7,10], deg:['R','b3','4','b5','5','b7'],
+    blurb:'Minor pentatonic + one spicy note (the b5). Instant attitude.' }
+};
+const SCALE_ORDER = ['minPent','natMinor','majPent','major','blues'];
+
+function stepFormula(iv){
+  const steps = [];
+  for (let i = 1; i < iv.length; i++) steps.push('+' + (iv[i] - iv[i-1]));
+  steps.push('+' + (12 - iv[iv.length-1]) + ' → R');
+  return 'R ' + steps.join(' ');
+}
+function scaleNotes(rootName, iv){
+  const rp = rootPc(rootName);
+  const flats = FLAT_ROOTS.has(rootName);
+  return iv.map(i => (flats ? NAMES_F : NAMES_S)[(rp + i) % 12]);
+}
+function lowestStringRootFret(rootName){
+  const rp = rootPc(rootName);
+  const open = TUNINGS[S.tuning].midi[0];
+  for (let f = 1; f <= 12; f++) if (pc(open + f) === rp) return f;
+  return 12; // pc(open) === rp -> octave at 12
+}
+let playTimers = [];
+function stopPlayback(){
+  playTimers.forEach(t => clearTimeout(t));
+  playTimers = [];
+  document.querySelectorAll('.note.playing').forEach(n => n.classList.remove('playing'));
+}
+function playSequence(handle, seq, msPerNote, onDone){
+  stopPlayback();
+  Audio_.ensure();
+  seq.forEach((p, i) => {
+    playTimers.push(setTimeout(() => {
+      document.querySelectorAll('.note.playing').forEach(n => n.classList.remove('playing'));
+      Audio_.note(p.midi, 0.55);
+      const cell = handle.cellAt(p.si, p.f);
+      const n = cell && cell.querySelector('.note');
+      if (n) n.classList.add('playing');
+    }, i * msPerNote));
+  });
+  playTimers.push(setTimeout(() => {
+    document.querySelectorAll('.note.playing').forEach(n => n.classList.remove('playing'));
+    if (onDone) onDone();
+  }, seq.length * msPerNote + 100));
+}
+
+let scaleFbHandle = null;
+function renderScales(){
+  const el = document.getElementById('tab-scales');
+  const sc = SCALES[S.scales.type];
+  const rp = rootPc(S.scales.root);
+  const flats = FLAT_ROOTS.has(S.scales.root);
+  const scalePcs = new Set(sc.iv.map(i => (rp + i) % 12));
+  const degOf = {};
+  sc.iv.forEach((i, k) => degOf[(rp + i) % 12] = sc.deg[k]);
+  const notes = scaleNotes(S.scales.root, sc.iv);
+  const anchor = lowestStringRootFret(S.scales.root);
+  const boxHi = anchor + 3 + (sc.iv.length > 5 ? 1 : 0);
+  const view = S.scales.view;
+
+  let h = '<h2>Scale explorer</h2>';
+  h += '<div class="card tight">';
+  h += '<h3>Scale</h3><div class="seg" id="scType">' + SCALE_ORDER.map(k =>
+    '<button data-k="' + k + '" class="' + (k === S.scales.type ? 'on' : '') + '">' + SCALES[k].name + '</button>').join('') + '</div>';
+  h += '<h3>Root note</h3><div class="seg compact" id="scRoot">' + ALL_ROOTS.map(r =>
+    '<button data-k="' + r + '" class="' + (r === S.scales.root ? 'on' : '') + '">' + r + '</button>').join('') + '</div>';
+  h += '</div>';
+
+  h += '<div class="card">';
+  h += '<div style="font-size:17px; font-weight:700">' + S.scales.root + ' ' + sc.name.toLowerCase() + '</div>';
+  h += '<p class="muted" style="margin:4px 0 8px">' + sc.blurb + '</p>';
+  h += '<div class="chips">' + notes.map((n, i) =>
+    '<span class="chip ' + (i === 0 ? 'root' : 'tone') + '">' + n + '<small>' + sc.deg[i] + '</small></span>').join('') + '</div>';
+  h += '<p class="small" style="margin:10px 0 0"><b>Step recipe:</b> ' + stepFormula(sc.iv) +
+    '<br><span class="muted">Each number = how many frets (= half steps) to the next note. Same recipe from ANY root — that\'s why shapes are moveable.</span></p>';
+  h += '</div>';
+
+  h += theoryCard('degrees');
+  h += theoryCard('fretHalfStep');
+
+  h += '<div class="card">';
+  h += '<div class="row between">';
+  h += '<div class="seg compact" id="scView">' +
+    '<button data-k="open" class="' + (view === 'open' ? 'on' : '') + '">Open position</button>' +
+    '<button data-k="box" class="' + (view === 'box' ? 'on' : '') + '">Moveable box</button>' +
+    '<button data-k="neck" class="' + (view === 'neck' ? 'on' : '') + '">Whole neck</button></div>';
+  h += '<div class="seg compact" id="scLabels">' +
+    '<button data-k="names" class="' + (S.scales.labels === 'names' ? 'on' : '') + '">Names</button>' +
+    '<button data-k="degrees" class="' + (S.scales.labels === 'degrees' ? 'on' : '') + '">Degrees</button></div>';
+  h += '</div>';
+  if (view === 'open'){
+    h += '<p class="muted small" style="margin:8px 2px 0">Open position = frets 0–5, using open strings where you can. Home base for beginners.</p>';
+  } else if (view === 'box'){
+    h += '<p class="muted small" style="margin:8px 2px 0">The moveable box, anchored where the root (' + S.scales.root + ') sits on your lowest string — fret ' + anchor + '. Slide the whole box to a new root and it\'s the same scale in a new key. Numbers on the dots = suggested finger (1=index, 2=middle, 3=ring, 4=pinky).</p>';
+  } else {
+    h += '<p class="muted small" style="margin:8px 2px 0">Every ' + S.scales.root + ' ' + sc.name.toLowerCase() + ' note, frets 0–12. Notice the patterns repeating.</p>';
+  }
+  h += '<div id="scaleFb"></div>' + fbCaption();
+  h += '<div class="legend"><span class="l-root"><i></i>root</span><span class="l-tone"><i></i>scale tone</span><span class="l-hl"><i></i>now playing</span></div>';
+  h += '<div class="row" style="margin-top:6px"><button class="btn primary" id="scPlay">▶ Play scale (slow)</button><button class="btn ghost" id="scStop">■ Stop</button></div>';
+  h += '</div>';
+
+  if ((S.scales.type === 'minPent' || S.scales.type === 'natMinor') && S.scales.root === 'E') h += theoryCard('relative');
+  h += theoryCard('octave');
+
+  el.innerHTML = h;
+
+  // fretboard
+  const frets = view === 'open' ? 5 : 12;
+  const boxWin = view === 'box' ? [anchor, boxHi] : null;
+  scaleFbHandle = drawFretboard(document.getElementById('scaleFb'), {
+    frets,
+    boxWindow: boxWin,
+    mark(si, f){
+      const midi = TUNINGS[S.tuning].midi[si] + f;
+      const p = pc(midi);
+      if (!scalePcs.has(p)) return null;
+      const isRoot = p === rp;
+      const label = S.scales.labels === 'degrees' ? degOf[p] : noteName(midi, flats);
+      const m = { cls: isRoot ? 'root' : 'tone', label };
+      if (boxWin && f >= boxWin[0] && f <= boxWin[1]){
+        m.finger = String(Math.min(4, f - anchor + 1));
+      }
+      return m;
+    }
+  });
+  if (view === 'box') scaleFbHandle.scrollToFret(anchor);
+
+  // sequence for playback: in-view scale tones, one octave up from lowest root, then back
+  function buildSeq(){
+    const tun = TUNINGS[S.tuning];
+    const pos = [];
+    const lo = boxWin ? boxWin[0] : 0, hi = boxWin ? boxWin[1] : frets;
+    for (let si = 0; si < tun.midi.length; si++)
+      for (let f = lo === 0 ? 0 : lo; f <= hi; f++){
+        const midi = tun.midi[si] + f;
+        if (scalePcs.has(pc(midi))) pos.push({ si, f, midi });
+      }
+    pos.sort((a, b) => a.midi - b.midi || a.si - b.si);
+    const firstRoot = pos.find(p => pc(p.midi) === rp);
+    if (!firstRoot) return [];
+    const start = firstRoot.midi;
+    const seen = new Set();
+    const asc = [];
+    for (const p of pos){
+      if (p.midi >= start && p.midi <= start + 12 && !seen.has(p.midi)){
+        seen.add(p.midi); asc.push(p);
+      }
+    }
+    const desc = asc.slice(0, -1).reverse();
+    return asc.concat(desc);
+  }
+  document.getElementById('scPlay').addEventListener('click', () => {
+    playSequence(scaleFbHandle, buildSeq(), 550);
+  });
+  document.getElementById('scStop').addEventListener('click', stopPlayback);
+
+  // controls
+  bindSeg('scType', k => { S.scales.type = k; save(); renderScales(); });
+  bindSeg('scRoot', k => { S.scales.root = k; save(); renderScales(); });
+  bindSeg('scView', k => { S.scales.view = k; save(); renderScales(); });
+  bindSeg('scLabels', k => { S.scales.labels = k; save(); renderScales(); });
+}
+function bindSeg(id, fn){
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.querySelectorAll('button').forEach(b =>
+    b.addEventListener('click', () => { stopPlayback(); fn(b.dataset.k); }));
+}
+
+/* ================= FEATURE 2: CHORD / ARPEGGIO EXPLORER ================= */
+const CHORDS = {
+  power:{ name:'Power chord (5)', sym:'5', iv:[0,7], deg:['R','5'],
+    blurb:'Root + 5th, nothing else. No 3rd = neither major nor minor — just weight. THE rock/metal sound. On bass you play these as two single notes, not a strum.' },
+  maj:{ name:'Major triad', sym:'', iv:[0,4,7], deg:['R','3','5'],
+    blurb:'Root + bright 3rd + 5th. The "happy" chord. As a bassist you outline it one note at a time (an arpeggio).' },
+  min:{ name:'Minor triad', sym:'m', iv:[0,3,7], deg:['R','b3','5'],
+    blurb:'"m" flattens the 3rd by one fret — that single fret turns bright into dark. Root + b3 + 5.' },
+  m7:{ name:'Minor 7', sym:'m7', iv:[0,3,7,10], deg:['R','b3','5','b7'],
+    blurb:'Decoder: m = flat 3rd (dark) + 7 = flat 7 by default (rock flavor). A minor triad with a smoky b7 on top.' },
+  dom7:{ name:'Dominant 7', sym:'7', iv:[0,4,7,10], deg:['R','3','5','b7'],
+    blurb:'Bright major 3rd + gritty flat 7 = built-in blues tension. AC/DC and every blues-rock band live here.' }
+};
+const CHORD_ORDER = ['power','min','maj','m7','dom7'];
+
+let chordFbHandle = null;
+function renderChords(){
+  const el = document.getElementById('tab-chords');
+  const ch = CHORDS[S.chords.type];
+  const rp = rootPc(S.chords.root);
+  const flats = FLAT_ROOTS.has(S.chords.root);
+  const chordPcs = new Set(ch.iv.map(i => (rp + i) % 12));
+  const degOf = {};
+  ch.iv.forEach((i, k) => degOf[(rp + i) % 12] = ch.deg[k]);
+  const notes = scaleNotes(S.chords.root, ch.iv);
+
+  let h = '<h2>Chords &amp; arpeggios</h2>';
+  h += '<p class="muted small" style="margin:2px 2px 8px">Bassists don\'t strum chords — we spell them out one note at a time. That\'s an <b>arpeggio</b>.</p>';
+  h += '<div class="card tight">';
+  h += '<h3>Chord type</h3><div class="seg" id="chType">' + CHORD_ORDER.map(k =>
+    '<button data-k="' + k + '" class="' + (k === S.chords.type ? 'on' : '') + '">' + CHORDS[k].name + '</button>').join('') + '</div>';
+  h += '<h3>Root note</h3><div class="seg compact" id="chRoot">' + ALL_ROOTS.map(r =>
+    '<button data-k="' + r + '" class="' + (r === S.chords.root ? 'on' : '') + '">' + r + '</button>').join('') + '</div>';
+  h += '</div>';
+
+  h += '<div class="card">';
+  h += '<div style="font-size:17px; font-weight:700">' + S.chords.root + ch.sym + ' — ' + ch.name.toLowerCase() + '</div>';
+  h += '<p class="muted" style="margin:4px 0 8px">' + ch.blurb + '</p>';
+  h += '<div class="chips">' + notes.map((n, i) =>
+    '<span class="chip ' + (i === 0 ? 'root' : 'tone') + '">' + n + '<small>' + ch.deg[i] + '</small></span>').join('') + '</div>';
+  h += '</div>';
+
+  if (S.chords.type === 'power') h += theoryCard('fifth');
+  if (S.chords.type === 'm7' || S.chords.type === 'dom7') h += theoryCard('flat7');
+
+  // fretboard: chord tones everywhere, shape window anchored at root
+  const eIdx = S.tuning === 5 ? 1 : 0; // E string index
+  const eOpen = TUNINGS[S.tuning].midi[eIdx];
+  let anchorE = null;
+  for (let f = 0; f <= 12; f++) if (pc(eOpen + f) === rp){ anchorE = f; break; }
+  h += '<div class="card">';
+  h += '<div class="row between"><b>Arpeggio on the fretboard</b>';
+  h += '<div class="seg compact" id="chLabels">' +
+    '<button data-k="names" class="' + (S.chords.labels === 'names' ? 'on' : '') + '">Names</button>' +
+    '<button data-k="degrees" class="' + (S.chords.labels === 'degrees' ? 'on' : '') + '">Degrees</button></div></div>';
+  h += '<div id="chordFb"></div>' + fbCaption();
+  h += '<div class="legend"><span class="l-root"><i></i>root</span><span class="l-tone"><i></i>chord tone</span><span class="l-hl"><i></i>now playing</span></div>';
+  h += '<div class="row" style="margin-top:6px"><button class="btn primary" id="chPlay">▶ Play arpeggio</button><button class="btn ghost" id="chStop">■ Stop</button></div>';
+  h += '</div>';
+
+  // containment chain
+  h += containmentChain(ch, rp, flats);
+  h += theoryCard('rootsJob');
+  el.innerHTML = h;
+
+  chordFbHandle = drawFretboard(document.getElementById('chordFb'), {
+    frets:12,
+    mark(si, f){
+      const midi = TUNINGS[S.tuning].midi[si] + f;
+      const p = pc(midi);
+      if (!chordPcs.has(p)) return null;
+      const isRoot = p === rp;
+      const label = S.chords.labels === 'degrees' ? degOf[p] : noteName(midi, flats);
+      return { cls: isRoot ? 'root' : 'tone', label };
+    }
+  });
+  if (anchorE > 4) chordFbHandle.scrollToFret(anchorE);
+
+  document.getElementById('chPlay').addEventListener('click', () => {
+    const tun = TUNINGS[S.tuning];
+    const pos = [];
+    for (let si = 0; si < tun.midi.length; si++)
+      for (let f = 0; f <= 12; f++){
+        const midi = tun.midi[si] + f;
+        if (chordPcs.has(pc(midi))) pos.push({ si, f, midi });
+      }
+    pos.sort((a, b) => a.midi - b.midi || a.si - b.si);
+    const rootStart = pos.find(p => pc(p.midi) === rp && p.f > 0) || pos[0];
+    const seen = new Set(); const asc = [];
+    for (const p of pos){
+      if (p.midi >= rootStart.midi && p.midi <= rootStart.midi + 12 && !seen.has(p.midi)){
+        seen.add(p.midi); asc.push(p);
+      }
+    }
+    playSequence(chordFbHandle, asc.concat(asc.slice(0, -1).reverse()), 500);
+  });
+  document.getElementById('chStop').addEventListener('click', stopPlayback);
+
+  bindSeg('chType', k => { S.chords.type = k; save(); renderChords(); });
+  bindSeg('chRoot', k => { S.chords.root = k; save(); renderChords(); });
+  bindSeg('chLabels', k => { S.chords.labels = k; save(); renderChords(); });
+}
+
+function containmentChain(ch, rp, flats){
+  const isMinorFamily = ch.iv.includes(3) || ch.iv.length === 2;
+  const isMajorFamily = ch.iv.includes(4);
+  const chordPcs = new Set(ch.iv.map(i => (rp + i) % 12));
+  const root = S.chords.root;
+  function rowFor(scaleKey, label){
+    const sc = SCALES[scaleKey];
+    const ns = scaleNotes(root, sc.iv);
+    return '<div style="margin:8px 0"><div class="small muted" style="margin-bottom:4px">' + label + '</div><div class="chips">' +
+      ns.map((n, i) => {
+        const p = (rp + sc.iv[i]) % 12;
+        const inChord = chordPcs.has(p);
+        const cls = p === rp ? 'chip root' : (inChord ? 'chip tone' : 'chip dim');
+        return '<span class="' + cls + '">' + n + '<small>' + sc.deg[i] + '</small></span>';
+      }).join('') + '</div></div>';
+  }
+  let h = '<div class="card"><b>Where these notes live</b>';
+  h += '<p class="muted small" style="margin:4px 0 2px">Bright chips = chord tones. Faded chips = the other scale notes around them. Chord ⊂ pentatonic ⊂ full scale — smaller sets nest inside bigger ones.</p>';
+  if (isMinorFamily && ch.iv.includes(3)){
+    h += rowFor('minPent', '…inside ' + root + ' minor pentatonic:');
+    h += rowFor('natMinor', '…inside ' + root + ' natural minor:');
+  } else if (ch.iv.length === 2){
+    h += rowFor('minPent', '…inside ' + root + ' minor pentatonic (fits the major side too):');
+    h += rowFor('natMinor', '…inside ' + root + ' natural minor:');
+  } else if (isMajorFamily && !ch.iv.includes(10)){
+    h += rowFor('majPent', '…inside ' + root + ' major pentatonic:');
+    h += rowFor('major', '…inside ' + root + ' major scale:');
+  } else {
+    h += rowFor('major', 'vs. the ' + root + ' major scale:');
+    h += '<p class="small" style="margin:6px 0 0">⚠️ The b7 pokes <b>outside</b> the plain major scale — that outside note is exactly the bluesy tension a dominant 7 is famous for.</p>';
+  }
+  h += '</div>';
+  return h;
+}
+/* ================= FEATURE 3: FRETBOARD TRAINER ================= */
+const TIERS = [
+  { label:'1 · E + A strings, frets 0–5', strings:['E','A'], maxFret:5, accidentals:false,
+    tip:'Start here: these two strings are where most rock basslines live.' },
+  { label:'2 · E + A strings, frets 0–12', strings:['E','A'], maxFret:12, accidentals:false,
+    tip:'Same strings, whole neck. Remember: fret 12 = same name as the open string.' },
+  { label:'3 · add D + G strings', strings:['E','A','D','G'], maxFret:12, accidentals:false,
+    tip:'Four strings now. The octave shape (+2 strings, +2 frets) is your shortcut.' },
+  { label:'4 · add the low B string', strings:['B','E','A','D','G'], maxFret:12, accidentals:false,
+    tip:'The trick: the B string mirrors the E string 5 frets up. E-string fret 0 (E) = B-string fret 5.' },
+  { label:'5 · everything + sharps/flats', strings:['B','E','A','D','G'], maxFret:12, accidentals:true,
+    tip:'Final boss. Remember sharps and flats share a fret (C# = Db).' }
+];
+const MODES = [
+  { k:'study',  label:'Study' },
+  { k:'find',   label:'Find the note' },
+  { k:'name',   label:'Name the note' },
+  { k:'octave', label:'Octave shape' }
+];
+let T = { q:null, session:{ score:0, streak:0, asked:0 }, lock:false, lastQ:'', timer:null };
+
+function tierFor(idx){
+  const t = TIERS[idx];
+  const avail = TUNINGS[S.tuning].names;
+  return Object.assign({}, t, { strings: t.strings.filter(s => avail.includes(s)) });
+}
+function stringIdxByName(name){ return TUNINGS[S.tuning].names.indexOf(name); }
+
+function trainerPool(tier){
+  const pool = [];
+  for (const sn of tier.strings){
+    const si = stringIdxByName(sn);
+    if (si < 0) continue;
+    for (let f = 0; f <= tier.maxFret; f++){
+      const midi = TUNINGS[S.tuning].midi[si] + f;
+      if (!tier.accidentals && !NATURALS.has(NAMES_S[pc(midi)])) continue;
+      pool.push({ si, f, midi, sn });
+    }
+  }
+  return pool;
+}
+function newQuestion(){
+  const tier = tierFor(S.trainer.tier);
+  const mode = S.trainer.mode;
+  let pool = trainerPool(tier);
+  if (mode === 'octave'){
+    const nStr = TUNINGS[S.tuning].midi.length;
+    pool = pool.filter(p => p.si + 2 < nStr && p.f + 2 <= 12);
+  }
+  if (!pool.length){ T.q = null; return; }
+  let q, guard = 0;
+  do {
+    const p = pool[Math.floor(Math.random() * pool.length)];
+    q = { mode, si: p.si, f: p.f, midi: p.midi, sn: p.sn, name: NAMES_S[pc(p.midi)] };
+    guard++;
+  } while (guard < 12 && (q.sn + q.name + q.f) === T.lastQ);
+  T.lastQ = q.sn + q.name + q.f;
+  if (mode === 'name'){
+    const correct = tier.accidentals ? bothNames(q.midi) : q.name;
+    const opts = new Set([correct]);
+    const letters = tier.accidentals ? null : ['C','D','E','F','G','A','B'];
+    while (opts.size < 4){
+      let cand;
+      if (letters) cand = letters[Math.floor(Math.random() * 7)];
+      else cand = bothNames(Math.floor(Math.random() * 12));
+      opts.add(cand);
+    }
+    q.choices = shuffle([...opts]);
+    q.correctLabel = correct;
+  }
+  T.q = q;
+}
+function shuffle(a){
+  for (let i = a.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+function recordAnswer(ok, q){
+  S.stats.answered++;
+  if (ok) S.stats.correct++;
+  const bs = S.stats.byString[q.sn] || (S.stats.byString[q.sn] = { a:0, c:0 });
+  bs.a++; if (ok) bs.c++;
+  if (ok){
+    T.session.streak++;
+    T.session.score++;
+    if (T.session.streak > S.stats.bestStreak) S.stats.bestStreak = T.session.streak;
+  } else {
+    T.session.streak = 0;
+    const key = q.sn + ':' + q.f;
+    S.stats.heat[key] = (S.stats.heat[key] || 0) + 1;
+  }
+  T.session.asked++;
+  save();
+}
+
+let trainerFb = null;
+function renderTrainer(){
+  clearTimeout(T.timer);
+  const el = document.getElementById('tab-trainer');
+  const mode = S.trainer.mode;
+  const tier = tierFor(S.trainer.tier);
+
+  let h = '<h2>Fretboard trainer</h2>';
+  h += '<div class="card tight">';
+  h += '<div class="seg" id="trMode">' + MODES.map(m =>
+    '<button data-k="' + m.k + '" class="' + (m.k === mode ? 'on' : '') + '">' + m.label + '</button>').join('') + '</div>';
+  if (mode !== 'study'){
+    h += '<h3>Difficulty</h3><select id="trTier" style="width:100%">' + TIERS.map((t, i) => {
+      const locked = t.strings.includes('B') && S.tuning === 4;
+      return '<option value="' + i + '" ' + (i === S.trainer.tier ? 'selected' : '') + '>' +
+        'Tier ' + t.label + (locked ? ' (B needs 5-string mode)' : '') + '</option>';
+    }).join('') + '</select>';
+    h += '<p class="muted small" style="margin:6px 2px 2px">' + tier.tip + '</p>';
+  }
+  h += '</div>';
+
+  if (mode === 'study') h += studyHtml();
+  else h += quizShellHtml(mode, tier);
+
+  // stats
+  h += '<div id="statsWrap">' + statsHtml() + '</div>';
+  // theory cards in context
+  h += theoryCard('bcef');
+  if (mode === 'octave') h += theoryCard('octave');
+  if (S.trainer.tier >= 3 && S.tuning === 5) h += theoryCard('bstring');
+  if (S.trainer.tier >= 4) h += theoryCard('enharm');
+
+  el.innerHTML = h;
+
+  if (mode === 'study') mountStudy();
+  else { newQuestion(); mountQuiz(); }
+
+  bindSeg('trMode', k => { S.trainer.mode = k; save(); renderTrainer(); });
+  const tsel = document.getElementById('trTier');
+  if (tsel) tsel.addEventListener('change', () => {
+    S.trainer.tier = +tsel.value; save(); renderTrainer();
+  });
+  const rst = document.getElementById('trReset');
+  if (rst) rst.addEventListener('click', trainerResetStats);
+}
+function trainerResetStats(){
+  if (confirm('Reset all trainer stats (score, accuracy, heatmap)?')){
+    S.stats = defaultState().stats; save(); renderTrainer();
+  }
+}
+
+/* ---------- study mode ---------- */
+function studyHtml(){
+  const st = S.trainer.study;
+  const names = TUNINGS[S.tuning].names;
+  let h = '<div class="card">';
+  h += '<p class="muted small" style="margin:0 0 6px">Look around, tap frets to hear them. When you feel ready, switch to a test mode above.</p>';
+  h += '<div class="row" style="margin-bottom:6px">';
+  h += '<div class="seg compact" id="stShow"><button data-k="1" class="' + (st.show ? 'on' : '') + '">Names on</button><button data-k="0" class="' + (!st.show ? 'on' : '') + '">Names hidden</button></div>';
+  h += '<div class="seg compact" id="stNat"><button data-k="1" class="' + (st.naturalsOnly ? 'on' : '') + '">Naturals only</button><button data-k="0" class="' + (!st.naturalsOnly ? 'on' : '') + '">All 12 notes</button></div>';
+  h += '</div>';
+  h += '<div class="seg compact" id="stStrings">' + names.slice().reverse().map(n => {
+    const on = !st.strings || st.strings.includes(n);
+    return '<button data-k="' + n + '" class="' + (on ? 'on' : '') + '">' + n + ' string</button>';
+  }).join('') + '</div>';
+  h += '<div id="studyFb" style="margin-top:8px"></div>' + fbCaption();
+  if (!st.show) h += '<p class="muted small">Names hidden — tap a fret to reveal + hear it. Self-quiz!</p>';
+  h += '</div>';
+  return h;
+}
+function mountStudy(){
+  const st = S.trainer.study;
+  const names = TUNINGS[S.tuning].names;
+  const active = st.strings ? st.strings.filter(n => names.includes(n)) : names.slice();
+  trainerFb = drawFretboard(document.getElementById('studyFb'), {
+    frets:12,
+    disable(si, f){ return !active.includes(names[si]); },
+    mark(si, f){
+      if (!active.includes(names[si])) return null;
+      const midi = TUNINGS[S.tuning].midi[si] + f;
+      const isNat = NATURALS.has(NAMES_S[pc(midi)]);
+      if (st.naturalsOnly && !isNat) return null;
+      if (!st.show) return null;
+      return { cls: pc(midi) === rootPc('E') && false ? 'root' : (isNat ? 'tone' : 'hl'), label: isNat ? NAMES_S[pc(midi)] : bothNames(midi) };
+    },
+    onTap(si, f, midi){
+      Audio_.note(midi);
+      if (!st.show){
+        const isNat = NATURALS.has(NAMES_S[pc(midi)]);
+        if (st.naturalsOnly && !isNat) return;
+        trainerFb.setNote(si, f, isNat ? 'tone' : 'hl', isNat ? NAMES_S[pc(midi)] : bothNames(midi));
+        setTimeout(() => { try{ trainerFb.clearNote(si, f); }catch(e){} }, 1400);
+      }
+    }
+  });
+  bindSeg('stShow', k => { st.show = k === '1'; save(); renderTrainer(); });
+  bindSeg('stNat', k => { st.naturalsOnly = k === '1'; save(); renderTrainer(); });
+  const ss = document.getElementById('stStrings');
+  ss.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+    let cur = st.strings ? st.strings.slice() : names.slice();
+    if (cur.includes(b.dataset.k)){
+      if (cur.length > 1) cur = cur.filter(x => x !== b.dataset.k);
+    } else cur.push(b.dataset.k);
+    st.strings = cur; save(); renderTrainer();
+  }));
+}
+
+/* ---------- quiz modes ---------- */
+function quizShellHtml(mode, tier){
+  let h = '<div class="card">';
+  h += '<div class="row between" style="margin-bottom:4px">';
+  h += '<span class="small muted">Session: <b id="qScore" style="color:var(--text)">0</b> pts · streak <b id="qStreak" style="color:var(--root)">0</b></span>';
+  h += '<button class="btn small ghost" id="qSkip">Skip →</button></div>';
+  h += '<div class="quiz-q" id="qText"></div>';
+  h += '<div id="quizFb"></div>' + fbCaption();
+  h += '<div id="qChoices"></div>';
+  h += '<div class="feedback" id="qFeed"></div>';
+  h += '</div>';
+  return h;
+}
+function mountQuiz(){
+  drawQuiz();
+  const skip = document.getElementById('qSkip');
+  if (skip) skip.addEventListener('click', () => { newQuestion(); drawQuiz(); });
+}
+function drawQuiz(){
+  clearTimeout(T.timer);
+  const q = T.q;
+  const tier = tierFor(S.trainer.tier);
+  const qText = document.getElementById('qText');
+  const qChoices = document.getElementById('qChoices');
+  const qFeed = document.getElementById('qFeed');
+  document.getElementById('qScore').textContent = T.session.score;
+  document.getElementById('qStreak').textContent = T.session.streak;
+  qFeed.textContent = ''; qFeed.className = 'feedback';
+  qChoices.innerHTML = '';
+  T.lock = false;
+  if (!q){
+    qText.innerHTML = 'No notes available at this tier — check your tuning toggle.';
+    document.getElementById('quizFb').innerHTML = '';
+    return;
+  }
+  const names = TUNINGS[S.tuning].names;
+  const frets = q.mode === 'find' ? tier.maxFret : (q.mode === 'octave' ? 12 : tier.maxFret);
+
+  if (q.mode === 'find'){
+    qText.innerHTML = 'Find <b>' + q.name + '</b> on the <b>' + q.sn + ' string</b>';
+    trainerFb = drawFretboard(document.getElementById('quizFb'), {
+      frets,
+      disable(si, f){ return si !== q.si; },
+      mark(){ return null; },
+      onTap(si, f, midi){ answerFind(si, f, midi); }
+    });
+  }
+  if (q.mode === 'name'){
+    qText.innerHTML = 'What note is the <b>purple dot</b>? <span class="muted small">(' + q.sn + ' string, fret ' + q.f + ')</span>';
+    trainerFb = drawFretboard(document.getElementById('quizFb'), {
+      frets,
+      disable(si, f){ return !tier.strings.includes(names[si]); },
+      mark(si, f){ return (si === q.si && f === q.f) ? { cls:'hl', label:'?' } : null; },
+      onTap(si, f, midi){ Audio_.note(midi); }
+    });
+    qChoices.innerHTML = '<div class="choices">' + q.choices.map(c =>
+      '<button class="btn" data-c="' + c + '">' + c + '</button>').join('') + '</div>';
+    qChoices.querySelectorAll('button').forEach(b =>
+      b.addEventListener('click', () => answerName(b)));
+    trainerFb.scrollToFret(q.f);
+    Audio_.note(q.midi);
+  }
+  if (q.mode === 'octave'){
+    qText.innerHTML = 'This is <b>' + q.name + '</b>. Find the <b>same note one octave up</b>: 2 strings up + 2 frets up.';
+    trainerFb = drawFretboard(document.getElementById('quizFb'), {
+      frets,
+      mark(si, f){ return (si === q.si && f === q.f) ? { cls:'hl', label:q.name } : null; },
+      onTap(si, f, midi){ answerOctave(si, f, midi); }
+    });
+    trainerFb.scrollToFret(q.f);
+    Audio_.note(q.midi);
+  }
+}
+function afterAnswer(ok, revealFn){
+  const qFeed = document.getElementById('qFeed');
+  recordAnswer(ok, T.q);
+  document.getElementById('qScore').textContent = T.session.score;
+  document.getElementById('qStreak').textContent = T.session.streak;
+  if (ok){
+    qFeed.textContent = ['Nice!','Locked in. 🤘','Correct!','That\'s it!'][Math.floor(Math.random() * 4)];
+    qFeed.className = 'feedback ok';
+  } else {
+    qFeed.className = 'feedback no';
+    if (revealFn) revealFn(qFeed);
+  }
+  T.lock = true;
+  const wrap = document.getElementById('statsWrap');
+  if (wrap){
+    wrap.innerHTML = statsHtml();
+    const rst = document.getElementById('trReset');
+    if (rst) rst.addEventListener('click', trainerResetStats);
+  }
+  T.timer = setTimeout(() => { newQuestion(); drawQuiz(); }, ok ? 850 : 2100);
+}
+function answerFind(si, f, midi){
+  if (T.lock) return;
+  const q = T.q;
+  Audio_.note(midi);
+  const ok = pc(midi) === pc(q.midi);
+  if (ok){
+    trainerFb.setNote(si, f, 'good', q.name);
+  } else {
+    trainerFb.setNote(si, f, 'bad', NAMES_S[pc(midi)]);
+  }
+  afterAnswer(ok, feed => {
+    feed.textContent = 'That was ' + bothNames(midi) + '. ' + q.name + ' is marked in green.';
+    // reveal every correct spot on that string
+    for (let fr = 0; fr <= tierFor(S.trainer.tier).maxFret; fr++){
+      if (pc(TUNINGS[S.tuning].midi[q.si] + fr) === pc(q.midi)) trainerFb.setNote(q.si, fr, 'good', q.name);
+    }
+  });
+}
+function answerName(btn){
+  if (T.lock) return;
+  const q = T.q;
+  const ok = btn.dataset.c === q.correctLabel;
+  btn.classList.add(ok ? 'good' : 'bad');
+  if (!ok){
+    const right = document.querySelector('#qChoices button[data-c="' + q.correctLabel + '"]');
+    if (right) right.classList.add('good');
+  }
+  trainerFb.setNote(q.si, q.f, ok ? 'good' : 'bad', q.correctLabel);
+  Audio_.note(q.midi);
+  afterAnswer(ok, feed => { feed.textContent = 'It\'s ' + q.correctLabel + ' — ' + q.sn + ' string, fret ' + q.f + '.'; });
+}
+function answerOctave(si, f, midi){
+  if (T.lock) return;
+  const q = T.q;
+  if (si === q.si && f === q.f) return; // tapped the given note
+  Audio_.note(midi);
+  const ok = pc(midi) === pc(q.midi) && midi > q.midi;
+  if (ok) trainerFb.setNote(si, f, 'good', q.name);
+  else trainerFb.setNote(si, f, 'bad', NAMES_S[pc(midi)]);
+  afterAnswer(ok, feed => {
+    feed.textContent = 'The shape: 2 strings up + 2 frets up (green).';
+    trainerFb.setNote(q.si + 2, q.f + 2, 'good', q.name);
+  });
+}
+
+/* ---------- stats + heatmap ---------- */
+function statsHtml(){
+  const st = S.stats;
+  const acc = st.answered ? Math.round(100 * st.correct / st.answered) : 0;
+  let h = '<div class="card"><b>Your stats</b> <span class="muted small">(saved on this device)</span>';
+  h += '<div class="statgrid">';
+  h += '<div class="stat"><b>' + st.correct + '</b><span>correct</span></div>';
+  h += '<div class="stat"><b>' + acc + '%</b><span>accuracy</span></div>';
+  h += '<div class="stat"><b>' + st.bestStreak + '</b><span>best streak</span></div>';
+  h += '</div>';
+  const names = TUNINGS[S.tuning].names;
+  const perStr = names.slice().reverse().map(n => {
+    const s = st.byString[n];
+    if (!s || !s.a) return null;
+    return n + ' string: ' + Math.round(100 * s.c / s.a) + '% (' + s.c + '/' + s.a + ')';
+  }).filter(Boolean);
+  if (perStr.length) h += '<p class="small muted" style="margin:4px 0">' + perStr.join(' · ') + '</p>';
+  // heatmap
+  const hasHeat = Object.keys(st.heat).length > 0;
+  if (hasHeat){
+    h += '<p class="small" style="margin:8px 0 0"><b>Mistake heatmap</b> <span class="muted">— redder = more misses there</span></p>';
+    h += '<table class="heat"><tr><td class="hh"></td>';
+    for (let f = 0; f <= 12; f++) h += '<td class="hh">' + f + '</td>';
+    h += '</tr>';
+    for (const n of names.slice().reverse()){
+      h += '<tr><td class="hh">' + n + '</td>';
+      for (let f = 0; f <= 12; f++){
+        const v = st.heat[n + ':' + f] || 0;
+        const a = v ? Math.min(0.85, 0.2 + v * 0.16) : 0;
+        h += '<td style="background:rgba(255,107,107,' + a + ')">' + (v || '') + '</td>';
+      }
+      h += '</tr>';
+    }
+    h += '</table>';
+  }
+  h += '<div class="row" style="margin-top:10px"><button class="btn small ghost" id="trReset">Reset stats</button></div>';
+  h += '</div>';
+  return h;
+}
+/* ================= METRONOME ================= */
+const Metro = (() => {
+  let running = false, bpm = 60, beat = 0, nextTime = 0, timer = null;
+  function schedule(){
+    const c = Audio_.ensure();
+    while (nextTime < c.currentTime + 0.15){
+      Audio_.click(beat % 4 === 0, nextTime - c.currentTime);
+      const b = beat % 4, tt = nextTime;
+      setTimeout(() => flash(b), Math.max(0, (tt - c.currentTime) * 1000));
+      beat++; nextTime += 60 / bpm;
+    }
+  }
+  function flash(b){
+    document.querySelectorAll('.beatdots i').forEach((d, i) => d.classList.toggle('on', i === b));
+    const dot = document.getElementById('mbDot');
+    if (dot){ dot.classList.add('tick'); setTimeout(() => dot.classList.remove('tick'), 90); }
+  }
+  function start(){
+    const c = Audio_.ensure();
+    beat = 0; nextTime = c.currentTime + 0.1; running = true;
+    clearInterval(timer); timer = setInterval(schedule, 30);
+    ui();
+  }
+  function stop(){
+    running = false; clearInterval(timer); timer = null;
+    document.querySelectorAll('.beatdots i').forEach(d => d.classList.remove('on'));
+    ui();
+  }
+  function setBpm(v){
+    bpm = Math.max(40, Math.min(220, v));
+    ui();
+  }
+  function ui(){
+    const bar = document.getElementById('metrobar');
+    bar.classList.toggle('on', running);
+    document.getElementById('mbBpm').textContent = bpm + ' bpm';
+    const big = document.getElementById('bpmBig');
+    if (big) big.innerHTML = bpm + ' <small>bpm</small>';
+    const sld = document.getElementById('bpmSlider');
+    if (sld && +sld.value !== bpm) sld.value = bpm;
+    const btn = document.getElementById('metStart');
+    if (btn){
+      btn.textContent = running ? '■ Stop' : '▶ Start';
+      btn.classList.toggle('primary', !running);
+    }
+  }
+  return { start, stop, setBpm, ui, get running(){ return running; }, get bpm(){ return bpm; } };
+})();
+document.getElementById('mbStop').addEventListener('click', () => Metro.stop());
+
+function metronomeHtml(){
+  return '<div class="card" id="metCard"><b>Metronome</b>' +
+    '<div class="bpm-big" id="bpmBig">' + Metro.bpm + ' <small>bpm</small></div>' +
+    '<div class="beatdots"><i></i><i></i><i></i><i></i></div>' +
+    '<input type="range" id="bpmSlider" min="40" max="220" step="1" value="' + Metro.bpm + '">' +
+    '<div class="row" style="justify-content:center">' +
+    '<button class="btn" id="bpmM5">−5</button>' +
+    '<button class="btn primary" id="metStart" style="min-width:110px">▶ Start</button>' +
+    '<button class="btn" id="bpmP5">+5</button></div>' +
+    '<p class="muted small" style="text-align:center; margin:8px 0 0">First beat of 4 is accented. It keeps running while you use other tabs.</p></div>';
+}
+function mountMetronome(){
+  const sld = document.getElementById('bpmSlider');
+  if (!sld) return;
+  sld.addEventListener('input', () => Metro.setBpm(+sld.value));
+  document.getElementById('bpmM5').addEventListener('click', () => Metro.setBpm(Metro.bpm - 5));
+  document.getElementById('bpmP5').addEventListener('click', () => Metro.setBpm(Metro.bpm + 5));
+  document.getElementById('metStart').addEventListener('click', () => Metro.running ? Metro.stop() : Metro.start());
+  Metro.ui();
+}
+
+/* ================= FEATURE 5: PRACTICE PLAN ================= */
+const WEEKS = [
+  { n:1, title:'Hands, fretboard & first notes',
+    goal:'Get your hands working and learn where the notes are on E and A.',
+    items:[
+      { id:'w1a', cat:'Warm-up', min:5,
+        text:'Chromatic 1-2-3-4: on each string play frets 1-2-3-4, one finger per fret (index-middle-ring-pinky), then move to the next string. Up all strings and back. Slow + clean beats fast + sloppy.', met:60 },
+      { id:'w1b', cat:'Fretboard', min:5,
+        text:'Note names on the E and A strings, frets 0–5. Study first, then try a few rounds of "Find the note".',
+        link:{ label:'Open note trainer (E+A, 0–5)', spec:{ tab:'trainer', trainer:{ tier:0, mode:'study' } } } },
+      { id:'w1c', cat:'Technique', min:10,
+        text:'Plucking: alternate index-middle fingers on the OPEN E string, one note per click at 60 bpm, ~2 min. Then the same on A. Rest your plucking thumb on the B string the whole time (floating thumb) so it never rings.', met:60 },
+      { id:'w1d', cat:'Music', min:10,
+        text:'Groove on one note: open E, one note per click, every note landing ON the beat. Boring is the point — this steady pulse IS the bassist\'s job, and it\'s literally the TNT verse feel.', met:60 }
+    ],
+    checkpoints:[
+      { id:'w1cp0', text:'Chromatic warmup is clean at 60 bpm (no buzzes, one finger per fret)' },
+      { id:'w1cp1', text:'I can name any note on E or A, frets 0–5, in under 2 seconds' },
+      { id:'w1cp2', text:'My thumb mutes the B string without me thinking about it' }
+    ],
+    theory:['fretHalfStep','bcef'] },
+  { n:2, title:'Eighth notes + E minor pentatonic',
+    goal:'Lock in eighth notes and memorize the most important scale in rock.',
+    items:[
+      { id:'w2a', cat:'Warm-up', min:5,
+        text:'Chromatic 1-2-3-4 on all strings — push to 65 bpm if yesterday was clean.', met:65 },
+      { id:'w2b', cat:'Scales', min:5,
+        text:'E minor pentatonic, open position: E G A B D. Play it up and down slowly until your fingers know it in both directions. Use "Play scale" to check yourself.',
+        link:{ label:'Open E minor pentatonic', spec:{ tab:'scales', scales:{ root:'E', type:'minPent', view:'open', labels:'names' } } } },
+      { id:'w2c', cat:'Technique', min:10,
+        text:'Eighth notes: TWO notes per click (count "1-and-2-and"), strict index-middle alternation, on open E at 60–70 bpm. Every 4 beats switch to a different pentatonic note (G, A…) without breaking the rhythm.', met:65 },
+      { id:'w2d', cat:'Music', min:10,
+        text:'Pentatonic groove: pick E → G → A, play eighth notes on each for 4 beats, loop it. Stay locked to the click — smooth switches matter more than speed.', met:65 },
+      { id:'w2e', cat:'Bonus', min:5,
+        text:'Note trainer: "Find the note" on E + A naturals. Aim for 90%+ accuracy.',
+        link:{ label:'Find the note (tier 1)', spec:{ tab:'trainer', trainer:{ tier:0, mode:'find' } } } }
+    ],
+    checkpoints:[
+      { id:'w2cp0', text:'2 minutes of clean, even eighth notes at 70 bpm' },
+      { id:'w2cp1', text:'E minor pentatonic memorized, up AND down, without looking' },
+      { id:'w2cp2', text:'Over 90% accuracy on E-string naturals in the trainer' }
+    ],
+    theory:['rootsJob','octave'] },
+  { n:3, title:'First song: T.N.T. 🎉',
+    goal:'Everything so far becomes a real AC/DC song.',
+    items:[
+      { id:'w3a', cat:'Warm-up', min:5,
+        text:'Chromatic warmup at 70 bpm, or E minor pentatonic up/down twice as a warmup.', met:70 },
+      { id:'w3b', cat:'Scales', min:5,
+        text:'The MOVEABLE pentatonic box, anchored at fret 5. Same shape as open position, just slid up the neck — that\'s the whole point of moveable shapes.',
+        link:{ label:'Open the moveable box', spec:{ tab:'scales', scales:{ root:'E', type:'minPent', view:'box', labels:'names' } } } },
+      { id:'w3c', cat:'Technique', min:10,
+        text:'TNT chorus moves: roots E → A → G as eighth notes, 4 beats each, at 60 then 70 bpm. These three notes are the roots of the song\'s chords — and all three live in E minor pentatonic.', met:70 },
+      { id:'w3d', cat:'Music', min:10,
+        text:'T.N.T.: verse = steady eighth notes on E (palm-relaxed, locked to click). Chorus = the E→A→G shifts. Loop verse → chorus. Full speed is ~126 bpm — start at 70 and work up.',
+        link:{ label:'TNT bass tab (Songsterr)', href:'https://www.songsterr.com/a/wsa/acdc-tnt-bass-tab-s407' } },
+      { id:'w3e', cat:'Bonus', min:5,
+        text:'Note trainer: A-string naturals to 90%+. (In Study mode you can show ONLY the A string.)',
+        link:{ label:'Note trainer', spec:{ tab:'trainer', trainer:{ tier:0, mode:'find' } } } }
+    ],
+    checkpoints:[
+      { id:'w3cp0', text:'TNT verse + chorus at full speed, locked to the beat' },
+      { id:'w3cp1', text:'Moveable box shape playable from fret 5 without looking at a diagram' },
+      { id:'w3cp2', text:'Over 90% accuracy on A-string naturals in the trainer' }
+    ],
+    theory:['relative'] }
+];
+
+function weekOf(n){ return WEEKS.find(w => w.n === n); }
+function dayLog(){
+  const k = todayKey();
+  if (!S.practice.log[k]) S.practice.log[k] = { items:[], week:S.practice.week };
+  return S.practice.log[k];
+}
+function practiceStats(){
+  const dates = Object.keys(S.practice.log).filter(d => (S.practice.log[d].items || []).length > 0).sort();
+  const total = dates.length;
+  // streak: consecutive days ending today or yesterday
+  let streak = 0;
+  const oneDay = 86400000;
+  let cur = new Date(todayKey() + 'T12:00:00');
+  const set = new Set(dates);
+  const tk = todayKey();
+  if (!set.has(tk)) cur = new Date(cur.getTime() - oneDay);
+  while (true){
+    const key = cur.getFullYear() + '-' + String(cur.getMonth()+1).padStart(2,'0') + '-' + String(cur.getDate()).padStart(2,'0');
+    if (set.has(key)){ streak++; cur = new Date(cur.getTime() - oneDay); }
+    else break;
+  }
+  return { total, streak };
+}
+
+function renderPractice(){
+  const el = document.getElementById('tab-practice');
+  const wk = weekOf(S.practice.week);
+  const log = dayLog();
+  const ps = practiceStats();
+  const doneCount = wk.items.filter(i => log.items.includes(i.id)).length;
+  const pct = Math.round(100 * doneCount / wk.items.length);
+  const totalMin = wk.items.reduce((a, i) => a + i.min, 0);
+
+  let h = '<h2>Practice</h2>';
+  // streak/overview
+  h += '<div class="card tight"><div class="statgrid">' +
+    '<div class="stat"><b>' + ps.streak + '</b><span>day streak</span></div>' +
+    '<div class="stat"><b>' + ps.total + '</b><span>days practiced</span></div>' +
+    '<div class="stat"><b>' + doneCount + '/' + wk.items.length + '</b><span>today</span></div>' +
+    '</div></div>';
+
+  // week picker
+  h += '<div class="weekpick">' + WEEKS.map(w => {
+    const cpsDone = w.checkpoints.every(c => S.practice.checkpoints[c.id]);
+    return '<button class="btn ' + (w.n === S.practice.week ? 'primary' : '') + '" data-wk="' + w.n + '">Week ' + w.n + (cpsDone ? ' ✓' : '') + '</button>';
+  }).join('') + '</div>';
+
+  // today's session
+  h += '<div class="card">';
+  h += '<div class="row between"><b>Week ' + wk.n + ': ' + wk.title + '</b><span class="ptime">' + totalMin + ' min</span></div>';
+  h += '<p class="muted small" style="margin:4px 0 4px">' + wk.goal + '</p>';
+  h += '<p class="muted small" style="margin:0">Daily shape: 5\' warm-up → 5\' fretboard/scales → 10\' technique → 10\' music. Check things off as you go — it resets each day.</p>';
+  h += '<div class="progressbar"><i style="width:' + pct + '%"></i></div>';
+  for (const it of wk.items){
+    const done = log.items.includes(it.id);
+    h += '<div class="pitem ' + (done ? 'done' : '') + '">';
+    h += '<input type="checkbox" data-item="' + it.id + '" ' + (done ? 'checked' : '') + ' aria-label="done">';
+    h += '<div class="ptext"><span class="pcat">' + it.cat + ' · ' + it.min + ' min</span><br>' + it.text;
+    h += '<div class="plink row">';
+    if (it.met) h += '<button class="btn small" data-met="' + it.met + '">🎵 Metronome ' + it.met + '</button>';
+    if (it.link && it.link.spec) h += '<button class="btn small" data-dl="' + encodeURIComponent(JSON.stringify(it.link.spec)) + '">↪ ' + it.link.label + '</button>';
+    if (it.link && it.link.href) h += '<a class="btn small" style="text-decoration:none; display:inline-flex; align-items:center" href="' + it.link.href + '" target="_blank" rel="noopener">↗ ' + it.link.label + '</a>';
+    h += '</div></div></div>';
+  }
+  if (doneCount === wk.items.length) h += '<p class="okmark" style="text-align:center; margin:10px 0 2px">Session complete — see you tomorrow! 🤘</p>';
+  h += '</div>';
+
+  // metronome
+  h += metronomeHtml();
+
+  // checkpoints
+  h += '<div class="card"><b>Week ' + wk.n + ' checkpoints</b>';
+  h += '<p class="muted small" style="margin:4px 0 6px">Check these honestly — they gate when you\'re ready for the next week. They stay checked (unlike the daily list).</p>';
+  for (const cp of wk.checkpoints){
+    const done = !!S.practice.checkpoints[cp.id];
+    h += '<div class="checkpoint"><label class="chk"><input type="checkbox" data-cp="' + cp.id + '" ' + (done ? 'checked' : '') + '> <span>' + cp.text + '</span></label></div>';
+  }
+  h += '</div>';
+
+  // theory dose
+  const cards = wk.theory.filter(id => !S.practice.dismissed.includes(id));
+  if (cards.length){
+    h += '<h3>This week\'s theory dose</h3>';
+    for (const id of cards) h += theoryCard(id);
+  }
+  h += theoryCard('rootsJob');
+
+  // report card
+  const w3 = weekOf(3);
+  if (w3.checkpoints.every(c => S.practice.checkpoints[c.id])){
+    h += '<div class="card" style="border-color:var(--good)"><b>🏁 3 weeks done — report to Claude</b>';
+    h += '<p class="muted small" style="margin:4px 0 6px">Copy this summary and paste it into a chat with Claude to get a personalized weeks 4–5 program.</p>';
+    h += '<div class="copybox" id="reportBox">' + reportText() + '</div>';
+    h += '<button class="btn primary" id="copyReport">📋 Copy report</button>';
+    h += '</div>';
+  }
+
+  // resources
+  h += '<div class="card resource"><b>Resources</b><ul style="margin:8px 0 0; padding-left:18px">' +
+    '<li><a href="https://www.studybass.com/study-guide/" target="_blank" rel="noopener">StudyBass study guide</a> — structured free lessons, great theory grounding</li>' +
+    '<li><a href="https://www.talkingbass.net/lessonmap/" target="_blank" rel="noopener">TalkingBass lesson map</a> — huge free lesson index by topic</li>' +
+    '<li><a href="https://www.youtube.com/@BassBuzz" target="_blank" rel="noopener">BassBuzz (YouTube)</a> — start with “5 Beginner Bass Mistakes”</li>' +
+    '<li><a href="https://www.songsterr.com/a/wsa/acdc-tnt-bass-tab-s407" target="_blank" rel="noopener">Songsterr: T.N.T. bass tab</a> — scrolling tab with playback</li>' +
+    '<li><a href="https://bigbasstabs.com/" target="_blank" rel="noopener">BigBassTabs</a> — free bass tab library for your next songs</li>' +
+    '</ul></div>';
+
+  el.innerHTML = h;
+
+  // wire up
+  el.querySelectorAll('[data-wk]').forEach(b => b.addEventListener('click', () => {
+    S.practice.week = +b.dataset.wk; save(); renderPractice();
+  }));
+  el.querySelectorAll('[data-item]').forEach(c => c.addEventListener('change', () => {
+    const log2 = dayLog();
+    if (c.checked){ if (!log2.items.includes(c.dataset.item)) log2.items.push(c.dataset.item); }
+    else log2.items = log2.items.filter(x => x !== c.dataset.item);
+    save(); renderPractice();
+  }));
+  el.querySelectorAll('[data-cp]').forEach(c => c.addEventListener('change', () => {
+    S.practice.checkpoints[c.dataset.cp] = c.checked; save(); renderPractice();
+  }));
+  el.querySelectorAll('[data-met]').forEach(b => b.addEventListener('click', () => {
+    Metro.setBpm(+b.dataset.met); Metro.start();
+    const mc = document.getElementById('metCard');
+    if (mc) mc.scrollIntoView({ behavior:'smooth', block:'center' });
+  }));
+  el.querySelectorAll('[data-dl]').forEach(b => b.addEventListener('click', () => {
+    deepLink(JSON.parse(decodeURIComponent(b.dataset.dl)));
+  }));
+  const cpBtn = document.getElementById('copyReport');
+  if (cpBtn) cpBtn.addEventListener('click', () => {
+    const txt = document.getElementById('reportBox').textContent;
+    (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(
+      () => { cpBtn.textContent = '✓ Copied!'; setTimeout(() => cpBtn.textContent = '📋 Copy report', 1500); },
+      () => { /* fallback: select text */ const r = document.createRange(); r.selectNodeContents(document.getElementById('reportBox')); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); }
+    );
+  });
+  mountMetronome();
+}
+
+function reportText(){
+  const ps = practiceStats();
+  const st = S.stats;
+  const acc = st.answered ? Math.round(100 * st.correct / st.answered) : 0;
+  const perStr = Object.keys(st.byString).map(n => {
+    const s = st.byString[n];
+    return '  - ' + n + ' string: ' + Math.round(100 * s.c / s.a) + '% (' + s.c + '/' + s.a + ')';
+  }).join('\n');
+  const cps = WEEKS.map(w =>
+    'Week ' + w.n + ': ' + w.checkpoints.map(c => (S.practice.checkpoints[c.id] ? '✓' : '✗')).join(' ')
+  ).join('; ');
+  return 'Hi Claude! I just finished the 3-week beginner program in my Bass Theory Trainer app. Please design weeks 4-5 for me.\n\n' +
+    'My setup: 5-string bass (BEADG), goal = rock/metal, 20-30 min/day.\n' +
+    'Program completed: ' + cps + '\n' +
+    'Days practiced: ' + ps.total + ' (current streak ' + ps.streak + ')\n' +
+    'Note trainer: ' + acc + '% lifetime accuracy over ' + st.answered + ' questions, best streak ' + st.bestStreak + '\n' +
+    (perStr ? 'Per string:\n' + perStr + '\n' : '') +
+    'What I can do now: chromatic warmup @70bpm, clean eighth notes @70bpm, E minor pentatonic open + moveable box, TNT verse & chorus.\n' +
+    'Please give me: a weeks 4-5 plan (same 25-30 min daily shape), 1-2 next songs slightly harder than TNT, and the next theory concepts to learn.';
+}
+
+/* ================= BOOT ================= */
+document.getElementById('tabbar').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (b){ stopPlayback(); show(b.dataset.tab); }
+});
+document.getElementById('tuneToggle').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  S.tuning = +b.dataset.t;
+  document.querySelectorAll('#tuneToggle button').forEach(x =>
+    x.classList.toggle('on', x === b));
+  save();
+  stopPlayback();
+  render(currentTab);
+});
+document.querySelectorAll('#tuneToggle button').forEach(x =>
+  x.classList.toggle('on', +x.dataset.t === S.tuning));
+// unlock audio on first touch (mobile requirement)
+document.body.addEventListener('pointerdown', () => Audio_.ensure(), { once:true });
+show('practice');
+</script>
+</body>
+</html>
