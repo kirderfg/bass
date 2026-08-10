@@ -203,6 +203,7 @@ input[type=range]{width:100%; accent-color:var(--root); min-height:44px;}
   box-shadow:0 6px 18px rgba(0,0,0,.45);
 }
 #metrobar.on{display:flex;}
+body.metro-on{padding-bottom:calc(140px + env(safe-area-inset-bottom));}
 #metrobar .mb-bpm{font-weight:800; font-size:16px;}
 #metrobar .mb-dot{width:10px; height:10px; border-radius:50%; background:var(--root); opacity:.25;}
 #metrobar .mb-dot.tick{opacity:1;}
@@ -300,9 +301,10 @@ function defaultState(){
     },
     stats:{
       answered:0, correct:0, bestStreak:0,
-      byString:{},        // 'E': {a:0,c:0}
+      byString:{},        // 'E': {a:0,c:0,recent:[0/1...]}
       heat:{},            // 'E:3' -> mistakes
-      tierDone:{}         // tier index -> best % this tier
+      tierRecent:{},      // tier index -> last 20 answers (0/1)
+      speed:[]            // last 20 answer times, seconds
     },
     practice:{
       week:1,
@@ -670,7 +672,8 @@ function renderScales(){
   if (view === 'open'){
     h += '<p class="muted small" style="margin:8px 2px 0">Open position = frets 0–5, using open strings where you can. Home base for beginners.</p>';
   } else if (view === 'box'){
-    h += '<p class="muted small" style="margin:8px 2px 0">The moveable box, anchored where the root (' + S.scales.root + ') sits on your lowest string — fret ' + anchor + '. Slide the whole box to a new root and it\'s the same scale in a new key. Numbers on the dots = suggested finger (1=index, 2=middle, 3=ring, 4=pinky).</p>';
+    h += '<p class="muted small" style="margin:8px 2px 0">The moveable box, anchored where the root (' + S.scales.root + ') sits on your lowest string — fret ' + anchor + '. Slide the whole box to a new root and it\'s the same scale in a new key. Numbers on the dots = suggested finger (1=index, 2=middle, 3=ring, 4=pinky).' +
+      (anchor >= 10 ? ' Cramped this high up? Slide the identical shape lower — anchored at fret 5 it becomes ' + noteName(TUNINGS[S.tuning].midi[0] + 5, false) + ' ' + sc.name.toLowerCase() + '.' : '') + '</p>';
   } else {
     h += '<p class="muted small" style="margin:8px 2px 0">Every ' + S.scales.root + ' ' + sc.name.toLowerCase() + ' note, frets 0–12. Notice the patterns repeating.</p>';
   }
@@ -684,8 +687,8 @@ function renderScales(){
 
   el.innerHTML = h;
 
-  // fretboard
-  const frets = view === 'open' ? 5 : 12;
+  // fretboard — box view extends past fret 12 when the shape needs it
+  const frets = view === 'open' ? 5 : (view === 'box' ? Math.max(12, boxHi) : 12);
   const boxWin = view === 'box' ? [anchor, boxHi] : null;
   scaleFbHandle = drawFretboard(document.getElementById('scaleFb'), {
     frets,
@@ -982,6 +985,15 @@ function recordAnswer(ok, q){
   if (!bs.recent) bs.recent = [];
   bs.recent.push(ok ? 1 : 0);
   if (bs.recent.length > 20) bs.recent.shift();
+  if (!S.stats.tierRecent) S.stats.tierRecent = {};
+  const tr = S.stats.tierRecent[S.trainer.tier] || (S.stats.tierRecent[S.trainer.tier] = []);
+  tr.push(ok ? 1 : 0);
+  if (tr.length > 20) tr.shift();
+  if (T.qStart){
+    if (!S.stats.speed) S.stats.speed = [];
+    S.stats.speed.push(Math.min(30, (Date.now() - T.qStart) / 1000));
+    if (S.stats.speed.length > 20) S.stats.speed.shift();
+  }
   if (ok){
     T.session.streak++;
     T.session.score++;
@@ -1009,8 +1021,9 @@ function renderTrainer(){
   if (mode !== 'study'){
     h += '<h3>Difficulty</h3><select id="trTier" style="width:100%">' + TIERS.map((t, i) => {
       const locked = t.strings.includes('B') && S.tuning === 4;
-      return '<option value="' + i + '" ' + (i === S.trainer.tier ? 'selected' : '') + '>' +
-        'Tier ' + t.label + (locked ? ' (B needs 5-string mode)' : '') + '</option>';
+      const dis = locked && !t.accidentals; // tier 5 still works on 4-string (accidentals), tier 4 is pure B-string
+      return '<option value="' + i + '" ' + (i === S.trainer.tier ? 'selected' : '') + (dis ? ' disabled' : '') + '>' +
+        'Tier ' + t.label + (dis ? ' — needs the 5-string toggle' : '') + '</option>';
     }).join('') + '</select>';
     h += '<p class="muted small" style="margin:6px 2px 2px">' + tier.tip + '</p>';
   }
@@ -1111,8 +1124,12 @@ function quizShellHtml(mode, tier){
   h += '<div class="row between" style="margin-bottom:4px">';
   h += '<span class="small muted">Session: <b id="qScore" style="color:var(--text)">0</b> pts · streak <b id="qStreak" style="color:var(--root)">0</b></span>';
   h += '<button class="btn small ghost" id="qSkip">Skip →</button></div>';
-  if (S.trainer.focus && S.trainer.focus.length){
-    h += '<div class="row" style="margin-bottom:4px"><span class="small" style="background:#2b3242; border-radius:99px; padding:6px 12px">🎯 Focus: ' + S.trainer.focus.join(' + ') + ' string only <button class="btn small ghost" id="qFocusOff" style="min-height:30px; padding:2px 8px; margin-left:4px">✕ clear</button></span></div>';
+  if (tier.strings.length > 1){
+    const f = S.trainer.focus;
+    h += '<div class="row" style="margin-bottom:4px"><span class="small muted">Drill:</span><div class="seg compact" id="qFocus">' +
+      '<button data-k="" class="' + (!f || !f.length ? 'on' : '') + '">All strings</button>' +
+      tier.strings.map(s => '<button data-k="' + s + '" class="' + (f && f.includes(s) ? 'on' : '') + '">' + s + ' only</button>').join('') +
+      '</div></div>';
   }
   h += '<div class="quiz-q" id="qText"></div>';
   h += '<div id="quizFb"></div>' + fbCaption();
@@ -1125,11 +1142,11 @@ function mountQuiz(){
   drawQuiz();
   const skip = document.getElementById('qSkip');
   if (skip) skip.addEventListener('click', () => { newQuestion(); drawQuiz(); });
-  const foff = document.getElementById('qFocusOff');
-  if (foff) foff.addEventListener('click', () => { S.trainer.focus = null; save(); renderTrainer(); });
+  bindSeg('qFocus', k => { S.trainer.focus = k ? [k] : null; save(); renderTrainer(); });
 }
 function drawQuiz(){
   clearTimeout(T.timer);
+  T.qStart = Date.now();
   const q = T.q;
   const tier = tierFor(S.trainer.tier);
   const qText = document.getElementById('qText');
@@ -1258,7 +1275,16 @@ function statsHtml(){
   h += '<div class="stat"><b>' + st.correct + '</b><span>correct</span></div>';
   h += '<div class="stat"><b>' + acc + '%</b><span>accuracy</span></div>';
   h += '<div class="stat"><b>' + st.bestStreak + '</b><span>best streak</span></div>';
+  if (st.speed && st.speed.length >= 5){
+    const avg = st.speed.reduce((a, b) => a + b, 0) / st.speed.length;
+    h += '<div class="stat"><b>' + avg.toFixed(1) + 's</b><span>avg answer' + (avg < 2 ? ' ✓' : '') + '</span></div>';
+  }
   h += '</div>';
+  const tr = (st.tierRecent || {})[S.trainer.tier];
+  if (tr && tr.length >= 20 && S.trainer.tier < TIERS.length - 1 &&
+      tr.reduce((a, b) => a + b, 0) / tr.length >= 0.9){
+    h += '<p class="small" style="margin:4px 0; color:var(--good)">🎉 You own this tier — your last 20 answers here are 90%+. Ready to try tier ' + (S.trainer.tier + 2) + '?</p>';
+  }
   const names = TUNINGS[S.tuning].names;
   const perStr = names.slice().reverse().map(n => {
     const s = st.byString[n];
@@ -1330,6 +1356,7 @@ const Metro = (() => {
   function ui(){
     const bar = document.getElementById('metrobar');
     bar.classList.toggle('on', running);
+    document.body.classList.toggle('metro-on', running);
     document.getElementById('mbBpm').textContent = bpm + ' bpm';
     const big = document.getElementById('bpmBig');
     if (big) big.innerHTML = bpm + ' <small>bpm</small>';
@@ -1383,7 +1410,7 @@ const WEEKS = [
     ],
     checkpoints:[
       { id:'w1cp0', text:'Chromatic warmup is clean at 60 bpm (no buzzes, one finger per fret)' },
-      { id:'w1cp1', text:'I can name any note on E or A, frets 0–5, in under 2 seconds' },
+      { id:'w1cp1', text:'I can name any note on E or A, frets 0–5, in under 2 seconds ("avg answer" in trainer stats helps check this)' },
       { id:'w1cp2', text:'My thumb mutes the B string without me thinking about it' }
     ],
     theory:['fretHalfStep','bcef'] },
@@ -1400,8 +1427,8 @@ const WEEKS = [
       { id:'w2d', cat:'Music', min:10,
         text:'Pentatonic groove: pick E → G → A, play eighth notes on each for 4 beats, loop it. Stay locked to the click — smooth switches matter more than speed.', met:65 },
       { id:'w2e', cat:'Bonus', min:5,
-        text:'Note trainer: "Find the note" on E + A naturals. Aim for 90%+ accuracy.',
-        link:{ label:'Find the note (tier 1)', spec:{ tab:'trainer', trainer:{ tier:0, mode:'find' } } } }
+        text:'Note trainer: "Find the note" on E + A naturals. Use the "E only" drill button to bank 20 E-string answers at 90%+.',
+        link:{ label:'Find the note (tier 1)', spec:{ tab:'trainer', trainer:{ tier:0, mode:'find', focus:null } } } }
     ],
     checkpoints:[
       { id:'w2cp0', text:'2 minutes of clean, even eighth notes at 70 bpm' },
