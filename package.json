@@ -1,0 +1,10 @@
+{
+  "name": "bass-trainer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Bass Theory Trainer + Bass Live Trainer — self-contained web apps, no build step",
+  "scripts": {
+    "test": "node --test 'trainer/test/*.test.js'",
+    "test:watch": "node --test --watch 'trainer/test/*.test.js'"
+  }
+}
