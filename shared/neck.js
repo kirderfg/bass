@@ -1,8 +1,12 @@
-/* Shared bass-neck renderer for the Bass Theory Trainer and Bass Live Trainer.
-   Draws an SVG fingerboard that reads as an instrument rather than a table.
-   Colours come from CSS custom properties so the theme can change without
-   touching this file. Loads in the browser as `BassNeck`, and in Node via
-   require() so the geometry can be unit-tested. */
+/* ============================================================
+   Shared bass-neck renderer — used by both apps, verbatim.
+   Draws an SVG fingerboard that reads as an instrument rather than
+   a table. All colour comes from CSS custom properties (see
+   shared/theme.css), so restyling never touches this file.
+
+   Loads in the browser as `BassNeck`; require()-able in Node so the
+   geometry can be unit-tested.
+   ============================================================ */
 (function (root, factory) {
   const api = factory();
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
@@ -10,65 +14,67 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  const STRING_H = 30;        // vertical distance between strings
-  const PAD_TOP = 18;         // room above the top string
-  const PAD_BOTTOM = 18;
-  const NUT_W = 9;
+  /* Two shipping sizes: `play` for anything tappable (44px+ targets),
+     `read` for hint boards. `micro` exists only inside drill diagrams. */
+  const SCALES = {
+    play:  { openCol:34, nut:7, col:46, row:46, dot:15, inlay:5.5, fretNum:20, label:13,   gaugeMul:1,    finger:true  },
+    read:  { openCol:26, nut:5, col:34, row:30, dot:11, inlay:4.0, fretNum:16, label:10.5, gaugeMul:0.68, finger:false },
+    micro: { openCol:18, nut:4, col:26, row:22, dot:8.5, inlay:3.0, fretNum:13, label:9,   gaugeMul:0.5,  finger:false },
+  };
+  // Relative gauges of a real 5-string set (.130 → .045). The low B has to
+  // look like the low B; this is the detail that sells the instrument.
+  const GAUGES_5 = [4.6, 3.7, 3.0, 2.4, 1.9];
   const INLAY_FRETS = [3, 5, 7, 9, 15, 17, 19, 21];
   const DOUBLE_INLAY_FRETS = [12, 24];
+  // String pitch at the nut vs at the last drawn fret: the neck splays.
+  const TAPER_NUT = 0.93, TAPER_END = 1.0;
 
-  /**
-   * Lay out the neck.
-   *
-   * Real frets crowd together toward the bridge (each is 1/17.817 of the
-   * remaining string). Using that spacing verbatim makes fret 12 too narrow
-   * to tap, so we blend true spacing with even spacing: enough taper to look
-   * like a neck, enough width to stay playable on a phone.
-   *
-   * @returns {{width, height, frets:[{n,x,width,center}], strings:[{i,y,gauge}], inlays}}
-   */
   function geometry(opts) {
+    const S = SCALES[opts.scale || 'play'];
     const fromFret = opts.fromFret || 0;
     const toFret = opts.toFret != null ? opts.toFret : 12;
     const nStrings = opts.strings || 5;
-    const minFretWidth = opts.minFretWidth || 46;
-    const TAPER = 0.55;       // 0 = even spacing, 1 = true fret spacing
+    const showNumbers = opts.showFretNumbers !== false;
 
-    // Fractional distance from the nut, blended.
-    const pos = (n) => {
-      const trueP = 1 - Math.pow(2, -n / 12);
-      const evenP = n / 12;
-      return TAPER * trueP + (1 - TAPER) * evenP;
-    };
-
-    // Raw (unscaled) widths for the frets in view. Fret 0 is the open-string
-    // column and gets the width of fret 1 so open notes have room.
-    const raw = [];
-    for (let n = fromFret; n <= toFret; n++) {
-      raw.push(n === 0 ? pos(1) - pos(0) : pos(n) - pos(n - 1));
-    }
-    const narrowest = Math.min.apply(null, raw);
-    const scale = minFretWidth / narrowest;
+    const padT = Math.round(S.row * 0.18) + (opts.window ? 16 : 0);
+    const padB = padT;
 
     const frets = [];
-    let x = fromFret === 0 ? NUT_W : 0;
-    for (let i = 0; i < raw.length; i++) {
-      const width = raw[i] * scale;
-      const n = fromFret + i;
-      frets.push({ n, x, width, center: x + width / 2 });
-      x += width;
+    let x = 0;
+    if (fromFret === 0) {
+      frets.push({ n: 0, x: 0, width: S.openCol, center: S.openCol / 2, open: true });
+      x = S.openCol + S.nut;
+    }
+    for (let n = Math.max(1, fromFret); n <= toFret; n++) {
+      frets.push({ n, x, width: S.col, center: x + S.col / 2 });
+      x += S.col;
     }
 
-    // Strings: index 0 is the lowest (fattest) and renders at the bottom.
-    // Gauges echo a real set (.130 down to .045) so the low B looks low.
-    const gaugeFor = (i, total) => {
-      const fromTop = total - 1 - i;          // 0 = highest string
-      return 1.6 + fromTop * 0.62;
-    };
+    const boardStart = fromFret === 0 ? S.openCol : 0;
+    const boardEnd = x;
+    const centerY = padT + (nStrings - 1) * S.row / 2;
+
+    /** Vertical string spacing at a given x — this is the taper. */
+    function pitchAt(px) {
+      const span = boardEnd - boardStart;
+      const t = span > 0 ? Math.min(1, Math.max(0, (px - boardStart) / span)) : 0;
+      return S.row * (TAPER_NUT + (TAPER_END - TAPER_NUT) * t);
+    }
+    /** y of string `i` (0 = lowest) at horizontal position `px`. */
+    function stringY(i, px) {
+      const fromTop = nStrings - 1 - i;
+      return centerY + (fromTop - (nStrings - 1) / 2) * pitchAt(px);
+    }
+
+    const gauges = (nStrings === 5 ? GAUGES_5 : GAUGES_5.slice(1));
     const strings = [];
     for (let i = 0; i < nStrings; i++) {
-      const fromTop = nStrings - 1 - i;
-      strings.push({ i, y: PAD_TOP + fromTop * STRING_H, gauge: gaugeFor(i, nStrings) });
+      strings.push({
+        i,
+        gauge: +(gauges[gauges.length - 1 - (nStrings - 1 - i)] * S.gaugeMul).toFixed(4),
+        y0: stringY(i, boardStart),
+        y1: stringY(i, boardEnd),
+      });
     }
 
     const inRange = (f) => f >= Math.max(1, fromFret) && f <= toFret;
@@ -77,218 +83,301 @@
       .sort((a, b) => a.fret - b.fret);
 
     return {
-      width: x,
-      height: PAD_TOP + (nStrings - 1) * STRING_H + PAD_BOTTOM,
-      frets, strings, inlays,
-      fromFret, toFret, nStrings,
-      stringH: STRING_H,
+      S, width: boardEnd,
+      height: padT + (nStrings - 1) * S.row + padB + (showNumbers ? S.fretNum : 0),
+      boardHeight: padT + (nStrings - 1) * S.row + padB,
+      frets, strings, inlays, stringY, pitchAt,
+      boardStart, boardEnd, centerY, padT, nStrings, fromFret, toFret, showNumbers,
     };
   }
 
-  /* ------------------------------------------------------------------ */
-  /* rendering                                                           */
-  /* ------------------------------------------------------------------ */
-
-  const NS = 'http://www.w3.org/2000/svg';
-  function el(name, attrs) {
-    const node = document.createElementNS(NS, name);
-    for (const k in attrs) node.setAttribute(k, attrs[k]);
-    return node;
+  /** Overlapping fret windows, so a long neck can be paged instead of scrolled. */
+  function windows(toFret, size) {
+    const span = size || 5;
+    if (toFret <= span) return [[0, toFret]];
+    const out = [];
+    let lo = 0;
+    while (lo + span < toFret) {
+      out.push([lo, lo + span]);
+      lo += span - 1;                      // overlap by one fret for continuity
+    }
+    out.push([Math.max(0, toFret - span), toFret]);
+    return out;
   }
-  let defsId = 0;
+
+  /* ------------------------------------------------------------------ */
+  const NS = 'http://www.w3.org/2000/svg';
+  let uidSeq = 0;
+  function el(name, attrs) {
+    const n = document.createElementNS(NS, name);
+    for (const k in attrs) if (attrs[k] != null) n.setAttribute(k, attrs[k]);
+    return n;
+  }
+  function grad(id, stops, horizontal) {
+    const g = el('linearGradient', horizontal
+      ? { id, x1: '0', y1: '0', x2: '1', y2: '0' }
+      : { id, x1: '0', y1: '0', x2: '0', y2: '1' });
+    for (const [offset, color] of stops) g.appendChild(el('stop', { offset, 'stop-color': color }));
+    return g;
+  }
 
   /**
    * Render a neck into `host`.
    *
-   * opts:
-   *   strings        ['B','E','A','D','G'] low → high
-   *   fromFret/toFret
-   *   markers        [{ si, fret, kind, label, finger }]
-   *                  kind: root | tone | highlight | correct | wrong | ghost
-   *   window         [lo, hi] frets to spotlight; others dimmed
-   *   dimStrings     [si, ...] strings to fade out
-   *   onTap(si, fret)
-   *   scrollToFret   n
+   * opts: strings (['B','E','A','D','G'] low→high), fromFret, toFret,
+   *       scale ('play'|'read'|'micro'), markers [{si,fret,kind,label,finger}],
+   *       window [lo,hi], windowLabel, dimStrings [si], onTap(si,fret),
+   *       scrollToFret, animate
+   * marker kinds: root | tone | highlight | ghost | correct | wrong | asked
    */
   function render(host, opts) {
     const names = opts.strings;
     const g = geometry({
-      fromFret: opts.fromFret || 0,
-      toFret: opts.toFret != null ? opts.toFret : 12,
-      strings: names.length,
-      minFretWidth: opts.minFretWidth,
+      fromFret: opts.fromFret, toFret: opts.toFret, strings: names.length,
+      scale: opts.scale, showFretNumbers: opts.showFretNumbers, window: opts.window,
     });
-    const uid = 'nk' + (++defsId);
-    const showNumbers = opts.showFretNumbers !== false;
-    const numbersH = showNumbers ? 20 : 0;
+    const S = g.S;
+    const uid = 'nk' + (++uidSeq);
+    const dim = opts.dimStrings || [];
 
     host.innerHTML = '';
     host.classList.add('neck');
 
-    // String names live OUTSIDE the scrolling area, so they can never be
-    // covered by the board when it scrolls.
+    /* String names live OUTSIDE the scroll container, so the board can never
+       cover them (a bug we shipped once already). */
     const labels = document.createElement('div');
     labels.className = 'neck-labels';
-    labels.style.paddingTop = g.strings[0].y - 10 + 'px';
-    labels.style.paddingBottom = numbersH + 'px';
     for (let i = names.length - 1; i >= 0; i--) {
       const l = document.createElement('span');
-      l.className = 'neck-label' + (i === 0 ? ' is-lowest' : '');
-      if (opts.dimStrings && opts.dimStrings.indexOf(i) >= 0) l.classList.add('is-dim');
-      l.style.height = g.stringH + 'px';
+      l.className = 'neck-label' + (i === 0 ? ' is-lowest' : '') +
+                    (dim.indexOf(i) >= 0 ? ' is-dim' : '');
+      l.style.position = 'absolute';
       l.textContent = names[i];
       labels.appendChild(l);
     }
+    labels.style.position = 'relative';
+    labels.style.width = (S.label + 6) + 'px';
+    labels.style.height = g.height + 'px';
+    Array.prototype.forEach.call(labels.children, (l, idx) => {
+      const i = names.length - 1 - idx;
+      l.style.top = (g.stringY(i, g.boardStart) - 9) + 'px';
+      l.style.right = '7px';
+      l.style.fontSize = (S.label) + 'px';
+    });
 
     const scroll = document.createElement('div');
     scroll.className = 'neck-scroll';
-
     const svg = el('svg', {
-      class: 'neck-svg',
-      width: g.width,
-      height: g.height + numbersH,
-      viewBox: '0 0 ' + g.width + ' ' + (g.height + numbersH),
-      role: 'img',
+      class: 'neck-svg', width: g.width, height: g.height,
+      viewBox: '0 0 ' + g.width + ' ' + g.height, role: 'img',
     });
+    if (opts.title) {
+      const t = el('title'); t.textContent = opts.title; svg.appendChild(t);
+    }
 
-    // ---- defs: fingerboard wood, fret wire, string sheen ----
     const defs = el('defs');
-    const wood = el('linearGradient', { id: uid + 'wood', x1: '0', y1: '0', x2: '0', y2: '1' });
-    wood.appendChild(el('stop', { offset: '0', 'stop-color': 'var(--fb-wood-hi)' }));
-    wood.appendChild(el('stop', { offset: '0.55', 'stop-color': 'var(--fb-wood)' }));
-    wood.appendChild(el('stop', { offset: '1', 'stop-color': 'var(--fb-wood-lo)' }));
-    defs.appendChild(wood);
-
-    const wire = el('linearGradient', { id: uid + 'wire', x1: '0', y1: '0', x2: '1', y2: '0' });
-    wire.appendChild(el('stop', { offset: '0', 'stop-color': 'var(--fb-wire-hi)' }));
-    wire.appendChild(el('stop', { offset: '0.5', 'stop-color': 'var(--fb-wire)' }));
-    wire.appendChild(el('stop', { offset: '1', 'stop-color': 'var(--fb-wire-lo)' }));
-    defs.appendChild(wire);
-
-    const strGrad = el('linearGradient', { id: uid + 'str', x1: '0', y1: '0', x2: '0', y2: '1' });
-    strGrad.appendChild(el('stop', { offset: '0', 'stop-color': 'var(--fb-string-hi)' }));
-    strGrad.appendChild(el('stop', { offset: '0.45', 'stop-color': 'var(--fb-string)' }));
-    strGrad.appendChild(el('stop', { offset: '1', 'stop-color': 'var(--fb-string-lo)' }));
-    defs.appendChild(strGrad);
+    defs.appendChild(grad(uid + 'wood', [['0', 'var(--wood-hi)'], ['0.5', 'var(--wood)'], ['1', 'var(--wood-lo)']]));
+    defs.appendChild(grad(uid + 'wire', [['0', 'var(--wire-hi)'], ['0.45', 'var(--wire)'], ['1', 'var(--wire-lo)']], true));
+    defs.appendChild(grad(uid + 'rootg', [['0', '#FFC163'], ['1', '#E8952B']]));
     svg.appendChild(defs);
 
-    // ---- fingerboard ----
-    const boardX = g.fromFret === 0 ? NUT_W : 0;
-    svg.appendChild(el('rect', {
-      x: 0, y: g.strings[g.strings.length - 1].y - g.stringH * 0.6,
-      width: g.width,
-      height: (g.nStrings - 1) * g.stringH + g.stringH * 1.2,
-      rx: 3, fill: 'url(#' + uid + 'wood)',
+    /* ---- open-string column: --s2, not wood. This is what makes the nut
+       read as the END of the neck rather than a divider inside it. ---- */
+    const edgeTop = (px) => g.stringY(g.nStrings - 1, px) - S.row * 0.6;
+    const edgeBot = (px) => g.stringY(0, px) + S.row * 0.6;
+
+    if (g.fromFret === 0) {
+      svg.appendChild(el('rect', {
+        x: 0, y: edgeTop(0), width: S.openCol,
+        height: edgeBot(0) - edgeTop(0), rx: 3, fill: 'var(--s2)',
+      }));
+    }
+
+    /* ---- fingerboard: a trapezoid, because the neck splays ---- */
+    const bs = g.boardStart + (g.fromFret === 0 ? S.nut : 0);
+    const be = g.boardEnd;
+    svg.appendChild(el('path', {
+      d: 'M' + bs + ' ' + edgeTop(bs) + 'L' + be + ' ' + edgeTop(be) +
+         'L' + be + ' ' + edgeBot(be) + 'L' + bs + ' ' + edgeBot(bs) + 'Z',
+      fill: 'url(#' + uid + 'wood)',
     }));
+    // grain: a few straight lines at irregular positions — never a texture
+    // dense enough to shimmer while scrolling
+    [0.18, 0.34, 0.52, 0.71, 0.86].forEach((f, k) => {
+      const y0 = edgeTop(bs) + (edgeBot(bs) - edgeTop(bs)) * f;
+      const y1 = edgeTop(be) + (edgeBot(be) - edgeTop(be)) * f;
+      svg.appendChild(el('line', {
+        x1: bs, y1: y0, x2: be, y2: y1,
+        stroke: k === 2 ? 'rgba(0,0,0,.25)' : 'rgba(255,255,255,' + (0.022 + (k % 3) * 0.008) + ')',
+        'stroke-width': 1,
+      }));
+    });
+    // lit top edge / shaded bottom edge: the board becomes a solid object
+    svg.appendChild(el('line', { x1: bs, y1: edgeTop(bs), x2: be, y2: edgeTop(be), stroke: 'rgba(255,255,255,.07)', 'stroke-width': 1 }));
+    svg.appendChild(el('line', { x1: bs, y1: edgeBot(bs), x2: be, y2: edgeBot(be), stroke: 'rgba(0,0,0,.55)', 'stroke-width': 1 }));
 
-    const boardTop = g.strings[g.strings.length - 1].y - g.stringH * 0.6;
-    const boardH = (g.nStrings - 1) * g.stringH + g.stringH * 1.2;
-
-    // ---- inlay markers, behind the strings ----
-    const midY = boardTop + boardH / 2;
+    /* ---- inlays: on the board, under the strings ---- */
     for (const inlay of g.inlays) {
       const f = g.frets.find(fr => fr.n === inlay.fret);
       if (!f) continue;
-      if (inlay.double) {
-        svg.appendChild(el('circle', { cx: f.center, cy: midY - g.stringH * 0.75, r: 5.5, class: 'neck-inlay' }));
-        svg.appendChild(el('circle', { cx: f.center, cy: midY + g.stringH * 0.75, r: 5.5, class: 'neck-inlay' }));
-      } else {
-        svg.appendChild(el('circle', { cx: f.center, cy: midY, r: 5.5, class: 'neck-inlay' }));
+      const top = edgeTop(f.center), bot = edgeBot(f.center);
+      const ys = inlay.double
+        ? [top + (bot - top) * 0.28, top + (bot - top) * 0.72]
+        // With an odd string count the centre line is a string, so sit the
+        // dot in the gap below it rather than under the string itself.
+        : [(top + bot) / 2 + (g.nStrings % 2 ? g.pitchAt(f.center) * 0.5 : 0)];
+      for (const cy of ys) {
+        svg.appendChild(el('circle', { cx: f.center, cy, r: S.inlay, class: 'neck-inlay' }));
       }
     }
 
-    // ---- fret wire ----
+    /* ---- fret wire: a lit cylinder, following the taper ---- */
+    const wireW = S.col >= 40 ? 3 : 2;
     for (const f of g.frets) {
-      if (f.n === g.fromFret && g.fromFret === 0) continue; // nut drawn separately
+      if (f.open) continue;
+      const wx = f.x + f.width;                  // wire sits at the fret's far edge
       svg.appendChild(el('rect', {
-        x: f.x - 1.4, y: boardTop, width: 2.8, height: boardH,
-        fill: 'url(#' + uid + 'wire)',
+        x: wx - wireW / 2, y: edgeTop(wx), width: wireW,
+        height: edgeBot(wx) - edgeTop(wx), fill: 'url(#' + uid + 'wire)',
       }));
     }
-    // trailing wire on the right edge
-    const lastF = g.frets[g.frets.length - 1];
-    svg.appendChild(el('rect', {
-      x: lastF.x + lastF.width - 1.4, y: boardTop, width: 2.8, height: boardH,
-      fill: 'url(#' + uid + 'wire)',
-    }));
     if (g.fromFret === 0) {
+      const nx = S.openCol;
       svg.appendChild(el('rect', {
-        x: 0, y: boardTop, width: NUT_W, height: boardH, rx: 1.5, class: 'neck-nut',
+        x: nx, y: edgeTop(nx) - 2, width: S.nut,
+        height: (edgeBot(nx) - edgeTop(nx)) + 4, rx: 1.5, class: 'neck-nut',
+      }));
+      svg.appendChild(el('rect', {
+        x: nx + S.nut, y: edgeTop(nx) - 2, width: 1,
+        height: (edgeBot(nx) - edgeTop(nx)) + 4, fill: 'rgba(0,0,0,.5)',
       }));
     }
 
-    // ---- window spotlight (the "moveable box") ----
+    /* ---- the moveable box: framed like a viewfinder ---- */
     if (opts.window) {
       const lo = g.frets.find(f => f.n === opts.window[0]);
       const hi = g.frets.find(f => f.n === opts.window[1]);
       if (lo && hi) {
-        svg.appendChild(el('rect', {
-          x: lo.x, y: boardTop - 3,
-          width: (hi.x + hi.width) - lo.x, height: boardH + 6,
-          rx: 6, class: 'neck-window',
+        const wx0 = lo.x, wx1 = hi.x + hi.width;
+        // shade the board OUTSIDE the window; contents inside keep true colour
+        if (wx0 > 0) svg.appendChild(el('rect', { x: 0, y: 0, width: wx0, height: g.boardHeight, class: 'neck-shade' }));
+        if (wx1 < g.width) svg.appendChild(el('rect', { x: wx1, y: 0, width: g.width - wx1, height: g.boardHeight, class: 'neck-shade' }));
+        const wy0 = edgeTop(wx0) - 3, wy1 = edgeBot(wx1) + 3;
+        svg.appendChild(el('rect', { x: wx0, y: wy0, width: wx1 - wx0, height: wy1 - wy0, rx: 10, class: 'neck-window' }));
+        const B = 11;
+        [[wx0, wy0, 1, 1], [wx1, wy0, -1, 1], [wx0, wy1, 1, -1], [wx1, wy1, -1, -1]].forEach(([cx, cy, sx, sy]) => {
+          svg.appendChild(el('path', {
+            d: 'M' + (cx + sx * B) + ' ' + cy + 'L' + cx + ' ' + cy + 'L' + cx + ' ' + (cy + sy * B),
+            class: 'neck-bracket',
+          }));
+        });
+        if (opts.windowLabel !== false) {
+          const label = 'BOX · FRET ' + opts.window[0];
+          const pw = label.length * 6.2 + 14;
+          svg.appendChild(el('rect', { x: wx0 + 4, y: Math.max(0, wy0 - 15), width: pw, height: 15, rx: 7.5, class: 'neck-window-pill' }));
+          const t = el('text', { x: wx0 + 4 + pw / 2, y: Math.max(0, wy0 - 15) + 8, class: 'neck-window-pill-label' });
+          t.textContent = label;
+          svg.appendChild(t);
+        }
+      }
+    }
+
+    /* ---- strings: gauged, with a wound-metal sheen ---- */
+    for (const s of g.strings) {
+      const muted = dim.indexOf(s.i) >= 0;
+      const x0 = g.fromFret === 0 ? 0 : g.boardStart;
+      svg.appendChild(el('line', {
+        x1: x0, y1: g.stringY(s.i, x0), x2: g.boardEnd, y2: g.stringY(s.i, g.boardEnd),
+        stroke: muted ? 'rgba(110,107,100,.35)' : 'var(--string)',
+        'stroke-width': s.gauge, 'stroke-dasharray': muted ? '3 4' : null,
+        'stroke-linecap': 'round',
+      }));
+      if (!muted) {
+        const off = s.gauge / 2 - 0.6;
+        svg.appendChild(el('line', {
+          x1: x0, y1: g.stringY(s.i, x0) - off, x2: g.boardEnd, y2: g.stringY(s.i, g.boardEnd) - off,
+          stroke: 'rgba(255,255,255,.30)', 'stroke-width': 1,
+          'stroke-dasharray': s.gauge > 3.2 ? '1 2' : null,
+          opacity: s.gauge > 3.2 ? 0.55 : 1,
         }));
       }
     }
 
-    // ---- strings ----
-    for (const s of g.strings) {
-      const dim = opts.dimStrings && opts.dimStrings.indexOf(s.i) >= 0;
-      svg.appendChild(el('rect', {
-        x: g.fromFret === 0 ? NUT_W : 0, y: s.y - s.gauge / 2,
-        width: g.width - (g.fromFret === 0 ? NUT_W : 0), height: s.gauge,
-        fill: 'url(#' + uid + 'str)', opacity: dim ? 0.25 : 1, rx: s.gauge / 2,
-      }));
-    }
-
-    // ---- tap targets ----
+    /* ---- tap targets ---- */
     if (opts.onTap) {
       for (const s of g.strings) {
-        if (opts.dimStrings && opts.dimStrings.indexOf(s.i) >= 0) continue;
+        if (dim.indexOf(s.i) >= 0) continue;
         for (const f of g.frets) {
+          const cy = g.stringY(s.i, f.center);
           const hit = el('rect', {
-            x: f.x, y: s.y - g.stringH / 2, width: f.width, height: g.stringH,
-            class: 'neck-hit', 'data-s': s.i, 'data-f': f.n,
+            x: f.x, y: cy - S.row / 2, width: f.width, height: S.row,
+            class: 'neck-hit' + (f.open ? '' : ' neck-snap'),
+            'data-s': s.i, 'data-f': f.n, tabindex: '0', role: 'button',
+            'aria-label': names[s.i] + ' string, fret ' + f.n,
           });
-          hit.addEventListener('click', () => opts.onTap(s.i, f.n));
+          const fire = () => opts.onTap(s.i, f.n);
+          hit.addEventListener('click', fire);
+          hit.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fire(); }
+          });
           svg.appendChild(hit);
         }
       }
     }
 
-    // ---- note markers ----
-    for (const m of (opts.markers || [])) {
-      const s = g.strings[m.si];
+    /* ---- note markers ---- */
+    (opts.markers || []).forEach((m, idx) => {
       const f = g.frets.find(fr => fr.n === m.fret);
-      if (!s || !f) continue;
+      if (!f || m.si == null || m.si >= g.nStrings) return;
+      const cy = g.stringY(m.si, f.center);
+      const kind = m.kind || 'tone';
       const outside = opts.window && (m.fret < opts.window[0] || m.fret > opts.window[1]);
+      const drawKind = outside ? 'ghost' : kind;
       const grp = el('g', {
-        class: 'neck-marker is-' + (m.kind || 'tone') + (outside ? ' is-outside' : ''),
+        class: 'neck-marker is-' + drawKind + (outside ? ' is-outside' : '') +
+               (opts.animate && idx < 12 ? ' animate-in' : ''),
+        'data-s': m.si, 'data-f': m.fret,
       });
-      grp.appendChild(el('circle', { cx: f.center, cy: s.y, r: 13.5, class: 'neck-dot' }));
+      if (opts.animate && idx < 12) grp.style.animationDelay = (idx * 20) + 'ms';
+
+      if (drawKind === 'highlight') grp.appendChild(el('circle', { cx: f.center, cy, r: S.dot + 4, class: 'neck-halo' }));
+      grp.appendChild(el('circle', {
+        cx: f.center, cy, r: S.dot, class: 'neck-dot',
+        fill: drawKind === 'root' ? 'url(#' + uid + 'rootg)' : null,
+      }));
+      if (drawKind === 'root') grp.appendChild(el('circle', { cx: f.center, cy, r: S.dot - 4.5, class: 'neck-ring' }));
       if (m.label != null) {
-        const t = el('text', { x: f.center, y: s.y, class: 'neck-dot-label' });
+        const t = el('text', { x: f.center, y: cy, class: 'neck-dot-label', 'font-size': S.label });
         t.textContent = m.label;
         grp.appendChild(t);
       }
-      if (m.finger) {
-        grp.appendChild(el('circle', { cx: f.center + 11, cy: s.y + 11, r: 7, class: 'neck-finger-bg' }));
-        const ft = el('text', { x: f.center + 11, y: s.y + 11, class: 'neck-finger' });
+      if (drawKind === 'correct' || drawKind === 'wrong') {
+        const bx = f.center + S.dot * 0.82, by = cy - S.dot * 0.82;
+        grp.appendChild(el('circle', { cx: bx, cy: by, r: 7.5, class: 'neck-badge-bg' }));
+        const b = el('text', { x: bx, y: by, class: 'neck-badge' });
+        b.textContent = drawKind === 'correct' ? '✓' : '✕';
+        grp.appendChild(b);
+      }
+      // An illegible fingering badge is worse than none, so small boards drop it.
+      if (m.finger && S.finger) {
+        grp.appendChild(el('circle', { cx: f.center + 10, cy: cy + 10, r: 7.5, class: 'neck-finger-bg' }));
+        const ft = el('text', { x: f.center + 10, y: cy + 10, class: 'neck-finger' });
         ft.textContent = m.finger;
         grp.appendChild(ft);
       }
       svg.appendChild(grp);
-    }
+    });
 
-    // ---- fret numbers ----
-    if (showNumbers) {
-      const y = g.height + 13;
+    /* ---- fret numbers: weight, not dots, marks the navigation frets ---- */
+    if (g.showNumbers) {
+      const y = g.boardHeight + S.fretNum * 0.55;
       for (const f of g.frets) {
+        const marked = INLAY_FRETS.indexOf(f.n) >= 0 || DOUBLE_INLAY_FRETS.indexOf(f.n) >= 0;
         const t = el('text', {
-          x: f.center, y,
-          class: 'neck-fretnum' + (f.n === 0 ? ' is-open' : '') +
-                 (INLAY_FRETS.indexOf(f.n) >= 0 || DOUBLE_INLAY_FRETS.indexOf(f.n) >= 0 ? ' is-marked' : ''),
+          x: f.center, y, class: 'neck-fretnum' + (marked ? ' is-marked' : ''),
+          'font-size': S.fretNum * 0.55,
         });
-        t.textContent = f.n === 0 ? 'open' : f.n;
+        t.textContent = f.n;
         svg.appendChild(t);
       }
     }
@@ -297,23 +386,37 @@
     host.appendChild(labels);
     host.appendChild(scroll);
 
-    if (opts.scrollToFret != null) {
-      const f = g.frets.find(fr => fr.n === opts.scrollToFret);
-      if (f) scroll.scrollLeft = Math.max(0, f.center - scroll.clientWidth / 2);
-    }
+    // Only mask/scroll-hint when the board genuinely overflows.
+    requestAnimationFrame(() => {
+      if (svg.getBoundingClientRect().width > scroll.clientWidth + 2) {
+        scroll.classList.add('is-scrollable');
+      }
+      if (opts.window){
+        const lo = g.frets.find(f => f.n === opts.window[0]);
+        if (lo) scroll.scrollLeft = Math.max(0, lo.x - 26);
+      } else if (opts.scrollToFret != null) api.scrollTo(opts.scrollToFret);
+    });
 
-    return {
-      geometry: g,
-      svg,
+    const api = {
+      geometry: g, svg, scroll,
       scrollTo(fret) {
         const f = g.frets.find(fr => fr.n === fret);
         if (f) scroll.scrollLeft = Math.max(0, f.center - scroll.clientWidth / 2);
       },
-      markerAt(si, fret) {
+      marker(si, fret) {
         return svg.querySelector('.neck-marker[data-s="' + si + '"][data-f="' + fret + '"]');
       },
+      /** One expanding ring, once — the reward for a correct answer. */
+      pulse(si, fret) {
+        const f = g.frets.find(fr => fr.n === fret);
+        if (!f) return;
+        const ring = el('circle', { cx: f.center, cy: g.stringY(si, f.center), r: S.dot, class: 'neck-pulse' });
+        svg.appendChild(ring);
+        setTimeout(() => ring.remove(), 500);
+      },
     };
+    return api;
   }
 
-  return { geometry, render, STRING_H };
+  return { geometry, render, windows, SCALES };
 });

@@ -1,108 +1,244 @@
-/* Shared design tokens and the neck component, used by both apps.
-   Loaded with a plain <link>, so it works offline and needs no build step. */
+/* ============================================================
+   Bass Trainer — shared design system
+   Loaded by both apps with a plain <link>: no build step, works
+   offline, works from file://. Tokens are the contract; app files
+   must not hard-code colour, size or timing values.
+   ============================================================ */
 
 :root{
-  /* --- surfaces ------------------------------------------------------ */
-  --bg:#0f1115;
-  --panel:#171a21;
-  --panel2:#1e222c;
-  --line:#2a2f3c;
+  /* --- surfaces: warm charcoal (hue ~30°), so amber reads as brass
+         and the fingerboard reads as wood rather than a foreign object */
+  --s0:#0E0D0C;  --s1:#161412;  --s2:#1E1B18;  --s3:#262220;  --s4:#302B27;
+  --hair:#2A2724; --line:#3B342E; --line-hi:#4C443C;
 
-  /* --- text ---------------------------------------------------------- */
-  --text:#e8eaf0;
-  --dim:#9aa3b5;
+  /* --- ink */
+  --t1:#F6F2EC;  --t2:#D8D2C8;  --t3:#A79F94;  --t4:#8C8478;
 
-  /* --- pedagogical accents (meaning is fixed across both apps) ------- */
-  --root:#ffb02e;      /* roots */
-  --tone:#4cc9f0;      /* other scale / chord tones */
-  --hl:#c792ff;        /* new / highlighted / now-playing */
-  --good:#3ddc84;
-  --bad:#ff6b6b;
+  /* --- pedagogical accents. Meanings are fixed and shared across both
+         apps; each also carries a non-colour cue (see .neck-marker). */
+  --root:#F2A93B; --root-press:#D98C22; --root-tint:#3A2A12; --on-root:#2A1B05;
+  --tone:#46A9CC; --tone-tint:#12303A; --on-tone:#072830;
+  --hl:#B58BF5;   --hl-tint:#241C3A;   --on-hl:#200A3C;
+  --good:#45C486; --good-tint:#0F2E20; --on-good:#052414;
+  --bad:#E4675C;  --bad-tint:#331613;  --on-bad:#2A0A07;
 
-  /* --- fingerboard --------------------------------------------------- */
-  --fb-wood-hi:#4a3527;
-  --fb-wood:#3a2a1f;
-  --fb-wood-lo:#2a1e16;
-  --fb-nut:#e6e2d3;
-  --fb-wire-hi:#cfd6e2;
-  --fb-wire:#9aa3b2;
-  --fb-wire-lo:#6b7382;
-  --fb-string-hi:#e3e7ef;
-  --fb-string:#b9c0cc;
-  --fb-string-lo:#7d8695;
-  --fb-inlay:#efe9d8;
+  /* --- instrument */
+  --wood-hi:#3E2C22; --wood:#2A1D17; --wood-lo:#1C1310;
+  --wire:#C9C3B8; --wire-hi:#6E6A63; --wire-lo:#4A463F; --nut:#E8E2D4;
+  --string:#6E6B64; --inlay:#D9D2C4;
+  --low-string:#C68A52;
+
+  /* --- type */
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI Variable Text","Segoe UI",Roboto,
+         "Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono","Cascadia Mono","Segoe UI Mono",Menlo,Consolas,monospace;
+
+  /* --- space · radii · elevation · motion */
+  --sp1:4px; --sp2:8px; --sp3:12px; --sp4:16px; --sp5:20px;
+  --sp6:24px; --sp7:32px; --sp8:40px; --sp9:56px;
+  --r-xs:6px; --r-sm:10px; --r-md:12px; --r-lg:16px; --r-xl:20px; --r-pill:999px;
+  --e1:0 1px 2px rgba(0,0,0,.40), inset 0 1px 0 rgba(255,255,255,.03);
+  --e2:0 2px 6px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.04);
+  --e3:0 -8px 24px rgba(0,0,0,.55);
+  --ring:0 0 0 3px rgba(242,169,59,.35);
+  --fast:120ms; --base:180ms; --slow:260ms; --cheer:420ms;
+  --ease:cubic-bezier(.2,.6,.2,1); --ease-out:cubic-bezier(0,.55,.45,1);
+  --pop:cubic-bezier(.34,1.4,.64,1);
 }
+
+/* ==================== base ==================== */
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+html,body{margin:0; padding:0;}
+body{
+  background:var(--s0); color:var(--t2);
+  font-family:var(--sans); font-size:15.5px; line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+:focus-visible{outline:2px solid var(--root); outline-offset:2px;}
+
+/* ==================== type roles ==================== */
+.t-display{font-size:clamp(52px,15vw,64px); line-height:1; font-weight:800; letter-spacing:-.03em; font-variant-numeric:tabular-nums; color:var(--t1);}
+.t-num{font-size:40px; line-height:1.05; font-weight:750; letter-spacing:-.02em; font-variant-numeric:tabular-nums; color:var(--t1);}
+.t-title1{font-size:clamp(22px,5.6vw,26px); line-height:1.15; font-weight:750; letter-spacing:-.02em; color:var(--t1); margin:0;}
+.t-title2{font-size:19px; line-height:1.25; font-weight:700; letter-spacing:-.01em; color:var(--t1); margin:0;}
+.t-title3{font-size:15px; line-height:1.3; font-weight:650; color:var(--t1); margin:0;}
+.t-eyebrow{font-size:11px; line-height:1.2; font-weight:700; letter-spacing:.11em; text-transform:uppercase; color:var(--t3);}
+.t-caption{font-size:13.5px; line-height:1.5; font-weight:450; color:var(--t3);}
+.t-data{font-family:var(--mono); font-size:12px; line-height:1.4; font-weight:500; color:var(--t4); font-variant-numeric:tabular-nums;}
+.t-body{font-size:15.5px; line-height:1.6; max-width:62ch;}
+.num{font-variant-numeric:tabular-nums;}
+
+/* ==================== surfaces ==================== */
+.card{
+  background:var(--s1); border:1px solid var(--line); border-radius:var(--r-lg);
+  padding:var(--sp4); margin:var(--sp3) 0; box-shadow:var(--e1);
+}
+.card.tight{padding:var(--sp3);}
+.card + .card{margin-top:var(--sp3);}
+.hair{height:1px; background:var(--hair); border:0; margin:var(--sp3) 0;}
+@media (min-width:760px){ .card{padding:var(--sp5);} }
+
+/* ==================== controls ==================== */
+.btn{
+  background:var(--s2); color:var(--t1); border:1px solid var(--line);
+  border-radius:var(--r-md); padding:11px 15px; font:inherit; font-size:15px; font-weight:650;
+  min-height:44px; cursor:pointer; transition:transform 90ms var(--ease), background var(--fast);
+}
+.btn:hover{background:var(--s3);}
+.btn:active{transform:scale(.97);}
+.btn.primary{background:var(--root); border-color:var(--root); color:var(--on-root);}
+.btn.primary:hover{background:var(--root-press); border-color:var(--root-press);}
+.btn.ghost{background:transparent;}
+.btn.small{min-height:44px; padding:8px 12px; font-size:13.5px; border-radius:var(--r-sm);}
+.btn[disabled]{opacity:.42; pointer-events:none;}
+
+.seg{display:flex; flex-wrap:wrap; gap:var(--sp2);}
+.seg button{
+  background:var(--s2); border:1px solid var(--line); color:var(--t3);
+  border-radius:var(--r-sm); padding:9px 13px; min-height:44px; min-width:44px;
+  font:inherit; font-size:14px; font-weight:650; cursor:pointer;
+  transition:background var(--fast), color var(--fast), border-color var(--fast);
+}
+.seg button:hover{background:var(--s3);}
+.seg button.on{background:var(--s3); color:var(--t1); border-color:var(--line-hi); box-shadow:var(--e2);}
+.seg.compact button{padding:8px 11px; font-size:13px;}
+
+select{
+  background:var(--s2); color:var(--t1); border:1px solid var(--line);
+  border-radius:var(--r-sm); padding:11px 10px; font:inherit; font-size:15px;
+  min-height:44px; width:100%;
+}
+input[type=checkbox]{width:26px; height:26px; accent-color:var(--root); flex:0 0 auto;}
+input[type=range]{width:100%; accent-color:var(--root); min-height:44px;}
+
+.row{display:flex; gap:var(--sp2); flex-wrap:wrap; align-items:center;}
+.row.between{justify-content:space-between;}
+.pill{
+  display:inline-flex; align-items:center; gap:6px;
+  background:var(--s2); border:1px solid var(--line); border-radius:var(--r-pill);
+  padding:5px 11px; font-size:12.5px; font-weight:650; color:var(--t2);
+}
+.pill.good{background:var(--good-tint); border-color:var(--good); color:var(--good);}
+.pill.warn{background:var(--root-tint); border-color:var(--root); color:var(--root);}
+
+/* note/degree chips */
+.chip{
+  display:inline-flex; flex-direction:column; align-items:center; justify-content:center;
+  min-width:46px; min-height:46px; padding:4px 9px; border-radius:var(--r-sm);
+  background:var(--s2); border:1px solid var(--line); font-weight:750; font-size:15px; color:var(--t1);
+}
+.chip small{font-weight:650; font-size:10.5px; letter-spacing:.06em; color:var(--t4); text-transform:uppercase;}
+.chip.root{background:var(--root); border-color:var(--root); color:var(--on-root); box-shadow:inset 0 0 0 1.5px rgba(42,27,5,.22);}
+.chip.root small{color:rgba(42,27,5,.72);}
+.chip.tone{background:var(--tone-tint); border-color:var(--tone); color:var(--tone);}
+.chip.tone small{color:var(--tone); opacity:.72;}
+.chip.dim{opacity:.34;}
+
+/* messages */
+.note-box{
+  border-radius:var(--r-md); padding:var(--sp3); font-size:14px;
+  border:1px solid var(--line); background:var(--s2);
+}
+.note-box.warn{background:var(--root-tint); border-color:rgba(242,169,59,.4); color:#F6D9A8;}
+.note-box.good{background:var(--good-tint); border-color:rgba(69,196,134,.4); color:#B7E8CE;}
+.note-box.bad{background:var(--bad-tint); border-color:rgba(228,103,92,.4); color:#F3C3BD;}
 
 /* ==================== neck component ==================== */
-.neck{
-  display:flex; align-items:stretch; gap:0;
-  margin:10px 0 2px;
-}
-.neck-labels{
-  display:flex; flex-direction:column; flex:0 0 auto;
-  padding-right:7px;
-}
+.neck{display:flex; align-items:stretch; margin:var(--sp3) 0 var(--sp1);}
+.neck-labels{display:flex; flex-direction:column; flex:0 0 auto; padding-right:7px;}
 .neck-label{
   display:flex; align-items:center; justify-content:flex-end;
-  font-size:12.5px; font-weight:800; color:var(--dim);
-  min-width:17px; letter-spacing:.3px;
+  font-size:12.5px; font-weight:800; color:var(--t3); min-width:17px; letter-spacing:.02em;
 }
-.neck-label.is-lowest{ color:#c9834a; }
-.neck-label.is-dim{ opacity:.3; }
+.neck-label.is-lowest{color:var(--low-string);}
+.neck-label.is-dim{color:var(--t4); opacity:.55;}
 
 .neck-scroll{
-  overflow-x:auto; overflow-y:hidden;
-  -webkit-overflow-scrolling:touch;
-  flex:1 1 auto; min-width:0;
-  border-radius:8px;
-  scroll-behavior:smooth;
+  overflow-x:auto; overflow-y:hidden; -webkit-overflow-scrolling:touch;
+  flex:1 1 auto; min-width:0; border-radius:var(--r-sm);
+  scroll-snap-type:x proximity;
 }
-.neck-svg{ display:block; }
+.neck-scroll.is-scrollable{
+  -webkit-mask-image:linear-gradient(90deg,#000 0,#000 calc(100% - 26px),transparent);
+          mask-image:linear-gradient(90deg,#000 0,#000 calc(100% - 26px),transparent);
+}
+.neck-svg{display:block;}
+.neck-snap{scroll-snap-align:start;}
 
-.neck-inlay{ fill:var(--fb-inlay); opacity:.30; }
-.neck-nut{ fill:var(--fb-nut); }
-.neck-window{
-  fill:rgba(255,176,46,.10);
-  stroke:var(--root); stroke-width:1.5; stroke-dasharray:5 4;
-}
-.neck-hit{ fill:transparent; cursor:pointer; }
-.neck-hit:active{ fill:rgba(255,255,255,.10); }
+.neck-nut{fill:var(--nut);}
+.neck-inlay{fill:var(--inlay); fill-opacity:.42; stroke:rgba(0,0,0,.35); stroke-width:1;}
+.neck-hit{fill:transparent; cursor:pointer;}
+.neck-hit:active{fill:rgba(255,255,255,.09);}
+.neck-hit:focus-visible{fill:rgba(242,169,59,.16); outline:none;}
 
-.neck-marker .neck-dot{
-  fill:#39404f; stroke:rgba(0,0,0,.45); stroke-width:1;
-}
+/* markers: colour is never the only cue */
+.neck-dot{stroke:rgba(0,0,0,.35); stroke-width:1;}
 .neck-dot-label{
   text-anchor:middle; dominant-baseline:central;
-  font-family:inherit; font-size:12px; font-weight:800;
-  fill:var(--text); pointer-events:none;
+  font-family:var(--sans); font-weight:800; fill:var(--t1); pointer-events:none;
 }
-.neck-marker.is-root   .neck-dot{ fill:var(--root); }
-.neck-marker.is-root   .neck-dot-label{ fill:#241703; }
-.neck-marker.is-tone   .neck-dot{ fill:var(--tone); }
-.neck-marker.is-tone   .neck-dot-label{ fill:#04222e; }
-.neck-marker.is-highlight .neck-dot{ fill:var(--hl); }
-.neck-marker.is-highlight .neck-dot-label{ fill:#241040; }
-.neck-marker.is-correct .neck-dot{ fill:var(--good); }
-.neck-marker.is-correct .neck-dot-label{ fill:#03290f; }
-.neck-marker.is-wrong   .neck-dot{ fill:var(--bad); }
-.neck-marker.is-wrong   .neck-dot-label{ fill:#330606; }
-.neck-marker.is-ghost   .neck-dot{ fill:none; stroke:#5b6476; stroke-width:2; stroke-dasharray:3 3; }
-.neck-marker.is-ghost   .neck-dot-label{ fill:var(--dim); }
-.neck-marker.is-outside{ opacity:.22; }
+.neck-marker.is-root .neck-dot{fill:var(--root);}
+.neck-marker.is-root .neck-dot-label{fill:var(--on-root);}
+.neck-marker.is-root .neck-ring{fill:none; stroke:rgba(42,27,5,.32); stroke-width:1.5;}
+.neck-marker.is-tone .neck-dot{fill:var(--tone); stroke:rgba(0,0,0,.30);}
+.neck-marker.is-tone .neck-dot-label{fill:var(--on-tone); font-weight:700;}
+.neck-marker.is-highlight .neck-dot{fill:var(--hl);}
+.neck-marker.is-highlight .neck-dot-label{fill:var(--on-hl);}
+.neck-marker.is-highlight .neck-halo{fill:none; stroke:rgba(181,139,245,.42); stroke-width:3;}
+.neck-marker.is-ghost .neck-dot{fill:none; stroke:rgba(214,205,194,.28); stroke-width:1.5; stroke-dasharray:3 3;}
+.neck-marker.is-ghost .neck-dot-label{fill:var(--t4); font-weight:700;}
+.neck-marker.is-correct .neck-dot{fill:var(--good);}
+.neck-marker.is-correct .neck-dot-label{fill:var(--on-good);}
+/* a wrong answer is drawn as "not yet", never as a red block */
+.neck-marker.is-wrong .neck-dot{fill:none; stroke:var(--bad); stroke-width:2;}
+.neck-marker.is-wrong .neck-dot-label{fill:var(--bad);}
+.neck-marker.is-asked .neck-dot{fill:var(--s4); stroke:var(--root); stroke-width:2; stroke-dasharray:4 3;}
+.neck-marker.is-asked .neck-dot-label{fill:var(--root);}
+.neck-badge{font-family:var(--sans); font-size:10px; font-weight:800; text-anchor:middle; dominant-baseline:central;}
+.neck-marker.is-correct .neck-badge{fill:var(--good);}
+.neck-marker.is-wrong .neck-badge{fill:var(--bad);}
+.neck-badge-bg{fill:var(--s1); stroke:var(--line); stroke-width:1;}
+.neck-marker.is-outside{opacity:.3;}
 
-.neck-finger-bg{ fill:#0f1115; stroke:var(--line); stroke-width:1; }
+.neck-finger-bg{fill:var(--s1); stroke:var(--line); stroke-width:1;}
 .neck-finger{
   text-anchor:middle; dominant-baseline:central;
-  font-family:inherit; font-size:9px; font-weight:700; fill:var(--dim);
-  pointer-events:none;
+  font-family:var(--sans); font-size:9.5px; font-weight:700; fill:var(--t2); pointer-events:none;
 }
 .neck-fretnum{
-  text-anchor:middle; font-family:inherit; font-size:11px;
-  fill:var(--dim); pointer-events:none;
+  text-anchor:middle; font-family:var(--sans); font-size:11px;
+  fill:var(--t4); pointer-events:none;
 }
-.neck-fretnum.is-marked{ fill:var(--text); font-weight:700; }
-.neck-fretnum.is-open{ font-size:9.5px; letter-spacing:.4px; }
+.neck-fretnum.is-marked{fill:var(--t2); font-weight:700;}
+
+/* the moveable box, framed like a viewfinder rather than faded */
+.neck-shade{fill:rgba(14,13,12,.58);}
+.neck-window{fill:rgba(242,169,59,.07); stroke:var(--root); stroke-width:1.5;}
+.neck-bracket{fill:none; stroke:var(--root); stroke-width:2.5; stroke-linecap:round;}
+.neck-window-pill{fill:var(--root);}
+.neck-window-pill-label{
+  font-family:var(--sans); font-size:10px; font-weight:700; letter-spacing:.09em;
+  fill:var(--on-root); text-anchor:middle; dominant-baseline:central;
+}
+.neck-chevron{fill:none; stroke:var(--root); stroke-width:2; stroke-linecap:round; opacity:.65;}
+
+/* fret pager, so scrolling is not the only way to reach fret 12 */
+.fret-pager{display:flex; gap:var(--sp2); margin:var(--sp2) 0 0;}
+.fret-pager button{flex:1;}
+
+/* ==================== motion ==================== */
+@keyframes dotIn{from{opacity:0; transform:scale(.6);} to{opacity:1; transform:scale(1);}}
+.neck-marker.animate-in{animation:dotIn var(--base) var(--pop) both; transform-box:fill-box; transform-origin:center;}
+@keyframes ringPulse{from{opacity:.5; r:14;} to{opacity:0; r:30;}}
+.neck-pulse{fill:none; stroke:var(--good); stroke-width:2; animation:ringPulse var(--cheer) var(--ease-out) forwards;}
+@keyframes tabIn{from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:none;}}
+.tab-in{animation:tabIn 160ms var(--ease-out);}
 
 @media (prefers-reduced-motion:reduce){
-  .neck-scroll{ scroll-behavior:auto; }
+  *,*::before,*::after{
+    animation-duration:1ms !important; animation-iteration-count:1 !important;
+    transition-duration:80ms !important;
+  }
+  .neck-scroll{scroll-behavior:auto;}
+  .btn:active{transform:none;}
 }
