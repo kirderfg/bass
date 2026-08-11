@@ -1029,6 +1029,10 @@ function renderTrainer(){
   }
   h += '</div>';
 
+  h += '<a class="card tight" href="trainer/index.html" style="display:block; text-decoration:none; color:inherit; border-color:#3a4358">' +
+    '<b style="color:var(--hl)">🎙️ Live Trainer — answer by playing</b>' +
+    '<div class="muted small" style="margin-top:2px">Plug your bass into an interface (or use your phone\'s mic) and the app checks the notes you actually play. Includes a tuner. Results feed these same stats.</div></a>';
+
   if (mode === 'study') h += studyHtml();
   else h += quizShellHtml(mode, tier);
 

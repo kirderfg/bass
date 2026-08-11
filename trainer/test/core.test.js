@@ -139,3 +139,27 @@ test('detects a consistently detuned instrument, and ignores ordinary scatter', 
   assert.equal(core.tuningDrift([-35, -33]).drifting, false,
     'two readings is not enough evidence to accuse the instrument');
 });
+
+test('a note is still identified correctly after downsampling for cheap analysis', () => {
+  // Detection cost grows with sample rate, so the app analyses decimated
+  // audio. That must not change the answer.
+  const full = pluck(41.203, RATE, 0.4);          // open E
+  const decimated = core.downsample(full, 4);
+  assert.ok(Math.abs(decimated.length - full.length / 4) <= 1, 'length should shrink by the factor');
+
+  const result = core.detectPitch(decimated, RATE / 4);
+  assert.ok(result, 'no pitch detected in decimated audio');
+  assert.ok(centsFrom(result.hz, 41.203) < 5,
+    `expected 41.203 Hz, got ${result.hz.toFixed(2)} Hz`);
+});
+
+test('downsampling removes content above the new Nyquist so it cannot alias into the bass range', () => {
+  // 8 kHz decimated by 4 (new rate 11.025 kHz) would fold down to ~3 kHz
+  // if it were not filtered out first.
+  const hiss = sine(8000, RATE, 0.2, 0.5);
+  const decimated = core.downsample(hiss, 4);
+  let rms = 0;
+  for (let i = 0; i < decimated.length; i++) rms += decimated[i] * decimated[i];
+  rms = Math.sqrt(rms / decimated.length);
+  assert.ok(rms < 0.05, `high frequency content survived decimation (rms ${rms.toFixed(3)})`);
+});

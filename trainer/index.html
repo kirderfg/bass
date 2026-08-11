@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<title>Bass Live Trainer</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎙️</text></svg>">
+<style>
+:root{
+  --bg:#0f1115; --panel:#171a21; --panel2:#1e222c; --line:#2a2f3c;
+  --text:#e8eaf0; --dim:#9aa3b5;
+  --root:#ffb02e; --tone:#4cc9f0; --hl:#c792ff;
+  --good:#3ddc84; --bad:#ff6b6b;
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+html,body{margin:0; padding:0;}
+body{
+  background:var(--bg); color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  font-size:16px; line-height:1.45; padding-bottom:40px;
+}
+header{
+  position:sticky; top:0; z-index:20; background:#12151c;
+  padding:10px 14px; display:flex; align-items:center; justify-content:space-between; gap:10px;
+}
+header h1{font-size:17px; margin:0;}
+header h1 span{color:var(--root);}
+header a{color:var(--tone); font-size:12.5px; text-decoration:none; font-weight:600; text-align:right;}
+main{padding:0 12px; max-width:720px; margin:0 auto;}
+.card{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px; margin:10px 0;}
+.muted{color:var(--dim); font-size:14px;}
+.small{font-size:13px;}
+.btn{
+  background:var(--panel2); color:var(--text); border:1px solid var(--line);
+  border-radius:12px; padding:10px 14px; font-size:15px; font-weight:600;
+  min-height:44px; cursor:pointer; font-family:inherit;
+}
+.btn.primary{background:var(--root); border-color:var(--root); color:#1a1204;}
+.btn.small{min-height:38px; padding:6px 10px; font-size:13px;}
+.btn:active{transform:scale(.97);}
+.row{display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
+.seg{display:flex; gap:6px; flex-wrap:wrap;}
+.seg button{
+  background:var(--panel2); border:1px solid var(--line); color:var(--dim);
+  border-radius:10px; padding:8px 12px; min-height:44px; min-width:44px;
+  font-size:14px; font-weight:600; cursor:pointer; font-family:inherit;
+}
+.seg button.on{background:#2b3242; color:var(--text); border-color:#4b5570;}
+select{
+  background:var(--panel2); color:var(--text); border:1px solid var(--line);
+  border-radius:10px; padding:10px 8px; font-size:15px; min-height:44px; width:100%;
+}
+/* ---- mic gate ---- */
+#gate{text-align:center; padding:30px 10px;}
+#gate .big{font-size:46px;}
+#gate p{max-width:420px; margin:10px auto;}
+#gate .err{color:var(--bad); font-weight:600;}
+/* ---- level meter ---- */
+.level{height:8px; background:var(--panel2); border-radius:99px; overflow:hidden; margin:8px 0 2px;}
+.level i{display:block; height:100%; width:0%; background:var(--good); border-radius:99px; transition:width .08s linear;}
+.listening{display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--dim);}
+.dot{width:9px; height:9px; border-radius:50%; background:var(--bad);}
+.dot.on{background:var(--good); box-shadow:0 0 8px var(--good);}
+/* ---- tuner ---- */
+.tuner-note{font-size:74px; font-weight:800; text-align:center; line-height:1; margin:6px 0 0; font-variant-numeric:tabular-nums;}
+.tuner-note small{font-size:22px; color:var(--dim); font-weight:700;}
+.tuner-note.intune{color:var(--good);}
+.tuner-hz{text-align:center; color:var(--dim); font-size:13px;}
+.needle{position:relative; height:46px; margin:12px 0 4px; background:var(--panel2); border-radius:10px; overflow:hidden;}
+.needle .center{position:absolute; left:50%; top:0; bottom:0; width:2px; background:var(--good); opacity:.55;}
+.needle .zone{position:absolute; left:30%; right:30%; top:0; bottom:0; background:rgba(61,220,132,.10);}
+.needle .bar{position:absolute; top:8px; bottom:8px; width:6px; border-radius:3px; background:var(--root); left:50%; transition:left .09s linear, background .2s;}
+.needle .bar.intune{background:var(--good);}
+.needle .lbl{position:absolute; bottom:2px; font-size:10px; color:var(--dim);}
+.cents{text-align:center; font-size:14px; font-weight:700; margin-top:2px;}
+/* ---- quiz ---- */
+.q{font-size:22px; text-align:center; font-weight:700; padding:6px 4px 2px;}
+.q b{color:var(--hl);}
+.qsub{text-align:center; color:var(--dim); font-size:13.5px; margin-bottom:6px;}
+.verdict{min-height:30px; text-align:center; font-weight:700; font-size:16px; margin-top:6px;}
+.verdict.ok{color:var(--good);} .verdict.no{color:var(--bad);} .verdict.warn{color:var(--root);}
+.heard{text-align:center; font-size:13px; color:var(--dim); min-height:20px;}
+.stat-row{display:flex; gap:8px; justify-content:center; margin:8px 0 0;}
+.stat{background:var(--panel2); border-radius:10px; padding:6px 12px; text-align:center; min-width:74px;}
+.stat b{display:block; font-size:19px; color:var(--root);}
+.stat span{font-size:11px; color:var(--dim);}
+/* ---- fretboard (compact, for hints/reveal) ---- */
+.fb{display:grid; gap:2px; overflow-x:auto; padding-bottom:4px;}
+.fb .lbl{display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; color:var(--dim); background:var(--panel); position:sticky; left:0;}
+.fb .cell{position:relative; height:30px; background:#20242e; border-right:2px solid #3a4152; border-radius:2px;}
+.fb .cell.f0{background:#161920; border-right:4px solid #cdd3e0;}
+.fb .cell.range{background:#2f3a2c;}
+.fb .cell .dot{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:10.5px; font-weight:800; background:var(--good); color:#03290f;}
+.fb .fnum{text-align:center; font-size:10px; color:var(--dim);}
+.hidden{display:none !important;}
+.tag{display:inline-block; background:#2b3242; border-radius:99px; padding:5px 11px; font-size:12.5px; font-weight:600;}
+</style>
+</head>
+<body>
+<header>
+  <h1>🎙️ Bass <span>Live</span> Trainer</h1>
+  <a href="../index.html">← Theory Trainer<br>&amp; practice plan</a>
+</header>
+<main>
+  <div id="gate">
+    <div class="big">🎸→🎙️</div>
+    <h2 style="margin:8px 0 4px; font-size:19px">Play your bass, not the screen</h2>
+    <p class="muted">Plug in your audio interface (or use your phone's mic near the bass), then let this page listen. It checks the notes you actually play.</p>
+    <p><button class="btn primary" id="startBtn">🎤 Start listening</button></p>
+    <p class="small muted">Nothing is recorded or uploaded — audio is analysed on your device and thrown away.</p>
+    <p class="err hidden" id="gateErr"></p>
+  </div>
+
+  <div id="app" class="hidden">
+    <div class="card" style="padding:10px 12px">
+      <div class="listening"><span class="dot" id="liveDot"></span><span id="liveTxt">listening…</span></div>
+      <div class="level"><i id="levelBar"></i></div>
+      <div class="row" style="margin-top:8px">
+        <select id="deviceSel" aria-label="Input device"></select>
+      </div>
+      <p class="small muted hidden" id="tuneWarn" style="margin:8px 0 0"></p>
+    </div>
+
+    <div class="seg" id="modeSeg" style="margin:10px 0">
+      <button data-m="tuner" class="on">🎯 Tuner</button>
+      <button data-m="find">🔎 Find it</button>
+      <button data-m="echo">👂 Echo</button>
+    </div>
+
+    <!-- ================= TUNER ================= -->
+    <section id="secTuner">
+      <div class="card">
+        <div class="tuner-note" id="tNote">—</div>
+        <div class="tuner-hz" id="tHz">play a note</div>
+        <div class="needle">
+          <div class="zone"></div><div class="center"></div>
+          <div class="bar" id="tBar"></div>
+          <span class="lbl" style="left:6px">♭ flat</span>
+          <span class="lbl" style="right:6px">sharp ♯</span>
+        </div>
+        <div class="cents" id="tCents">&nbsp;</div>
+        <p class="muted small" style="margin:10px 0 0">Green zone = within 15 cents, close enough for rock. Tune each open string: <b id="tStrings">B E A D G</b>.</p>
+      </div>
+    </section>
+
+    <!-- ================= FIND IT ================= -->
+    <section id="secFind" class="hidden">
+      <div class="card">
+        <div class="q" id="fQ">—</div>
+        <div class="qsub" id="fSub">Find it on the neck and play it.</div>
+        <div id="fBoard"></div>
+        <div class="verdict" id="fVerdict">&nbsp;</div>
+        <div class="heard" id="fHeard">&nbsp;</div>
+        <div class="row" style="justify-content:center; margin-top:8px">
+          <button class="btn small" id="fHint">💡 Hint</button>
+          <button class="btn small" id="fSkip">Skip →</button>
+        </div>
+        <div class="stat-row">
+          <div class="stat"><b id="fScore">0</b><span>correct</span></div>
+          <div class="stat"><b id="fStreak">0</b><span>streak</span></div>
+          <div class="stat"><b id="fAsked">0</b><span>asked</span></div>
+        </div>
+      </div>
+      <div class="card" style="padding:10px 12px">
+        <div class="small muted" style="margin-bottom:6px">Difficulty</div>
+        <select id="tierSel"></select>
+        <div class="small muted" style="margin:10px 0 6px">Drill</div>
+        <div class="seg" id="focusSeg"></div>
+      </div>
+    </section>
+
+    <!-- ================= ECHO ================= -->
+    <section id="secEcho" class="hidden">
+      <div class="card">
+        <div class="q" id="eQ">Listen, then play it back</div>
+        <div class="qsub">No note name, no fret — use your ears. Play the note you heard, anywhere on the neck.</div>
+        <div class="row" style="justify-content:center; margin:10px 0">
+          <button class="btn primary" id="ePlay">🔊 Play the note</button>
+          <button class="btn small" id="eNext">New note →</button>
+        </div>
+        <div class="verdict" id="eVerdict">&nbsp;</div>
+        <div class="heard" id="eHeard">&nbsp;</div>
+        <div class="stat-row">
+          <div class="stat"><b id="eScore">0</b><span>correct</span></div>
+          <div class="stat"><b id="eStreak">0</b><span>streak</span></div>
+        </div>
+        <p class="muted small" style="margin:10px 0 0">Octaves count as correct here — matching the pitch class is the ear skill.</p>
+      </div>
+    </section>
+
+    <div class="card" style="padding:10px 12px">
+      <div class="row" style="justify-content:space-between">
+        <span class="small muted">Bass</span>
+        <div class="seg" id="tuningSeg">
+          <button data-t="5" class="on">5-str BEADG</button>
+          <button data-t="4">4-str EADG</button>
+        </div>
+      </div>
+      <p class="small muted" style="margin:8px 0 0">Answers here feed the same progress stats as the Theory Trainer's practice checkpoints.</p>
+    </div>
+  </div>
+</main>
+
+<script src="core.js"></script>
+<script>
+"use strict";
+const C = window.BassCore;
+
+/* ================= shared state (same store as the Theory Trainer) ================= */
+const LS_KEY = 'bassTheoryTrainer.v1';
+function loadShared(){
+  try { return JSON.parse(localStorage.getItem(LS_KEY)) || {}; } catch(e){ return {}; }
+}
+function saveStats(mutate){
+  const st = loadShared();
+  st.stats = Object.assign({ answered:0, correct:0, bestStreak:0, byString:{}, heat:{}, tierRecent:{}, speed:[] }, st.stats);
+  mutate(st.stats);
+  try { localStorage.setItem(LS_KEY, JSON.stringify(st)); } catch(e){}
+}
+
+const TUNINGS = {
+  5:{ midi:[23,28,33,38,43], names:['B','E','A','D','G'] },
+  4:{ midi:[28,33,38,43],    names:['E','A','D','G'] }
+};
+const NATURALS = new Set(['C','D','E','F','G','A','B']);
+const TIERS = [
+  { label:'1 · E + A strings, frets 0–5', strings:['E','A'], maxFret:5, accidentals:false },
+  { label:'2 · E + A strings, frets 0–12', strings:['E','A'], maxFret:12, accidentals:false },
+  { label:'3 · add D + G strings', strings:['E','A','D','G'], maxFret:12, accidentals:false },
+  { label:'4 · add the low B string', strings:['B','E','A','D','G'], maxFret:12, accidentals:false },
+  { label:'5 · everything + sharps/flats', strings:['B','E','A','D','G'], maxFret:12, accidentals:true }
+];
+let tuning = (loadShared().tuning === 4) ? 4 : 5;
+let tier = 0, focus = null, mode = 'tuner';
+
+/* ================= audio ================= */
+const A = { ctx:null, analyser:null, stream:null, buf:null, timer:null, rate:44100, level:0 };
+const DECIMATE = 4;
+let tracker = C.createTracker({ stableMs:150 });
+let centsHistory = [];
+
+async function startListening(deviceId){
+  const err = document.getElementById('gateErr');
+  try {
+    if (A.stream) A.stream.getTracks().forEach(t => t.stop());
+    const constraints = { audio: {
+      echoCancellation:false, noiseSuppression:false, autoGainControl:false,
+      channelCount:1
+    }};
+    if (deviceId) constraints.audio.deviceId = { exact: deviceId };
+    A.stream = await navigator.mediaDevices.getUserMedia(constraints);
+    if (!A.ctx){
+      const AC = window.AudioContext || window.webkitAudioContext;
+      A.ctx = new AC();
+    }
+    if (A.ctx.state === 'suspended') await A.ctx.resume();
+    A.rate = A.ctx.sampleRate;
+    const src = A.ctx.createMediaStreamSource(A.stream);
+    A.analyser = A.ctx.createAnalyser();
+    A.analyser.fftSize = 8192;
+    src.connect(A.analyser);
+    A.buf = new Float32Array(A.analyser.fftSize);
+    document.getElementById('gate').classList.add('hidden');
+    document.getElementById('app').classList.remove('hidden');
+    err.classList.add('hidden');
+    await listDevices();
+    if (!A.timer) A.timer = setInterval(tick, 55);
+    return true;
+  } catch(e){
+    err.textContent = e && e.name === 'NotAllowedError'
+      ? 'Microphone permission was blocked. Allow it in your browser’s address-bar icon, then tap Start again.'
+      : 'Could not open an audio input (' + (e && e.name || e) + '). Check your interface is plugged in.';
+    err.classList.remove('hidden');
+    return false;
+  }
+}
+async function listDevices(){
+  const sel = document.getElementById('deviceSel');
+  try {
+    const devices = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput');
+    const current = A.stream && A.stream.getAudioTracks()[0];
+    const label = current && current.label;
+    sel.innerHTML = devices.map((d,i) =>
+      '<option value="' + d.deviceId + '"' + (d.label === label ? ' selected' : '') + '>' +
+      (d.label || ('Input ' + (i+1))) + '</option>').join('');
+  } catch(e){ sel.innerHTML = '<option>Default input</option>'; }
+}
+
+function tick(){
+  if (!A.analyser) return;
+  A.analyser.getFloatTimeDomainData(A.buf);
+  let rms = 0;
+  for (let i = 0; i < A.buf.length; i++) rms += A.buf[i]*A.buf[i];
+  rms = Math.sqrt(rms / A.buf.length);
+  A.level = rms;
+  document.getElementById('levelBar').style.width = Math.min(100, rms * 320) + '%';
+  const dot = document.getElementById('liveDot');
+  dot.classList.toggle('on', rms > 0.008);
+  document.getElementById('liveTxt').textContent = rms > 0.008 ? 'hearing your bass' : 'listening…';
+
+  const small = C.downsample(A.buf, DECIMATE);
+  const pitch = C.detectPitch(small, A.rate / DECIMATE);
+  const reading = tracker.push(pitch ? pitch.hz : null, performance.now());
+
+  if (mode === 'tuner') renderTuner(pitch, reading);
+  else if (reading.state === 'stable') onStableNote(reading);
+  else if (mode === 'find' && reading.state === 'listening') {
+    document.getElementById('fHeard').textContent = 'hearing ' + C.hzToNote(reading.hz).name + '…';
+  }
+
+  if (pitch && Math.abs(C.hzToNote(pitch.hz).cents) < 50){
+    centsHistory.push(C.hzToNote(pitch.hz).cents);
+    if (centsHistory.length > 24) centsHistory.shift();
+    const drift = C.tuningDrift(centsHistory.slice(-12));
+    const warn = document.getElementById('tuneWarn');
+    if (drift.drifting){
+      warn.textContent = '⚠️ Every note is landing ' + Math.abs(Math.round(drift.meanCents)) +
+        ' cents ' + (drift.meanCents < 0 ? 'flat' : 'sharp') + ' — your bass may need tuning. Try the Tuner tab.';
+      warn.classList.remove('hidden');
+    } else warn.classList.add('hidden');
+  }
+}
+
+/* ================= tuner ================= */
+function renderTuner(pitch, reading){
+  const noteEl = document.getElementById('tNote'), hzEl = document.getElementById('tHz');
+  const bar = document.getElementById('tBar'), centsEl = document.getElementById('tCents');
+  if (!pitch){
+    noteEl.textContent = '—'; noteEl.classList.remove('intune');
+    hzEl.textContent = 'play a note';
+    centsEl.innerHTML = '&nbsp;';
+    bar.style.left = '50%'; bar.classList.remove('intune');
+    return;
+  }
+  const n = C.hzToNote(pitch.hz);
+  const inTune = Math.abs(n.cents) <= 15;
+  noteEl.innerHTML = n.name + '<small>' + n.octave + '</small>';
+  noteEl.classList.toggle('intune', inTune);
+  hzEl.textContent = pitch.hz.toFixed(2) + ' Hz';
+  const pos = 50 + Math.max(-50, Math.min(50, n.cents)) * 0.9;
+  bar.style.left = pos + '%';
+  bar.classList.toggle('intune', inTune);
+  centsEl.textContent = inTune ? '✓ in tune'
+    : (n.cents > 0 ? '+' : '') + Math.round(n.cents) + ' cents — ' + (n.cents > 0 ? 'tune DOWN' : 'tune UP');
+  centsEl.style.color = inTune ? 'var(--good)' : 'var(--root)';
+}
+
+/* ================= find it ================= */
+let q = null, hintLevel = 0, qStart = 0, wrongThisQ = 0, lastProgressAt = 0;
+const sess = { find:{ score:0, streak:0, asked:0 }, echo:{ score:0, streak:0 } };
+
+function tierNow(){
+  const t = TIERS[tier];
+  return Object.assign({}, t, { strings: t.strings.filter(s => TUNINGS[tuning].names.includes(s)) });
+}
+function pool(){
+  const t = tierNow();
+  let strs = t.strings;
+  if (focus) strs = strs.filter(s => s === focus);
+  const out = [];
+  for (const sn of strs){
+    const si = TUNINGS[tuning].names.indexOf(sn);
+    for (let f = 0; f <= t.maxFret; f++){
+      const midi = TUNINGS[tuning].midi[si] + f;
+      const name = C.NAMES[((midi % 12) + 12) % 12];
+      if (!t.accidentals && !NATURALS.has(name)) continue;
+      out.push({ si, f, midi, sn, name });
+    }
+  }
+  return out;
+}
+function newQuestion(){
+  const p = pool();
+  if (!p.length){ q = null; return; }
+  let pick;
+  do { pick = p[Math.floor(Math.random() * p.length)]; }
+  while (p.length > 1 && q && pick.sn === q.sn && pick.f === q.f);
+  q = pick; hintLevel = 0; wrongThisQ = 0; qStart = performance.now();
+  lastProgressAt = qStart;
+  tracker.reset();
+  document.getElementById('fQ').innerHTML = 'Play <b>' + q.name + '</b> on the <b>' + q.sn + '</b> string';
+  document.getElementById('fSub').textContent = 'Find it on the neck and play it.';
+  document.getElementById('fVerdict').innerHTML = '&nbsp;';
+  document.getElementById('fHeard').innerHTML = '&nbsp;';
+  document.getElementById('fBoard').innerHTML = '';
+  updateFindStats();
+}
+function showHint(){
+  if (!q) return;
+  hintLevel = Math.min(2, hintLevel + 1);
+  lastProgressAt = performance.now();
+  if (hintLevel === 1){
+    const lo = Math.max(0, q.f - 2), hi = Math.min(tierNow().maxFret, q.f + 2);
+    document.getElementById('fSub').textContent = 'Hint: it is somewhere between fret ' + lo + ' and fret ' + hi + '.';
+    drawBoard({ range:[lo, hi] });
+  } else {
+    document.getElementById('fSub').textContent = 'It is right here — play it, then it moves on.';
+    drawBoard({ reveal:true });
+  }
+}
+function drawBoard(opts){
+  const t = tierNow(), el = document.getElementById('fBoard');
+  if (!q){ el.innerHTML = ''; return; }
+  const frets = t.maxFret;
+  const names = TUNINGS[tuning].names;
+  let h = '<div class="fb" style="grid-template-columns:28px repeat(' + (frets+1) + ',minmax(26px,1fr))">';
+  for (let si = names.length - 1; si >= 0; si--){
+    const active = t.strings.includes(names[si]);
+    h += '<div class="lbl"' + (active ? '' : ' style="opacity:.35"') + '>' + names[si] + '</div>';
+    for (let f = 0; f <= frets; f++){
+      const isTarget = opts.reveal && si === q.si && f === q.f;
+      const inRange = opts.range && si === q.si && f >= opts.range[0] && f <= opts.range[1];
+      h += '<div class="cell' + (f===0?' f0':'') + (inRange?' range':'') + '"' + (active?'':' style="opacity:.3"') + '>' +
+        (isTarget ? '<span class="dot">' + q.name + '</span>' : '') + '</div>';
+    }
+  }
+  h += '<div></div>';
+  for (let f = 0; f <= frets; f++) h += '<div class="fnum">' + (f === 0 ? '0' : f) + '</div>';
+  h += '</div>';
+  el.innerHTML = h;
+}
+function updateFindStats(){
+  document.getElementById('fScore').textContent = sess.find.score;
+  document.getElementById('fStreak').textContent = sess.find.streak;
+  document.getElementById('fAsked').textContent = sess.find.asked;
+}
+
+function onStableNote(reading){
+  const heardName = C.hzToNote(reading.hz).name;
+  if (mode === 'find'){
+    if (!q) return;
+    const verdict = C.checkAnswer(reading, q.midi);
+    const vEl = document.getElementById('fVerdict'), hEl = document.getElementById('fHeard');
+    hEl.textContent = 'heard ' + heardName + C.hzToNote(reading.hz).octave +
+      ' (' + reading.hz.toFixed(1) + ' Hz, ' + (reading.cents>0?'+':'') + Math.round(reading.cents) + ' cents)';
+    if (verdict === 'correct'){
+      vEl.textContent = ['Yes! 🤘','Nailed it.','Correct!','That’s the one.'][Math.floor(Math.random()*4)];
+      vEl.className = 'verdict ok';
+      sess.find.score++; sess.find.streak++; sess.find.asked++;
+      recordAnswer(true, q, performance.now() - qStart);
+      drawBoard({ reveal:true });
+      setTimeout(newQuestion, 1100);
+    } else if (verdict === 'out-of-tune'){
+      vEl.textContent = 'Right note, but ' + Math.abs(Math.round(reading.cents)) + ' cents out — check your tuning.';
+      vEl.className = 'verdict warn';
+    } else if (verdict === 'wrong-octave'){
+      vEl.textContent = 'That’s a ' + heardName + ', but the wrong octave — you want the one on the ' + q.sn + ' string.';
+      vEl.className = 'verdict no';
+      countWrong();
+    } else {
+      vEl.textContent = 'That’s ' + heardName + ' — keep looking for ' + q.name + '.';
+      vEl.className = 'verdict no';
+      countWrong();
+    }
+  } else if (mode === 'echo'){
+    if (echoTarget == null) return;
+    const same = (((reading.midi - echoTarget) % 12) + 12) % 12 === 0;
+    const vEl = document.getElementById('eVerdict');
+    document.getElementById('eHeard').textContent = 'heard ' + heardName + C.hzToNote(reading.hz).octave;
+    if (same){
+      vEl.textContent = 'Correct — that was ' + C.NAMES[((echoTarget%12)+12)%12] + '. 👂';
+      vEl.className = 'verdict ok';
+      sess.echo.score++; sess.echo.streak++;
+      document.getElementById('eScore').textContent = sess.echo.score;
+      document.getElementById('eStreak').textContent = sess.echo.streak;
+      setTimeout(newEcho, 1400);
+    } else {
+      vEl.textContent = 'Not quite — that was ' + heardName + '. Listen again.';
+      vEl.className = 'verdict no';
+      sess.echo.streak = 0;
+      document.getElementById('eStreak').textContent = 0;
+    }
+  }
+}
+function countWrong(){
+  wrongThisQ++;
+  lastProgressAt = performance.now();
+  if (wrongThisQ === 1){
+    sess.find.streak = 0; sess.find.asked++;
+    recordAnswer(false, q, performance.now() - qStart);
+  }
+  if (wrongThisQ >= 2 && hintLevel < 2) showHint();
+  updateFindStats();
+}
+function recordAnswer(ok, question, elapsedMs){
+  saveStats(st => {
+    st.answered++; if (ok) st.correct++;
+    const bs = st.byString[question.sn] || (st.byString[question.sn] = { a:0, c:0, recent:[] });
+    bs.a++; if (ok) bs.c++;
+    bs.recent = bs.recent || [];
+    bs.recent.push(ok ? 1 : 0);
+    if (bs.recent.length > 20) bs.recent.shift();
+    if (!ok){
+      const key = question.sn + ':' + question.f;
+      st.heat[key] = (st.heat[key] || 0) + 1;
+    }
+    if (ok && sess.find.streak > (st.bestStreak || 0)) st.bestStreak = sess.find.streak;
+    st.tierRecent = st.tierRecent || {};
+    const tr = st.tierRecent[tier] || (st.tierRecent[tier] = []);
+    tr.push(ok ? 1 : 0); if (tr.length > 20) tr.shift();
+    st.speed = st.speed || [];
+    st.speed.push(Math.min(30, elapsedMs / 1000)); if (st.speed.length > 20) st.speed.shift();
+  });
+}
+
+/* ================= echo ================= */
+let echoTarget = null;
+function newEcho(){
+  const p = pool();
+  if (!p.length) return;
+  echoTarget = p[Math.floor(Math.random() * p.length)].midi;
+  tracker.reset();
+  document.getElementById('eVerdict').innerHTML = '&nbsp;';
+  document.getElementById('eHeard').innerHTML = '&nbsp;';
+  playNote(echoTarget);
+}
+function playNote(midi){
+  if (!A.ctx) return;
+  const t = A.ctx.currentTime, f = C.midiToHz(midi);
+  const out = A.ctx.createGain();
+  out.gain.setValueAtTime(0.0001, t);
+  out.gain.exponentialRampToValueAtTime(0.5, t + 0.02);
+  out.gain.exponentialRampToValueAtTime(0.0001, t + 1.4);
+  const lp = A.ctx.createBiquadFilter();
+  lp.type = 'lowpass'; lp.frequency.value = Math.min(2400, f * 14);
+  const o1 = A.ctx.createOscillator(); o1.type = 'sawtooth'; o1.frequency.value = f;
+  const o2 = A.ctx.createOscillator(); o2.type = 'square'; o2.frequency.value = f * 2;
+  const g2 = A.ctx.createGain(); g2.gain.value = 0.32;
+  o1.connect(lp); o2.connect(g2); g2.connect(lp); lp.connect(out); out.connect(A.ctx.destination);
+  o1.start(t); o2.start(t); o1.stop(t + 1.5); o2.stop(t + 1.5);
+}
+
+/* ================= ui wiring ================= */
+function setMode(m){
+  mode = m;
+  document.querySelectorAll('#modeSeg button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
+  document.getElementById('secTuner').classList.toggle('hidden', m !== 'tuner');
+  document.getElementById('secFind').classList.toggle('hidden', m !== 'find');
+  document.getElementById('secEcho').classList.toggle('hidden', m !== 'echo');
+  tracker.reset();
+  if (m === 'find' && !q) newQuestion();
+  if (m === 'echo') newEcho();
+}
+function renderTierUI(){
+  const sel = document.getElementById('tierSel');
+  sel.innerHTML = TIERS.map((t,i) => {
+    const locked = t.strings.includes('B') && tuning === 4 && !t.accidentals;
+    return '<option value="' + i + '"' + (i===tier?' selected':'') + (locked?' disabled':'') + '>Tier ' +
+      t.label + (locked ? ' — needs 5-string' : '') + '</option>';
+  }).join('');
+  const fs = document.getElementById('focusSeg');
+  const strs = tierNow().strings;
+  fs.innerHTML = '<button data-f="">All strings</button>' +
+    strs.map(s => '<button data-f="' + s + '">' + s + ' only</button>').join('');
+  fs.querySelectorAll('button').forEach(b => {
+    b.classList.toggle('on', (b.dataset.f || null) === focus);
+    b.addEventListener('click', () => { focus = b.dataset.f || null; renderTierUI(); newQuestion(); });
+  });
+  document.getElementById('tStrings').textContent = TUNINGS[tuning].names.join(' ');
+}
+
+document.getElementById('startBtn').addEventListener('click', () => startListening());
+document.getElementById('deviceSel').addEventListener('change', e => startListening(e.target.value));
+document.getElementById('modeSeg').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (b) setMode(b.dataset.m);
+});
+document.getElementById('tuningSeg').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  tuning = +b.dataset.t;
+  document.querySelectorAll('#tuningSeg button').forEach(x => x.classList.toggle('on', x === b));
+  const st = loadShared(); st.tuning = tuning;
+  try { localStorage.setItem(LS_KEY, JSON.stringify(st)); } catch(err){}
+  if (tuning === 4 && TIERS[tier].strings.includes('B') && !TIERS[tier].accidentals) tier = 2;
+  focus = null;
+  renderTierUI(); newQuestion();
+});
+document.getElementById('tierSel').addEventListener('change', e => {
+  tier = +e.target.value; focus = null; renderTierUI(); newQuestion();
+});
+document.getElementById('fHint').addEventListener('click', showHint);
+document.getElementById('fSkip').addEventListener('click', newQuestion);
+document.getElementById('ePlay').addEventListener('click', () => { if (echoTarget != null) playNote(echoTarget); });
+document.getElementById('eNext').addEventListener('click', newEcho);
+document.querySelectorAll('#tuningSeg button').forEach(x => x.classList.toggle('on', +x.dataset.t === tuning));
+renderTierUI();
+
+// Offer help when the player stops making progress — whether that is silence,
+// or being stuck holding one wrong note (which fires only a single verdict).
+// Once they've already missed, help arrives sooner.
+setInterval(() => {
+  if (mode !== 'find' || !q || hintLevel >= 2) return;
+  const stalledFor = performance.now() - lastProgressAt;
+  if (stalledFor > (wrongThisQ > 0 ? 4500 : 10000)) showHint();
+}, 700);
+</script>
+</body>
+</html>

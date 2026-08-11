@@ -151,6 +151,35 @@
     };
   }
 
+  /**
+   * Reduce the sample rate by an integer `factor`, low-passing first so
+   * that high-frequency content cannot alias down into the bass range.
+   *
+   * Detection cost is O(samples × maxLag), both of which scale with the
+   * sample rate — decimating by 4 makes it ~16x cheaper, which is the
+   * difference between smooth and unusable on a phone. Two passes of a
+   * moving average give enough stopband rejection for our purposes and
+   * cost only a couple of adds per sample.
+   */
+  function downsample(samples, factor) {
+    if (factor <= 1) return samples;
+    const width = factor * 2;
+    const pass = (src) => {
+      const out = new Float32Array(src.length);
+      let acc = 0;
+      for (let i = 0; i < src.length; i++) {
+        acc += src[i];
+        if (i >= width) acc -= src[i - width];
+        out[i] = acc / Math.min(i + 1, width);
+      }
+      return out;
+    };
+    const smoothed = pass(pass(samples));
+    const out = new Float32Array(Math.floor(samples.length / factor));
+    for (let i = 0; i < out.length; i++) out[i] = smoothed[i * factor];
+    return out;
+  }
+
   // How far out of tune a note may sit and still count as "found".
   const CENTS_TOLERANCE = 40;
 
@@ -188,7 +217,7 @@
   }
 
   return {
-    detectPitch, hzToNote, midiToHz, createTracker, checkAnswer, tuningDrift,
+    detectPitch, hzToNote, midiToHz, createTracker, checkAnswer, tuningDrift, downsample,
     NAMES, MIN_HZ, MAX_HZ, CLARITY_MIN, CENTS_TOLERANCE,
   };
 });
