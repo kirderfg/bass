@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0f1115">
+<meta name="theme-color" content="#161412">
 <title>Bass Live Trainer</title>
 <link rel="stylesheet" href="../shared/theme.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎙️</text></svg>">
@@ -21,7 +21,7 @@ body{
   font-size:16px; line-height:1.45; padding-bottom:40px;
 }
 header{
-  position:sticky; top:0; z-index:20; background:#12151c;
+  position:sticky; top:0; z-index:20; background:var(--s1);
   padding:10px 14px; display:flex; align-items:center; justify-content:space-between; gap:10px;
 }
 header h1{font-size:17px; margin:0;}
@@ -36,7 +36,7 @@ main{padding:0 12px; max-width:920px; margin:0 auto;}
   border-radius:12px; padding:10px 14px; font-size:15px; font-weight:600;
   min-height:44px; cursor:pointer; font-family:inherit;
 }
-.btn.primary{background:var(--root); border-color:var(--root); color:#1a1204;}
+.btn.primary{background:var(--root); border-color:var(--root); color:var(--on-root);}
 .btn.small{min-height:44px; padding:8px 12px; font-size:13.5px;}
 .btn:active{transform:scale(.97);}
 .row{display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
@@ -46,14 +46,14 @@ main{padding:0 12px; max-width:920px; margin:0 auto;}
   border-radius:10px; padding:8px 12px; min-height:44px; min-width:44px;
   font-size:14px; font-weight:600; cursor:pointer; font-family:inherit;
 }
-.seg button.on{background:#2b3242; color:var(--text); border-color:#4b5570;}
+.seg button.on{background:var(--s3); color:var(--text); border-color:var(--line-hi);}
 select{
   background:var(--panel2); color:var(--text); border:1px solid var(--line);
   border-radius:10px; padding:10px 8px; font-size:15px; min-height:44px; width:100%;
 }
 /* ---- mic gate ---- */
 #gate{text-align:center; padding:30px 10px;}
-#gate .big{font-size:46px;}
+.gate-art{width:150px; height:60px; margin:0 auto var(--sp3);}
 #gate p{max-width:420px; margin:10px auto;}
 #gate .err{color:var(--bad); font-weight:600;}
 /* ---- level meter ---- */
@@ -65,8 +65,12 @@ select{
 /* ---- tuner ---- */
 .meter{position:relative; height:52px; margin:var(--sp3) 0 2px; background:var(--s2);
   border:1px solid var(--line); border-radius:var(--r-sm); overflow:hidden;}
-.meter-zone{position:absolute; left:36.5%; right:36.5%; top:0; bottom:0;
-  background:rgba(69,196,134,.12); border-left:1px solid rgba(69,196,134,.3); border-right:1px solid rgba(69,196,134,.3);}
+.meter-track{position:absolute; left:5px; right:5px; top:0; bottom:0;}
+.meter-zone{position:absolute; left:35%; right:35%; top:0; bottom:0;
+  background:rgba(69,196,134,.12);
+  border-left:1px solid rgba(69,196,134,.3); border-right:1px solid rgba(69,196,134,.3);
+  transition:background var(--fast);}
+.meter.is-intune .meter-zone{background:var(--good);}
 .meter-center{position:absolute; left:50%; top:0; bottom:0; width:2px; margin-left:-1px; background:var(--good); opacity:.6;}
 .meter-ticks i{position:absolute; top:0; width:1px; height:9px; background:var(--t4); opacity:.7;}
 .meter-needle{
@@ -74,9 +78,10 @@ select{
   border-radius:3px; background:var(--root);
   transform:translate3d(0,0,0); transition:transform 90ms linear;
 }
-.meter-needle.intune{background:var(--good);}
-.meter-scale{display:flex; justify-content:space-between; font-family:var(--mono);
-  font-size:10px; color:var(--t4); padding:0 1px;}
+/* green-on-green would vanish at the exact moment of success */
+.meter-needle.intune{background:var(--s0);}
+.meter-scale{position:relative; height:14px; font-family:var(--mono); font-size:10px; color:var(--t4);}
+.meter-scale span{position:absolute; transform:translateX(-50%); white-space:nowrap;}
 .tune-list{display:flex; gap:6px; justify-content:center; margin:var(--sp3) 0 0;}
 .tune-chip{
   display:flex; align-items:center; justify-content:center; gap:3px;
@@ -92,7 +97,7 @@ select{
 .tuner-hz{text-align:center; color:var(--dim); font-size:13px;}
 .needle{position:relative; height:46px; margin:12px 0 4px; background:var(--panel2); border-radius:10px; overflow:hidden;}
 .needle .center{position:absolute; left:50%; top:0; bottom:0; width:2px; background:var(--good); opacity:.55;}
-.needle .zone{position:absolute; left:36.5%; right:36.5%; top:0; bottom:0; background:rgba(61,220,132,.10);}
+.needle .zone{position:absolute; left:36.5%; right:36.5%; top:0; bottom:0; background:rgba(69,196,134,.12);}
 .needle .bar{position:absolute; top:8px; bottom:8px; width:6px; margin-left:-3px; border-radius:3px; background:var(--root); left:50%; transition:left .09s linear, background .2s;}
 .needle .bar.intune{background:var(--good);}
 .needle .lbl{position:absolute; bottom:2px; font-size:10px; color:var(--dim);}
@@ -109,20 +114,29 @@ select{
 .stat b{display:block; font-size:19px; color:var(--root);}
 .stat span{font-size:11px; color:var(--dim);}
 .hidden{display:none !important;}
-.tag{display:inline-block; background:#2b3242; border-radius:99px; padding:5px 11px; font-size:12.5px; font-weight:600;}
+.tag{display:inline-block; background:var(--s3); border-radius:99px; padding:5px 11px; font-size:12.5px; font-weight:600;}
 </style>
 </head>
 <body>
 <header>
-  <h1>🎙️ Bass <span>Live</span> Trainer</h1>
+  <h1 class="t-title2">Bass <span>Live</span></h1>
   <a href="../index.html">← Theory Trainer<br>&amp; practice plan</a>
 </header>
 <main>
   <div id="gate">
-    <div class="big">🎸→🎙️</div>
+    <svg viewBox="0 0 120 48" class="gate-art" role="img" aria-hidden="true">
+      <rect x="4" y="14" width="52" height="20" rx="4" fill="var(--wood)" stroke="var(--line)"/>
+      <line x1="4" y1="20" x2="56" y2="20" stroke="var(--string)" stroke-width="1.4"/>
+      <line x1="4" y1="24" x2="56" y2="24" stroke="var(--string)" stroke-width="2"/>
+      <line x1="4" y1="28" x2="56" y2="28" stroke="var(--string)" stroke-width="2.8"/>
+      <path d="M64 24h14" stroke="var(--root)" stroke-width="2" stroke-linecap="round"/>
+      <path d="M74 20l5 4-5 4" fill="none" stroke="var(--root)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="88" y="12" width="16" height="20" rx="8" fill="none" stroke="var(--t2)" stroke-width="2"/>
+      <path d="M96 32v6M90 38h12" stroke="var(--t2)" stroke-width="2" stroke-linecap="round"/>
+    </svg>
     <h2 style="margin:8px 0 4px; font-size:19px">Play your bass, not the screen</h2>
     <p class="muted">Plug in your audio interface (or use your phone's mic near the bass), then let this page listen. It checks the notes you actually play.</p>
-    <p><button class="btn primary" id="startBtn">🎤 Start listening</button></p>
+    <p><button class="btn primary" id="startBtn">Start listening</button></p>
     <p class="small muted">Nothing is recorded or uploaded — audio is analysed on your device and thrown away.</p>
     <p class="err hidden" id="gateErr"></p>
   </div>
@@ -139,9 +153,9 @@ select{
     </div>
 
     <div class="seg" id="modeSeg" style="margin:10px 0">
-      <button data-m="tuner" class="on">🎯 Tuner</button>
-      <button data-m="find">🔎 Find it</button>
-      <button data-m="echo">👂 Echo</button>
+      <button data-m="tuner" class="on">Tuner</button>
+      <button data-m="find">Find it</button>
+      <button data-m="echo">Ear training</button>
     </div>
 
     <!-- ================= TUNER ================= -->
@@ -152,15 +166,16 @@ select{
         <div class="meter">
           <div class="meter-zone"></div>
           <div class="meter-center"></div>
-          <div class="meter-ticks"><i style="left:0%"></i><i style="left:22.5%"></i><i style="left:50%"></i><i style="left:77.5%"></i><i style="left:100%"></i></div>
+          <div class="meter-ticks"><i style="left:0%"></i><i style="left:25%"></i><i style="left:50%"></i><i style="left:75%"></i><i style="left:100%"></i></div>
           <div class="meter-needle" id="tBar"></div>
         </div>
         <div class="meter-scale">
-          <span>♭ 50</span><span>25</span><span>0</span><span>25</span><span>50 ♯</span>
+          <span style="left:0%">♭50</span><span style="left:25%">25</span><span style="left:50%">0</span>
+          <span style="left:75%">25</span><span style="left:100%">50♯</span>
         </div>
         <div class="cents" id="tCents">&nbsp;</div>
         <div class="tune-list" id="tuneList"></div>
-        <p class="muted small" style="margin:10px 0 0">Play each <b>open</b> string in turn (no fingers on the neck): <b id="tStrings">B E A D G</b>. Land the bar in the green zone.<br>
+        <p class="muted small" style="margin:10px 0 0">Play each <b>open</b> string in turn (no fingers on the neck): <b id="tStrings">B E A D G</b>. Line the needle up in the green zone.<br>
         <span style="opacity:.8">A <b>cent</b> is a hundredth of a fret's worth of pitch — 100 cents = 1 fret. Under 15 cents is close enough for rock.</span></p>
       </div>
     </section>
@@ -198,9 +213,9 @@ select{
         <div class="q" id="eQ">Listen, then play it back</div>
         <div class="qsub">No note name, no fret — use your ears. Play the note you heard, anywhere on the neck.</div>
         <div class="row" style="justify-content:center; margin:10px 0">
-          <button class="btn primary" id="ePlay">🔊 Play the note</button>
+          <button class="btn primary" id="ePlay">Play the note</button>
           <button class="btn small" id="eNext">New note →</button>
-          <button class="btn small hidden" id="eShow">🤔 Show me the note</button>
+          <button class="btn small hidden" id="eShow">Show me the note</button>
         </div>
         <div class="verdict" id="eVerdict">&nbsp;</div>
         <div class="heard" id="eHeard">&nbsp;</div>
@@ -373,7 +388,7 @@ function tick(){
       warn.textContent = '⚠️ Every note is landing ' + Math.abs(Math.round(drift.meanCents)) +
         ' cents ' + (drift.meanCents < 0 ? 'flat (too low)' : 'sharp (too high)') +
         ' — your bass itself may be out of tune. ' + (mode === 'tuner' ? 'Tune each open string to the green zone below.' : 'Open the Tuner tab.');
-      warn.classList.toggle('hidden', mode === 'tuner' && Math.abs(drift.meanCents) < 25);
+      warn.classList.toggle('hidden', mode === 'tuner');   // redundant on this screen
     } else warn.classList.add('hidden');
   }
 }
@@ -398,7 +413,9 @@ function renderTuner(pitch, reading){
     noteEl.textContent = '—'; noteEl.classList.remove('intune');
     hzEl.textContent = 'play a note';
     centsEl.innerHTML = '&nbsp;';
-    bar.style.transform = 'translate3d(0,0,0)'; bar.classList.remove('intune');
+    bar.style.transform = 'translate3d(0,0,0)';
+    bar.classList.remove('intune');
+    bar.parentElement.classList.remove('is-intune');
     renderTuneList(null);
     return;
   }
@@ -417,8 +434,10 @@ function renderTuner(pitch, reading){
   // Clamp to the meter's range so a wildly-off note pins at the edge
   // instead of sliding out from under the scale.
   const clamped = Math.max(-50, Math.min(50, n.cents));
-  bar.style.transform = 'translate3d(' + (clamped * 0.9 * (bar.parentElement.clientWidth / 100)) + 'px,0,0)';
+  const halfTrack = (bar.parentElement.clientWidth - 10) / 2;   // 5px inset each side
+  bar.style.transform = 'translate3d(' + (clamped / 50 * halfTrack) + 'px,0,0)';
   bar.classList.toggle('intune', inTune);
+  bar.parentElement.classList.toggle('is-intune', inTune);
   if (target && inTune) tunedStrings[target.name] = true;
   renderTuneList(target && target.name);
   centsEl.textContent = inTune ? '✓ in tune'
@@ -472,7 +491,7 @@ function showHint(){
   if (outOfTuneThisQ && hintLevel === 0){
     // They found the right note; the problem is the instrument, not the fret.
     document.getElementById('fSub').innerHTML =
-      'You are playing the right note — it is your <b>tuning</b> that is off. Open the 🎯 Tuner tab and retune that string.';
+      'You are playing the right note — it is your <b>tuning</b> that is off. Open the Tuner tab and retune that string.';
     lastProgressAt = performance.now();
     outOfTuneThisQ = false;
     return;
@@ -527,7 +546,7 @@ function onStableNote(reading){
     hEl.textContent = 'heard ' + heardName + C.hzToNote(reading.hz).octave +
       ' (' + reading.hz.toFixed(1) + ' Hz, ' + (reading.cents>0?'+':'') + Math.round(reading.cents) + ' cents)';
     if (verdict === 'correct'){
-      vEl.textContent = ['Yes! 🤘','Nailed it.','Correct!','That’s the one.'][Math.floor(Math.random()*4)];
+      vEl.textContent = ['Yes!','Nailed it.','Correct!','That’s the one.'][Math.floor(Math.random()*4)];
       vEl.className = 'verdict ok';
       sess.find.score++; sess.find.streak++; sess.find.asked++;
       recordAnswer(true, q, performance.now() - qStart);
@@ -559,13 +578,13 @@ function onStableNote(reading){
     const vEl = document.getElementById('eVerdict');
     document.getElementById('eHeard').textContent = 'you played ' + heardName + C.hzToNote(reading.hz).octave;
     if (same){
-      vEl.textContent = 'Correct — the note was ' + targetName + '. 👂';
+      vEl.textContent = 'Correct — the note was ' + targetName + '.';
       vEl.className = 'verdict ok';
       sess.echo.score++; sess.echo.streak++;
       if (echoWrongThisTarget === 0) recordEcho(true);
       setTimeout(newEcho, 1600);
     } else {
-      vEl.textContent = 'You played ' + heardName + ' — that is not it. Tap 🔊 to hear it again.';
+      vEl.textContent = 'You played ' + heardName + ' — that is not it. Tap “Play the note” to hear it again.';
       vEl.className = 'verdict no';
       sess.echo.streak = 0;
       recordEcho(false);

@@ -136,6 +136,9 @@ test('echo mode accepts the right pitch class played in any octave', async () =>
 test('a consistently flat instrument is called out rather than marked wrong', async () => {
   const app = await openWithNote(E1 * Math.pow(2, -32 / 1200));
   try {
+    // The warning belongs on the practice screens. On the Tuner it would be
+    // telling the player what the tuner is already showing them.
+    await app.page.evaluate(() => setMode('find'));
     const warn = await until(app.page, () => {
       const el = document.getElementById('tuneWarn');
       return !el.classList.contains('hidden') ? el.textContent : null;

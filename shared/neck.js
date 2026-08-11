@@ -17,9 +17,9 @@
   /* Two shipping sizes: `play` for anything tappable (44px+ targets),
      `read` for hint boards. `micro` exists only inside drill diagrams. */
   const SCALES = {
-    play:  { openCol:34, nut:7, col:46, row:46, dot:15, inlay:5.5, fretNum:20, label:13,   gaugeMul:1,    finger:true  },
-    read:  { openCol:26, nut:5, col:34, row:30, dot:11, inlay:4.0, fretNum:16, label:10.5, gaugeMul:0.68, finger:false },
-    micro: { openCol:18, nut:4, col:26, row:22, dot:8.5, inlay:3.0, fretNum:13, label:9,   gaugeMul:0.5,  finger:false },
+    play:  { openCol:44, nut:7, col:46, row:46, dot:11.5, inlay:5.5, fretNum:20, label:13,   gaugeMul:1,    finger:true  },
+    read:  { openCol:26, nut:5, col:34, row:30, dot:9, inlay:4.0, fretNum:16, label:10.5, gaugeMul:0.68, finger:false },
+    micro: { openCol:18, nut:4, col:26, row:22, dot:7.5, inlay:3.0, fretNum:13, label:9,   gaugeMul:0.5,  finger:false },
   };
   // Relative gauges of a real 5-string set (.130 → .045). The low B has to
   // look like the low B; this is the detail that sells the instrument.
@@ -222,10 +222,11 @@
       if (!f) continue;
       const top = edgeTop(f.center), bot = edgeBot(f.center);
       const ys = inlay.double
-        ? [top + (bot - top) * 0.28, top + (bot - top) * 0.72]
+        ? [top + (bot - top) * 0.16, top + (bot - top) * 0.84]
         // With an odd string count the centre line is a string, so sit the
         // dot in the gap below it rather than under the string itself.
         : [(top + bot) / 2 + (g.nStrings % 2 ? g.pitchAt(f.center) * 0.5 : 0)];
+      void 0;
       for (const cy of ys) {
         svg.appendChild(el('circle', { cx: f.center, cy, r: S.inlay, class: 'neck-inlay' }));
       }
@@ -347,21 +348,25 @@
       }));
       if (drawKind === 'root') grp.appendChild(el('circle', { cx: f.center, cy, r: S.dot - 4.5, class: 'neck-ring' }));
       if (m.label != null) {
-        const t = el('text', { x: f.center, y: cy, class: 'neck-dot-label', 'font-size': S.label });
-        t.textContent = m.label;
+        const txt = String(m.label).replace(/^b(?=[0-9])/, '\u266d');   // b3 -> ♭3
+        const t = el('text', {
+          x: f.center, y: cy, class: 'neck-dot-label',
+          'font-size': txt.length > 1 ? S.label * 0.78 : S.label,
+        });
+        t.textContent = txt;
         grp.appendChild(t);
       }
       if (drawKind === 'correct' || drawKind === 'wrong') {
-        const bx = f.center + S.dot * 0.82, by = cy - S.dot * 0.82;
-        grp.appendChild(el('circle', { cx: bx, cy: by, r: 7.5, class: 'neck-badge-bg' }));
+        const bx = f.center + S.dot * 0.95, by = cy - S.dot * 0.95;
+        grp.appendChild(el('circle', { cx: bx, cy: by, r: 6.5, class: 'neck-badge-bg' }));
         const b = el('text', { x: bx, y: by, class: 'neck-badge' });
         b.textContent = drawKind === 'correct' ? '✓' : '✕';
         grp.appendChild(b);
       }
       // An illegible fingering badge is worse than none, so small boards drop it.
       if (m.finger && S.finger) {
-        grp.appendChild(el('circle', { cx: f.center + 10, cy: cy + 10, r: 7.5, class: 'neck-finger-bg' }));
-        const ft = el('text', { x: f.center + 10, y: cy + 10, class: 'neck-finger' });
+        grp.appendChild(el('circle', { cx: f.center + 9, cy: cy + 9, r: 6.5, class: 'neck-finger-bg' }));
+        const ft = el('text', { x: f.center + 9, y: cy + 9, class: 'neck-finger' });
         ft.textContent = m.finger;
         grp.appendChild(ft);
       }

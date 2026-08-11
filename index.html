@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0f1115">
+<meta name="theme-color" content="#161412">
 <title>Bass Theory Trainer</title>
 <link rel="stylesheet" href="shared/theme.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎸</text></svg>">
@@ -23,7 +23,7 @@ body{
 }
 header{
   position:sticky; top:0; z-index:30;
-  background:linear-gradient(180deg,#12151c 80%,rgba(18,21,28,0));
+  background:linear-gradient(180deg,var(--s1) 80%,rgba(14,13,12,0));
   padding:10px 14px 8px;
   display:flex; align-items:center; justify-content:space-between; gap:8px;
 }
@@ -57,9 +57,11 @@ button{font-family:inherit;}
   min-height:44px; cursor:pointer;
 }
 .btn:active{transform:scale(.97);}
-.btn.primary{background:var(--root); border-color:var(--root); color:#1a1204;}
+.btn.primary{background:var(--root); border-color:var(--root); color:var(--on-root);}
 .btn.ghost{background:transparent;}
-.btn.small{min-height:38px; padding:7px 11px; font-size:13.5px; border-radius:10px;}
+.btn-ic{width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.9;
+  stroke-linecap:round; stroke-linejoin:round; vertical-align:-3px; margin-right:5px;}
+.btn.small{min-height:44px; padding:7px 11px; font-size:13.5px; border-radius:10px;}
 .btn[disabled]{opacity:.45; pointer-events:none;}
 .row{display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
 .row.between{justify-content:space-between;}
@@ -68,7 +70,7 @@ button{font-family:inherit;}
   background:var(--panel2); border:1px solid var(--line); color:var(--dim);
   border-radius:10px; padding:8px 12px; min-height:44px; font-size:14px; font-weight:600; cursor:pointer;
 }
-.seg button.on{background:#2b3242; color:var(--text); border-color:#4b5570;}
+.seg button.on{background:var(--s3); color:var(--t1); border-color:var(--root); box-shadow:inset 0 -2px 0 var(--root);}
 .seg.compact button{min-height:44px; min-width:44px; padding:6px 10px; font-size:13px;}
 select{
   background:var(--panel2); color:var(--text); border:1px solid var(--line);
@@ -77,7 +79,17 @@ select{
 label.chk{
   display:flex; align-items:center; gap:10px; min-height:44px; cursor:pointer; font-size:15px;
 }
-input[type=checkbox]{width:22px; height:22px; accent-color:var(--root); flex:0 0 auto;}
+input[type=checkbox]{
+  appearance:none; -webkit-appearance:none;
+  width:24px; height:24px; flex:0 0 auto; cursor:pointer;
+  border:2px solid var(--line-hi); border-radius:var(--r-xs); background:var(--s2);
+  position:relative; transition:background var(--fast), border-color var(--fast);
+}
+input[type=checkbox]:checked{background:var(--root); border-color:var(--root);}
+input[type=checkbox]:checked::after{
+  content:''; position:absolute; left:6px; top:2px; width:8px; height:13px;
+  border:solid var(--on-root); border-width:0 2.5px 2.5px 0; transform:rotate(45deg);
+}
 input[type=range]{width:100%; accent-color:var(--root); min-height:44px;}
 /* ---------- pills / note chips ---------- */
 .chips{display:flex; flex-wrap:wrap; gap:6px;}
@@ -87,9 +99,9 @@ input[type=range]{width:100%; accent-color:var(--root); min-height:44px;}
   background:var(--panel2); border:1px solid var(--line); font-weight:700; font-size:15px;
 }
 .chip small{font-weight:600; font-size:11px; color:var(--dim);}
-.chip.root{background:var(--root); border-color:var(--root); color:#1a1204;}
-.chip.root small{color:#5c430e;}
-.chip.tone{background:#123c4e; border-color:var(--tone); color:var(--tone);}
+.chip.root{background:var(--root); border-color:var(--root); color:var(--on-root);}
+.chip.root small{color:rgba(42,27,5,.72);}
+.chip.tone{background:var(--tone-tint); border-color:var(--tone); color:var(--tone);}
 .chip.dim{opacity:.38;}
 /* ---------- legend ---------- */
 .legend{display:flex; gap:14px; flex-wrap:wrap; font-size:12.5px; color:var(--dim); margin:6px 2px;}
@@ -97,12 +109,12 @@ input[type=range]{width:100%; accent-color:var(--root); min-height:44px;}
 .legend .l-root i{background:var(--root);} .legend .l-tone i{background:var(--tone);} .legend .l-hl i{background:var(--hl);}
 /* ---------- theory cards ---------- */
 .tcard{
-  background:linear-gradient(135deg,#1d2230,#171d2b);
-  border:1px solid #34405c; border-radius:var(--radius);
+  background:linear-gradient(135deg,var(--s2),var(--s2));
+  border:1px solid var(--line); border-radius:var(--radius);
   padding:12px 12px 12px 14px; margin:10px 0; position:relative;
 }
 .tcard h4{margin:0 0 4px; font-size:14.5px; color:var(--hl);}
-.tcard p{margin:0; font-size:14px; color:#c6cddc;}
+.tcard p{margin:0; font-size:14px; color:var(--t2);}
 .tcard .dismiss{
   position:absolute; top:6px; right:6px; background:transparent; border:0;
   color:var(--dim); font-size:18px; width:44px; height:44px; cursor:pointer; border-radius:8px;
@@ -113,7 +125,7 @@ input[type=range]{width:100%; accent-color:var(--root); min-height:44px;}
 .pitem input{margin-top:2px; width:26px; height:26px;}
 .pitem .pmain{cursor:pointer; display:block;}
 .pitem.done .pmain{color:var(--dim); text-decoration:line-through;}
-.ptext{flex:1;}
+.ptext{flex:1; font-size:15px; line-height:1.55;}
 .ptime{color:var(--root); font-weight:700; font-size:13px;}
 .pcat{font-size:11.5px; letter-spacing:.8px; text-transform:uppercase; color:var(--dim); font-weight:700;}
 .plink{margin-top:6px;}
@@ -132,11 +144,11 @@ input[type=range]{width:100%; accent-color:var(--root); min-height:44px;}
 .quiz-q b{color:var(--hl);}
 .choices{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px;}
 .choices .btn{font-size:17px;}
-.choices .btn.good{background:var(--good); border-color:var(--good); color:#03290f;}
-.choices .btn.bad{background:var(--bad); border-color:var(--bad); color:#330606;}
+.choices .btn.good{background:var(--good-tint); border-color:var(--good); color:var(--good);}
+.choices .btn.bad{background:var(--s2); border:2px solid var(--bad); color:var(--bad);}
 .feedback{min-height:24px; text-align:center; font-weight:700; margin-top:6px;}
 .feedback.ok{color:var(--good);} .feedback.no{color:var(--bad);}
-.heat td{width:calc(100%/14); height:26px; text-align:center; font-size:10px; color:var(--dim); border:1px solid #232836; border-radius:4px;}
+.heat td{width:calc(100%/14); height:26px; text-align:center; font-size:10px; color:var(--dim); border:1px solid var(--hair); border-radius:4px;}
 .heat{width:100%; border-collapse:separate; border-spacing:2px; margin-top:6px;}
 .heat .hh{font-weight:700;}
 /* ---------- metronome ---------- */
@@ -147,7 +159,7 @@ input[type=range]{width:100%; accent-color:var(--root); min-height:44px;}
 .beatdots i.on{background:var(--root); border-color:var(--root);}
 #metrobar{
   position:fixed; left:10px; right:10px; bottom:calc(66px + env(safe-area-inset-bottom));
-  background:#242a38; border:1px solid #3a4358; border-radius:12px;
+  background:var(--s3); border:1px solid var(--line-hi); border-radius:12px;
   display:none; align-items:center; gap:10px; padding:6px 6px 6px 14px; z-index:40;
   box-shadow:0 6px 18px rgba(0,0,0,.45);
 }
@@ -160,7 +172,7 @@ body.metro-on{padding-bottom:calc(140px + env(safe-area-inset-bottom));}
 /* ---------- tab bar ---------- */
 nav.tabbar{
   position:fixed; bottom:0; left:0; right:0; z-index:50;
-  display:flex; background:#141821; border-top:1px solid var(--line);
+  display:flex; background:var(--s4); border-top:1px solid var(--line);
   padding-bottom:env(safe-area-inset-bottom);
 }
 nav.tabbar button{
@@ -168,10 +180,13 @@ nav.tabbar button{
   padding:8px 2px 9px; font-size:11.5px; font-weight:700; cursor:pointer;
   display:flex; flex-direction:column; align-items:center; gap:2px; min-height:58px;
 }
-nav.tabbar button .ic{font-size:21px; line-height:1;}
+nav.tabbar button svg.ic{
+  width:24px; height:24px; fill:none; stroke:currentColor;
+  stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round;
+}
 nav.tabbar button.on{color:var(--root);}
 .copybox{
-  background:#10131a; border:1px dashed #3a4358; border-radius:10px; padding:10px;
+  background:var(--s0); border:1px dashed var(--line-hi); border-radius:10px; padding:10px;
   font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; white-space:pre-wrap;
   max-height:220px; overflow:auto; margin:8px 0;
 }
@@ -205,10 +220,10 @@ nav.tabbar button.on{color:var(--root);}
   <button class="btn small" id="mbStop">■ Stop</button>
 </div>
 <nav class="tabbar" id="tabbar">
-  <button data-tab="practice"><span class="ic">📋</span>Practice</button>
-  <button data-tab="scales"><span class="ic">🎼</span>Scales</button>
-  <button data-tab="chords"><span class="ic">🤘</span>Chords</button>
-  <button data-tab="trainer"><span class="ic">🧠</span>Trainer</button>
+  <button data-tab="practice"><svg viewBox="0 0 24 24" class="ic"><rect x="4" y="3" width="16" height="18" rx="2.5"/><path d="M8.5 9.5l2 2 4-4.5"/><path d="M9 15h7"/></svg>Practice</button>
+  <button data-tab="scales"><svg viewBox="0 0 24 24" class="ic"><path d="M4 17.5a2.5 2.5 0 1 0 5 0V6l9-2.5v9"/><path d="M13 13.5a2.5 2.5 0 1 0 5 0"/></svg>Scales</button>
+  <button data-tab="chords"><svg viewBox="0 0 24 24" class="ic"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="8" cy="6" r="2.2" fill="currentColor" stroke="none"/><circle cx="14" cy="12" r="2.2" fill="currentColor" stroke="none"/><circle cx="10" cy="18" r="2.2" fill="currentColor" stroke="none"/></svg>Chords</button>
+  <button data-tab="trainer"><svg viewBox="0 0 24 24" class="ic"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>Trainer</button>
 </nav>
 <script src="shared/neck.js"></script>
 <script src="shared/diagrams.js"></script>
@@ -356,7 +371,7 @@ const Audio_ = (() => {
 /* Adapter onto the shared SVG neck renderer (shared/neck.js).
    Keeps the call sites below unchanged while the drawing itself is now a
    real fingerboard rather than a table of cells. */
-const KIND = { root:'root', tone:'tone', hl:'highlight', ghost:'ghost',
+const KIND = { root:'root', tone:'tone', hl:'highlight', ghost:'ghost', asked:'asked',
                good:'correct', bad:'wrong', playing:'highlight' };
 
 function drawFretboard(el, cfg){
@@ -460,7 +475,7 @@ function theoryCard(id){
   const c = CARDS[id];
   return '<div class="tcard" data-card="' + id + '">' +
     '<button class="dismiss" title="Dismiss" onclick="dismissCard(\'' + id + '\')">✕</button>' +
-    '<h4>💡 ' + c.title + '</h4><p>' + c.body + '</p></div>';
+    '<h4>' + c.title + '</h4><p>' + c.body + '</p></div>';
 }
 function dismissCard(id){
   if (!S.practice.dismissed.includes(id)) S.practice.dismissed.push(id);
@@ -952,8 +967,8 @@ function renderTrainer(){
   }
   h += '</div>';
 
-  h += '<a class="card tight" href="trainer/index.html" style="display:block; text-decoration:none; color:inherit; border-color:#3a4358">' +
-    '<b style="color:var(--hl)">🎙️ Live Trainer — answer by playing</b>' +
+  h += '<a class="card tight" href="trainer/index.html" style="display:block; text-decoration:none; color:inherit; border-color:var(--line-hi)">' +
+    '<b style="color:var(--hl)">Live Trainer — answer by playing</b>' +
     '<div class="muted small" style="margin-top:2px">Plug your bass into an interface (or use your phone\'s mic) and the app checks the notes you actually play. Includes a tuner. Results feed these same stats.</div></a>';
 
   if (mode === 'study') h += studyHtml();
@@ -1020,14 +1035,14 @@ function mountStudy(){
       const isNat = NATURALS.has(NAMES_S[pc(midi)]);
       if (st.naturalsOnly && !isNat) return null;
       if (!st.show) return null;
-      return { cls: pc(midi) === rootPc('E') && false ? 'root' : (isNat ? 'tone' : 'hl'), label: isNat ? NAMES_S[pc(midi)] : bothNames(midi) };
+      return { cls: isNat ? 'tone' : 'ghost', label: NAMES_S[pc(midi)] };
     },
     onTap(si, f, midi){
       Audio_.note(midi);
       if (!st.show){
         const isNat = NATURALS.has(NAMES_S[pc(midi)]);
         if (st.naturalsOnly && !isNat) return;
-        trainerFb.setNote(si, f, isNat ? 'tone' : 'hl', isNat ? NAMES_S[pc(midi)] : bothNames(midi));
+        trainerFb.setNote(si, f, isNat ? 'tone' : 'ghost', NAMES_S[pc(midi)]);
         setTimeout(() => { try{ trainerFb.clearNote(si, f); }catch(e){} }, 1400);
       }
     }
@@ -1102,11 +1117,11 @@ function drawQuiz(){
     });
   }
   if (q.mode === 'name'){
-    qText.innerHTML = 'What note is the <b>purple dot</b>? <span class="muted small">(' + q.sn + ' string, fret ' + q.f + ')</span>';
+    qText.innerHTML = 'What note is the <b>marked fret</b>? <span class="muted small">(' + q.sn + ' string)</span>';
     trainerFb = drawFretboard(document.getElementById('quizFb'), {
       frets,
       disable(si, f){ return !tier.strings.includes(names[si]); },
-      mark(si, f){ return (si === q.si && f === q.f) ? { cls:'hl', label:'?' } : null; },
+      mark(si, f){ return (si === q.si && f === q.f) ? { cls:'asked', label:'?' } : null; },
       onTap(si, f, midi){ Audio_.note(midi); }
     });
     qChoices.innerHTML = '<div class="choices">' + q.choices.map(c =>
@@ -1120,7 +1135,7 @@ function drawQuiz(){
     qText.innerHTML = 'This is <b>' + q.name + '</b>. Find the <b>same note one octave up</b>: 2 strings up + 2 frets up.<br><span class="muted small" style="font-weight:400">The question starts on the tier\'s strings — the answer lands 2 strings higher, so all strings are open for tapping.</span>';
     trainerFb = drawFretboard(document.getElementById('quizFb'), {
       frets,
-      mark(si, f){ return (si === q.si && f === q.f) ? { cls:'hl', label:q.name } : null; },
+      mark(si, f){ return (si === q.si && f === q.f) ? { cls:'asked', label:q.name } : null; },
       onTap(si, f, midi){ answerOctave(si, f, midi); }
     });
     trainerFb.scrollToFret(q.f);
@@ -1173,9 +1188,10 @@ function answerName(btn){
   const q = T.q;
   const ok = btn.dataset.c === q.correctLabel;
   btn.classList.add(ok ? 'good' : 'bad');
+  btn.textContent = (ok ? '✓ ' : '✕ ') + btn.textContent;
   if (!ok){
     const right = document.querySelector('#qChoices button[data-c="' + q.correctLabel + '"]');
-    if (right) right.classList.add('good');
+    if (right){ right.classList.add('good'); right.textContent = '✓ ' + right.textContent; }
   }
   trainerFb.setNote(q.si, q.f, ok ? 'good' : 'bad', q.correctLabel);
   Audio_.note(q.midi);
@@ -1199,6 +1215,10 @@ function answerOctave(si, f, midi){
 function statsHtml(){
   const st = S.stats;
   const acc = st.answered ? Math.round(100 * st.correct / st.answered) : 0;
+  if (!st.answered){
+    return '<div class="card"><b class="t-title3">No answers yet</b>' +
+      '<div class="muted small" style="margin-top:2px">Pick a test mode above. Your accuracy, streak and a map of the frets you miss will build up here.</div></div>';
+  }
   let h = '<div class="card"><b>Your stats</b> <span class="muted small">(saved on this device)</span>';
   h += '<div class="statgrid">';
   h += '<div class="stat"><b>' + st.correct + '</b><span>correct</span></div>';
@@ -1240,7 +1260,7 @@ function statsHtml(){
       for (let f = 0; f <= 12; f++){
         const v = st.heat[n + ':' + f] || 0;
         const a = v ? Math.min(0.85, 0.2 + v * 0.16) : 0;
-        h += '<td style="background:rgba(255,107,107,' + a + ')">' + (v || '') + '</td>';
+        h += '<td style="background:rgba(228,103,92,' + a + ')">' + (v || '') + '</td>';
       }
       h += '</tr>';
     }
@@ -1328,14 +1348,14 @@ const WEEKS = [
     goal:'Get your hands working and learn where the notes are on E and A.',
     items:[
       { id:'w1a', diagram:'chromatic', cat:'Warm-up', min:5,
-        text:'Chromatic 1-2-3-4 ("chromatic" just means every fret, no skips): on each string play frets 1-2-3-4, one finger per fret (index-middle-ring-pinky), then move to the next string. Up all strings and back. Slow + clean beats fast + sloppy.', met:60 },
+        text:'Chromatic 1-2-3-4: one finger per fret, up every string and back. Slow and clean beats fast and sloppy.', met:60 },
       { id:'w1b', cat:'Fretboard', min:5,
         text:'Note names on the E and A strings, frets 0–5. Study first, then try a few rounds of "Find the note".',
         link:{ label:'Open note trainer (E+A, 0–5)', spec:{ tab:'trainer', trainer:{ tier:0, mode:'study', focus:null, study:{ show:true, strings:['E','A'], naturalsOnly:true, maxFret:5 } } } } },
       { id:'w1c', diagram:'floatingThumb', cat:'Technique', min:10,
-        text:'Plucking: alternate index-middle fingers on the OPEN E string, one note per click at 60 bpm, ~2 min. Then the same on A. Rest your plucking thumb on the B string the whole time (floating thumb) so it never rings.', met:60 },
+        text:'Alternate index and middle on the open E, one note per click. Rest your thumb on the B string so it stays silent.', met:60 },
       { id:'w1d', diagram:'plucking', cat:'Music', min:10,
-        text:'Groove on one note: open E, one note per click, every note landing ON the beat. Boring is the point — this steady pulse IS the bassist\'s job, and it\'s literally the TNT verse feel.', met:60 }
+        text:'Groove on one note: open E, one note per click, every note dead on the beat. Boring is the point — that steady pulse is the TNT verse.', met:60 }
     ],
     checkpoints:[
       { id:'w1cp0', text:'Chromatic warmup is clean at 60 bpm (no buzzes, one finger per fret)' },
@@ -1347,14 +1367,14 @@ const WEEKS = [
     goal:'Lock in eighth notes and memorize the most important scale in rock.',
     items:[
       { id:'w2a', diagram:'chromatic', cat:'Warm-up', min:5,
-        text:'Chromatic 1-2-3-4 on all strings — push to 65 bpm if yesterday was clean.', met:65 },
+        text:'Chromatic 1-2-3-4 on all strings. Push to 65 bpm if yesterday was clean.', met:65 },
       { id:'w2b', cat:'Scales', min:5,
         text:'E minor pentatonic, open position: E G A B D. Play it up and down slowly until your fingers know it in both directions. Use "Play scale" to check yourself.',
         link:{ label:'Open E minor pentatonic', spec:{ tab:'scales', scales:{ root:'E', type:'minPent', view:'open', labels:'names' } } } },
       { id:'w2c', diagram:'eighthNotes', cat:'Technique', min:10,
-        text:'Eighth notes: TWO notes per click (count "1-and-2-and"), strict index-middle alternation, on open E at 60–70 bpm. Every 4 beats switch to a different pentatonic note (G, A…) without breaking the rhythm.', met:65 },
-      { id:'w2d', diagram:'eighthNotes', cat:'Music', min:10,
-        text:'Pentatonic groove: pick E → G → A, play eighth notes on each for 4 beats, loop it. Stay locked to the click — smooth switches matter more than speed.', met:65 },
+        text:'Eighth notes on the open E: two notes per click, strict index-middle alternation. Every 4 beats, switch to another pentatonic note without breaking the rhythm.', met:65 },
+      { id:'w2d', cat:'Music', min:10,
+        text:'Loop E → G → A, eighth notes, 4 beats each. Smooth switches matter more than speed.', met:65 },
       { id:'w2e', cat:'Bonus', min:5,
         text:'Note trainer: "Find the note" on E + A naturals. Use the "E only" drill button to bank 20 E-string answers at 90%+.',
         link:{ label:'Find the note (tier 1)', spec:{ tab:'trainer', trainer:{ tier:0, mode:'find', focus:null } } } }
@@ -1365,18 +1385,18 @@ const WEEKS = [
       { id:'w2cp2', text:'Over 90% on my last 20 E-string answers in the trainer (see "Your stats")' }
     ],
     theory:['rootsJob','octave'] },
-  { n:3, title:'First song: T.N.T. 🎉',
+  { n:3, title:'First song: T.N.T.',
     goal:'Everything so far becomes a real AC/DC song.',
     items:[
       { id:'w3a', cat:'Warm-up', min:5,
-        text:'Chromatic warmup at 70 bpm, or E minor pentatonic up/down twice as a warmup.', met:70 },
+        text:'Chromatic warmup at 70 bpm, or E minor pentatonic up and down twice.', met:70 },
       { id:'w3b', cat:'Scales', min:5,
         text:'The MOVEABLE pentatonic box. On your 5-string, the root E sits on the B string at fret 5 — the box anchors there. Same note recipe as the open position, packed into one closed shape with no open strings, so you can slide it anywhere.',
         note4:'On a 4-string, E\'s box anchors at fret 12 — or practice the identical shape as A minor pentatonic at fret 5.',
         link:{ label:'Open the moveable box', spec:{ tab:'scales', scales:{ root:'E', type:'minPent', view:'box', labels:'names' } } } },
       { id:'w3c', diagram:'tntRoots', cat:'Technique', min:10,
-        text:'TNT chorus moves: roots E → A → G as eighth notes, 4 beats each, at 60 then 70 bpm. These three notes are the roots of the song\'s chords — and all three live in E minor pentatonic.', met:70 },
-      { id:'w3d', diagram:'tntRoots', cat:'Music', min:10,
+        text:'TNT chorus moves: roots E → A → G as eighth notes, 4 beats each. All three live in E minor pentatonic.', met:70 },
+      { id:'w3d', cat:'Music', min:10,
         text:'T.N.T.: verse = steady eighth notes on E (palm-relaxed, locked to click). Chorus = the E→A→G shifts. Loop verse → chorus. Full speed is ~126 bpm — start at 70 and work up.',
         link:{ label:'TNT bass tab (Songsterr)', href:'https://www.songsterr.com/a/wsa/acdc-tnt-bass-tab-s407' } },
       { id:'w3e', cat:'Bonus', min:5,
@@ -1426,11 +1446,17 @@ function renderPractice(){
 
   let h = '<h2>Practice</h2>';
   // streak/overview
-  h += '<div class="card tight"><div class="statgrid">' +
-    '<div class="stat"><b>' + ps.streak + '</b><span>day streak</span></div>' +
-    '<div class="stat"><b>' + ps.total + '</b><span>days practiced</span></div>' +
-    '<div class="stat"><b>' + doneCount + '/' + wk.items.length + '</b><span>today</span></div>' +
-    '</div></div>';
+  if (ps.total === 0 && doneCount === 0){
+    h += '<div class="card tight"><b class="t-title3">Day 1 — welcome.</b>' +
+      '<div class="muted small" style="margin-top:2px">Work through the four items below and you\'ve started. ' +
+      'Your streak begins today.</div></div>';
+  } else {
+    h += '<div class="card tight"><div class="statgrid">' +
+      '<div class="stat"><b>' + ps.streak + '</b><span>day streak</span></div>' +
+      '<div class="stat"><b>' + ps.total + '</b><span>days practiced</span></div>' +
+      '<div class="stat"><b>' + doneCount + '/' + wk.items.length + '</b><span>today</span></div>' +
+      '</div></div>';
+  }
 
   // week picker
   h += '<div class="weekpick">' + WEEKS.map(w => {
@@ -1452,12 +1478,12 @@ function renderPractice(){
       (it.note4 && S.tuning === 4 ? '<br><span class="muted small">' + it.note4 + '</span>' : '') + '</span>';
     if (it.diagram) h += '<div class="drill-host" data-diagram="' + it.diagram + '"></div>';
     h += '<div class="plink row">';
-    if (it.met) h += '<button class="btn small" data-met="' + it.met + '">🎵 Metronome ' + it.met + '</button>';
+    if (it.met) h += '<button class="btn small" data-met="' + it.met + '"><svg viewBox="0 0 24 24" class="btn-ic"><path d="M5 19V7l12-3v12"/><circle cx="4" cy="19" r="2.4"/><circle cx="16" cy="16" r="2.4"/></svg>Metronome ' + it.met + '</button>';
     if (it.link && it.link.spec) h += '<button class="btn small" data-dl="' + encodeURIComponent(JSON.stringify(it.link.spec)) + '">↪ ' + it.link.label + '</button>';
     if (it.link && it.link.href) h += '<a class="btn small" style="text-decoration:none; display:inline-flex; align-items:center" href="' + it.link.href + '" target="_blank" rel="noopener">↗ ' + it.link.label + '</a>';
     h += '</div></div></div>';
   }
-  if (doneCount === wk.items.length) h += '<p class="okmark" style="text-align:center; margin:10px 0 2px">Session complete — see you tomorrow! 🤘</p>';
+  if (doneCount === wk.items.length) h += '<p class="okmark" style="text-align:center; margin:10px 0 2px">Session complete — see you tomorrow.</p>';
   h += '</div>';
 
   // metronome
@@ -1478,7 +1504,6 @@ function renderPractice(){
     h += '<h3>This week\'s theory dose</h3>';
     for (const id of cards) h += theoryCard(id);
   }
-  h += theoryCard('rootsJob');
 
   // report card
   const w3 = weekOf(3);
@@ -1539,7 +1564,7 @@ function renderPractice(){
   if (cpBtn) cpBtn.addEventListener('click', () => {
     const txt = document.getElementById('reportBox').textContent;
     (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(
-      () => { cpBtn.textContent = '✓ Copied!'; setTimeout(() => cpBtn.textContent = '📋 Copy report', 1500); },
+      () => { cpBtn.textContent = 'Copied'; setTimeout(() => cpBtn.textContent = 'Copy report', 1500); },
       () => { /* fallback: select text */ const r = document.createRange(); r.selectNodeContents(document.getElementById('reportBox')); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); }
     );
   });

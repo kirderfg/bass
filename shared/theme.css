@@ -127,7 +127,7 @@ input[type=range]{width:100%; accent-color:var(--root); min-height:44px;}
   min-width:46px; min-height:46px; padding:4px 9px; border-radius:var(--r-sm);
   background:var(--s2); border:1px solid var(--line); font-weight:750; font-size:15px; color:var(--t1);
 }
-.chip small{font-weight:650; font-size:10.5px; letter-spacing:.06em; color:var(--t4); text-transform:uppercase;}
+.chip small{font-weight:650; font-size:10.5px; letter-spacing:.04em; color:var(--t4);}
 .chip.root{background:var(--root); border-color:var(--root); color:var(--on-root); box-shadow:inset 0 0 0 1.5px rgba(42,27,5,.22);}
 .chip.root small{color:rgba(42,27,5,.72);}
 .chip.tone{background:var(--tone-tint); border-color:var(--tone); color:var(--tone);}
@@ -166,7 +166,7 @@ input[type=range]{width:100%; accent-color:var(--root); min-height:44px;}
 .neck-snap{scroll-snap-align:start;}
 
 .neck-nut{fill:var(--nut);}
-.neck-inlay{fill:var(--inlay); fill-opacity:.42; stroke:rgba(0,0,0,.35); stroke-width:1;}
+.neck-inlay{fill:var(--inlay); fill-opacity:.62; stroke:rgba(0,0,0,.35); stroke-width:1;}
 .neck-hit{fill:transparent; cursor:pointer;}
 .neck-hit:active{fill:rgba(255,255,255,.09);}
 .neck-hit:focus-visible{fill:rgba(242,169,59,.16); outline:none;}
@@ -180,8 +180,8 @@ input[type=range]{width:100%; accent-color:var(--root); min-height:44px;}
 .neck-marker.is-root .neck-dot{fill:var(--root);}
 .neck-marker.is-root .neck-dot-label{fill:var(--on-root);}
 .neck-marker.is-root .neck-ring{fill:none; stroke:rgba(42,27,5,.32); stroke-width:1.5;}
-.neck-marker.is-tone .neck-dot{fill:var(--tone); stroke:rgba(0,0,0,.30);}
-.neck-marker.is-tone .neck-dot-label{fill:var(--on-tone); font-weight:700;}
+.neck-marker.is-tone .neck-dot{fill:var(--tone-tint); stroke:var(--tone); stroke-width:1.5;}
+.neck-marker.is-tone .neck-dot-label{fill:var(--tone); font-weight:750;}
 .neck-marker.is-highlight .neck-dot{fill:var(--hl);}
 .neck-marker.is-highlight .neck-dot-label{fill:var(--on-hl);}
 .neck-marker.is-highlight .neck-halo{fill:none; stroke:rgba(181,139,245,.42); stroke-width:3;}
