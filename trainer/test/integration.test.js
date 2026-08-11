@@ -144,3 +144,58 @@ test('a consistently flat instrument is called out rather than marked wrong', as
     assert.match(warn, /flat/);
   } finally { await app.close(); }
 });
+
+test('a still-ringing string does not answer the question that follows it', async () => {
+  // The blocker this suite originally missed: the app moved on after a
+  // correct answer while the note was still sounding, and judged that
+  // ring-out against the next question — inventing misses the player
+  // never made, and poisoning the stats the practice checkpoints read.
+  const app = await openWithNote(G2);
+  try {
+    await app.page.evaluate(() => {
+      localStorage.removeItem('bassTheoryTrainer.v1');
+      setMode('find');
+      q = { si: 1, f: 3, midi: 43, sn: 'E', name: 'G' };
+      hintLevel = 0; wrongThisQ = 0; qStart = performance.now();
+    });
+
+    await until(app.page, () => {
+      const el = document.getElementById('fVerdict');
+      return el.className.includes('ok') ? el.textContent : null;
+    });
+
+    // The app now picks its own next question while G keeps sounding.
+    await new Promise(r => setTimeout(r, 4000));
+
+    const stats = await app.page.evaluate(() =>
+      JSON.parse(localStorage.getItem('bassTheoryTrainer.v1')).stats);
+    assert.equal(stats.correct, 1, 'exactly one answer was actually played');
+    assert.equal(stats.answered, 1,
+      `the ring-out was judged again: ${stats.answered} answers recorded for one note`);
+    assert.deepEqual(stats.heat, {}, 'no phantom misses on the heatmap');
+  } finally { await app.close(); }
+});
+
+test('entering echo mode does not score the note the app itself just played', async () => {
+  const app = await openWithNote(E1);
+  try {
+    await app.page.evaluate(() => { setMode('echo'); echoTarget = 43; });
+    await new Promise(r => setTimeout(r, 600));
+    const verdict = await app.page.evaluate(() => document.getElementById('eVerdict').textContent.trim());
+    assert.equal(verdict, '', `echo judged before the player did anything: "${verdict}"`);
+  } finally { await app.close(); }
+});
+
+test('the tuner names the string being tuned even when it is badly slack', async () => {
+  // 70 cents flat: chromatically nearer D#, but the player is tuning E.
+  const app = await openWithNote(E1 * Math.pow(2, -70 / 1200));
+  try {
+    const note = await until(app.page, () => {
+      const t = document.getElementById('tNote').textContent;
+      return t && t !== '—' ? t : null;
+    });
+    assert.match(note, /^E/, `expected the E string, got "${note}"`);
+    const cents = await app.page.textContent('#tCents');
+    assert.match(cents, /flat — tune UP/, `expected "tune UP", got "${cents}"`);
+  } finally { await app.close(); }
+});

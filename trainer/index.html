@@ -26,8 +26,8 @@ header{
 }
 header h1{font-size:17px; margin:0;}
 header h1 span{color:var(--root);}
-header a{color:var(--tone); font-size:12.5px; text-decoration:none; font-weight:600; text-align:right;}
-main{padding:0 12px; max-width:720px; margin:0 auto;}
+header a{color:var(--tone); font-size:12.5px; text-decoration:none; font-weight:600; text-align:right; min-height:44px; display:flex; align-items:center;}
+main{padding:0 12px; max-width:920px; margin:0 auto;}
 .card{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px; margin:10px 0;}
 .muted{color:var(--dim); font-size:14px;}
 .small{font-size:13px;}
@@ -37,7 +37,7 @@ main{padding:0 12px; max-width:720px; margin:0 auto;}
   min-height:44px; cursor:pointer; font-family:inherit;
 }
 .btn.primary{background:var(--root); border-color:var(--root); color:#1a1204;}
-.btn.small{min-height:38px; padding:6px 10px; font-size:13px;}
+.btn.small{min-height:44px; padding:8px 12px; font-size:13.5px;}
 .btn:active{transform:scale(.97);}
 .row{display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
 .seg{display:flex; gap:6px; flex-wrap:wrap;}
@@ -69,7 +69,7 @@ select{
 .tuner-hz{text-align:center; color:var(--dim); font-size:13px;}
 .needle{position:relative; height:46px; margin:12px 0 4px; background:var(--panel2); border-radius:10px; overflow:hidden;}
 .needle .center{position:absolute; left:50%; top:0; bottom:0; width:2px; background:var(--good); opacity:.55;}
-.needle .zone{position:absolute; left:30%; right:30%; top:0; bottom:0; background:rgba(61,220,132,.10);}
+.needle .zone{position:absolute; left:36.5%; right:36.5%; top:0; bottom:0; background:rgba(61,220,132,.10);}
 .needle .bar{position:absolute; top:8px; bottom:8px; width:6px; border-radius:3px; background:var(--root); left:50%; transition:left .09s linear, background .2s;}
 .needle .bar.intune{background:var(--good);}
 .needle .lbl{position:absolute; bottom:2px; font-size:10px; color:var(--dim);}
@@ -86,7 +86,7 @@ select{
 .stat b{display:block; font-size:19px; color:var(--root);}
 .stat span{font-size:11px; color:var(--dim);}
 /* ---- fretboard (compact, for hints/reveal) ---- */
-.fb{display:grid; gap:2px; overflow-x:auto; padding-bottom:4px;}
+.fb{display:grid; gap:2px; overflow-x:auto; scroll-behavior:smooth; padding-bottom:4px;}
 .fb .lbl{display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; color:var(--dim); background:var(--panel); position:sticky; left:0;}
 .fb .cell{position:relative; height:30px; background:#20242e; border-right:2px solid #3a4152; border-radius:2px;}
 .fb .cell.f0{background:#161920; border-right:4px solid #cdd3e0;}
@@ -116,8 +116,9 @@ select{
     <div class="card" style="padding:10px 12px">
       <div class="listening"><span class="dot" id="liveDot"></span><span id="liveTxt">listening…</span></div>
       <div class="level"><i id="levelBar"></i></div>
-      <div class="row" style="margin-top:8px">
-        <select id="deviceSel" aria-label="Input device"></select>
+      <div style="margin-top:8px">
+        <label class="small muted" for="deviceSel">Listening to this input — switch it if your bass isn't showing up:</label>
+        <select id="deviceSel" style="margin-top:4px"></select>
       </div>
       <p class="small muted hidden" id="tuneWarn" style="margin:8px 0 0"></p>
     </div>
@@ -140,7 +141,8 @@ select{
           <span class="lbl" style="right:6px">sharp ♯</span>
         </div>
         <div class="cents" id="tCents">&nbsp;</div>
-        <p class="muted small" style="margin:10px 0 0">Green zone = within 15 cents, close enough for rock. Tune each open string: <b id="tStrings">B E A D G</b>.</p>
+        <p class="muted small" style="margin:10px 0 0">Tune each open string in turn: <b id="tStrings">B E A D G</b>. Land the bar in the green zone.<br>
+        <span style="opacity:.8">A <b>cent</b> is a hundredth of a fret's worth of pitch — 100 cents = 1 fret. Under 15 cents is close enough for rock.</span></p>
       </div>
     </section>
 
@@ -178,6 +180,7 @@ select{
         <div class="row" style="justify-content:center; margin:10px 0">
           <button class="btn primary" id="ePlay">🔊 Play the note</button>
           <button class="btn small" id="eNext">New note →</button>
+          <button class="btn small hidden" id="eShow">🤔 Show me the note</button>
         </div>
         <div class="verdict" id="eVerdict">&nbsp;</div>
         <div class="heard" id="eHeard">&nbsp;</div>
@@ -185,7 +188,7 @@ select{
           <div class="stat"><b id="eScore">0</b><span>correct</span></div>
           <div class="stat"><b id="eStreak">0</b><span>streak</span></div>
         </div>
-        <p class="muted small" style="margin:10px 0 0">Octaves count as correct here — matching the pitch class is the ear skill.</p>
+        <p class="muted small" style="margin:10px 0 0">Play it in <b>any</b> octave — anywhere on the neck is fine. Matching the note by ear is the skill here, not the position.</p>
       </div>
     </section>
 
@@ -232,10 +235,18 @@ const TIERS = [
   { label:'5 · everything + sharps/flats', strings:['B','E','A','D','G'], maxFret:12, accidentals:true }
 ];
 let tuning = (loadShared().tuning === 4) ? 4 : 5;
-let tier = 0, focus = null, mode = 'tuner';
+// Difficulty is shared with the Theory Trainer, so reaching tier 3 there
+// means starting at tier 3 here (and live answers land in that tier's stats).
+let tier = Math.min(TIERS.length - 1, Math.max(0, ((loadShared().trainer || {}).tier) | 0));
+let focus = null, mode = 'tuner';
+function persistTier(){
+  const st = loadShared();
+  st.trainer = Object.assign({}, st.trainer, { tier });
+  try { localStorage.setItem(LS_KEY, JSON.stringify(st)); } catch(e){}
+}
 
 /* ================= audio ================= */
-const A = { ctx:null, analyser:null, stream:null, buf:null, timer:null, rate:44100, level:0 };
+const A = { ctx:null, analyser:null, stream:null, buf:null, timer:null, rate:44100, level:0, muteUntil:0 };
 const DECIMATE = 4;
 let tracker = C.createTracker({ stableMs:150 });
 let centsHistory = [];
@@ -299,14 +310,27 @@ function tick(){
   dot.classList.toggle('on', rms > 0.008);
   document.getElementById('liveTxt').textContent = rms > 0.008 ? 'hearing your bass' : 'listening…';
 
+  // While Echo mode is sounding its own note, the microphone hears the
+  // speaker — especially on a phone. Treat that window as silence, which
+  // also re-arms the tracker ready for the player's reply.
+  const now = performance.now();
+  if (now < A.muteUntil){
+    tracker.push(null, now);
+    if (mode === 'tuner') renderTuner(null, null);
+    return;
+  }
+
   const small = C.downsample(A.buf, DECIMATE);
   const pitch = C.detectPitch(small, A.rate / DECIMATE);
-  const reading = tracker.push(pitch ? pitch.hz : null, performance.now());
+  const reading = tracker.push(pitch ? pitch.hz : null, now);
 
   if (mode === 'tuner') renderTuner(pitch, reading);
   else if (reading.state === 'stable') onStableNote(reading);
   else if (mode === 'find' && reading.state === 'listening') {
     document.getElementById('fHeard').textContent = 'hearing ' + C.hzToNote(reading.hz).name + '…';
+  } else if (mode === 'find' && reading.state === 'idle') {
+    const hEl = document.getElementById('fHeard');
+    if (/^hearing /.test(hEl.textContent)) hEl.innerHTML = '&nbsp;';
   }
 
   if (pitch && Math.abs(C.hzToNote(pitch.hz).cents) < 50){
@@ -316,8 +340,9 @@ function tick(){
     const warn = document.getElementById('tuneWarn');
     if (drift.drifting){
       warn.textContent = '⚠️ Every note is landing ' + Math.abs(Math.round(drift.meanCents)) +
-        ' cents ' + (drift.meanCents < 0 ? 'flat' : 'sharp') + ' — your bass may need tuning. Try the Tuner tab.';
-      warn.classList.remove('hidden');
+        ' cents ' + (drift.meanCents < 0 ? 'flat (too low)' : 'sharp (too high)') +
+        ' — your bass itself may be out of tune. ' + (mode === 'tuner' ? 'Tune each open string to the green zone below.' : 'Open the Tuner tab.');
+      warn.classList.toggle('hidden', mode === 'tuner' && Math.abs(drift.meanCents) < 25);
     } else warn.classList.add('hidden');
   }
 }
@@ -333,21 +358,28 @@ function renderTuner(pitch, reading){
     bar.style.left = '50%'; bar.classList.remove('intune');
     return;
   }
-  const n = C.hzToNote(pitch.hz);
+  const chromatic = C.hzToNote(pitch.hz);
+  // Aim at the open string being tuned, not the nearest chromatic note: a
+  // string 70 cents flat is closer to D#, and "tune DOWN to D#" is exactly
+  // the wrong advice for someone tuning up to E.
+  const target = C.nearestOpenString(pitch.hz, TUNINGS[tuning].midi);
+  const n = target ? { name: target.name, octave: C.hzToNote(C.midiToHz(target.midi)).octave, cents: target.cents }
+                   : chromatic;
   const inTune = Math.abs(n.cents) <= 15;
   noteEl.innerHTML = n.name + '<small>' + n.octave + '</small>';
   noteEl.classList.toggle('intune', inTune);
-  hzEl.textContent = pitch.hz.toFixed(2) + ' Hz';
+  hzEl.textContent = pitch.hz.toFixed(2) + ' Hz' +
+    (target ? ' · tuning the ' + target.name + ' string' : ' · not near an open string');
   const pos = 50 + Math.max(-50, Math.min(50, n.cents)) * 0.9;
   bar.style.left = pos + '%';
   bar.classList.toggle('intune', inTune);
   centsEl.textContent = inTune ? '✓ in tune'
-    : (n.cents > 0 ? '+' : '') + Math.round(n.cents) + ' cents — ' + (n.cents > 0 ? 'tune DOWN' : 'tune UP');
+    : Math.abs(Math.round(n.cents)) + ' cents ' + (n.cents > 0 ? 'sharp — tune DOWN' : 'flat — tune UP');
   centsEl.style.color = inTune ? 'var(--good)' : 'var(--root)';
 }
 
 /* ================= find it ================= */
-let q = null, hintLevel = 0, qStart = 0, wrongThisQ = 0, lastProgressAt = 0;
+let q = null, hintLevel = 0, qStart = 0, wrongThisQ = 0, lastProgressAt = 0, outOfTuneThisQ = false;
 const sess = { find:{ score:0, streak:0, asked:0 }, echo:{ score:0, streak:0 } };
 
 function tierNow(){
@@ -376,18 +408,27 @@ function newQuestion(){
   let pick;
   do { pick = p[Math.floor(Math.random() * p.length)]; }
   while (p.length > 1 && q && pick.sn === q.sn && pick.f === q.f);
-  q = pick; hintLevel = 0; wrongThisQ = 0; qStart = performance.now();
+  q = pick; hintLevel = 0; wrongThisQ = 0; outOfTuneThisQ = false; qStart = performance.now();
   lastProgressAt = qStart;
-  tracker.reset();
+  tracker.reset();   // clears the settle clock only — a ringing note stays consumed
   document.getElementById('fQ').innerHTML = 'Play <b>' + q.name + '</b> on the <b>' + q.sn + '</b> string';
   document.getElementById('fSub').textContent = 'Find it on the neck and play it.';
-  document.getElementById('fVerdict').innerHTML = '&nbsp;';
+  const v = document.getElementById('fVerdict');
+  v.innerHTML = '&nbsp;'; v.className = 'verdict';
   document.getElementById('fHeard').innerHTML = '&nbsp;';
   document.getElementById('fBoard').innerHTML = '';
   updateFindStats();
 }
 function showHint(){
   if (!q) return;
+  if (outOfTuneThisQ && hintLevel === 0){
+    // They found the right note; the problem is the instrument, not the fret.
+    document.getElementById('fSub').innerHTML =
+      'You are playing the right note — it is your <b>tuning</b> that is off. Open the 🎯 Tuner tab and retune that string.';
+    lastProgressAt = performance.now();
+    outOfTuneThisQ = false;
+    return;
+  }
   hintLevel = Math.min(2, hintLevel + 1);
   lastProgressAt = performance.now();
   if (hintLevel === 1){
@@ -419,6 +460,14 @@ function drawBoard(opts){
   for (let f = 0; f <= frets; f++) h += '<div class="fnum">' + (f === 0 ? '0' : f) + '</div>';
   h += '</div>';
   el.innerHTML = h;
+  // At 380px the board is wider than the screen — make sure the thing we are
+  // pointing at is actually on screen.
+  const focusCell = el.querySelector('.cell .dot') || el.querySelector('.cell.range');
+  if (focusCell){
+    const cell = focusCell.closest ? (focusCell.closest('.cell') || focusCell) : focusCell;
+    const board = el.querySelector('.fb');
+    if (board && cell) board.scrollLeft = Math.max(0, cell.offsetLeft - board.clientWidth / 2);
+  }
 }
 function updateFindStats(){
   document.getElementById('fScore').textContent = sess.find.score;
@@ -439,13 +488,21 @@ function onStableNote(reading){
       vEl.className = 'verdict ok';
       sess.find.score++; sess.find.streak++; sess.find.asked++;
       recordAnswer(true, q, performance.now() - qStart);
+      updateFindStats();
       drawBoard({ reveal:true });
       setTimeout(newQuestion, 1100);
     } else if (verdict === 'out-of-tune'){
-      vEl.textContent = 'Right note, but ' + Math.abs(Math.round(reading.cents)) + ' cents out — check your tuning.';
+      vEl.textContent = 'Right note! But it is ' + Math.abs(Math.round(reading.cents)) + ' cents ' +
+        (reading.cents < 0 ? 'flat' : 'sharp') + ' — that string needs tuning.';
       vEl.className = 'verdict warn';
+      outOfTuneThisQ = true;
+      lastProgressAt = performance.now();
     } else if (verdict === 'wrong-octave'){
-      vEl.textContent = 'That’s a ' + heardName + ', but the wrong octave — you want the one on the ' + q.sn + ' string.';
+      const dir = reading.midi > q.midi ? 'higher up' : 'lower down';
+      const article = /^[AEF]$/.test(heardName) ? 'an' : 'a';
+      vEl.textContent = 'That’s ' + article + ' ' + heardName + ' — right note, wrong octave. You want the one 12 frets ' +
+        (reading.midi > q.midi ? 'lower' : 'higher') + ', on the ' + q.sn + ' string.';
+      void dir;
       vEl.className = 'verdict no';
       countWrong();
     } else {
@@ -455,22 +512,25 @@ function onStableNote(reading){
     }
   } else if (mode === 'echo'){
     if (echoTarget == null) return;
+    const targetName = C.NAMES[((echoTarget % 12) + 12) % 12];
     const same = (((reading.midi - echoTarget) % 12) + 12) % 12 === 0;
     const vEl = document.getElementById('eVerdict');
-    document.getElementById('eHeard').textContent = 'heard ' + heardName + C.hzToNote(reading.hz).octave;
+    document.getElementById('eHeard').textContent = 'you played ' + heardName + C.hzToNote(reading.hz).octave;
     if (same){
-      vEl.textContent = 'Correct — that was ' + C.NAMES[((echoTarget%12)+12)%12] + '. 👂';
+      vEl.textContent = 'Correct — the note was ' + targetName + '. 👂';
       vEl.className = 'verdict ok';
       sess.echo.score++; sess.echo.streak++;
-      document.getElementById('eScore').textContent = sess.echo.score;
-      document.getElementById('eStreak').textContent = sess.echo.streak;
-      setTimeout(newEcho, 1400);
+      recordEcho(true);
+      setTimeout(newEcho, 1600);
     } else {
-      vEl.textContent = 'Not quite — that was ' + heardName + '. Listen again.';
+      vEl.textContent = 'You played ' + heardName + ' — that is not it. Tap 🔊 to hear it again.';
       vEl.className = 'verdict no';
       sess.echo.streak = 0;
-      document.getElementById('eStreak').textContent = 0;
+      recordEcho(false);
+      document.getElementById('eShow').classList.remove('hidden');
     }
+    document.getElementById('eScore').textContent = sess.echo.score;
+    document.getElementById('eStreak').textContent = sess.echo.streak;
   }
 }
 function countWrong(){
@@ -505,18 +565,36 @@ function recordAnswer(ok, question, elapsedMs){
 }
 
 /* ================= echo ================= */
-let echoTarget = null;
+let echoTarget = null, echoStart = 0;
+function recordEcho(ok){
+  saveStats(st => {
+    st.answered++; if (ok) st.correct++;
+    st.ear = st.ear || { a:0, c:0 };
+    st.ear.a++; if (ok) st.ear.c++;
+    st.speed = st.speed || [];
+    st.speed.push(Math.min(30, (performance.now() - echoStart) / 1000));
+    if (st.speed.length > 20) st.speed.shift();
+  });
+}
 function newEcho(){
   const p = pool();
   if (!p.length) return;
-  echoTarget = p[Math.floor(Math.random() * p.length)].midi;
-  tracker.reset();
-  document.getElementById('eVerdict').innerHTML = '&nbsp;';
+  let pick;
+  do { pick = p[Math.floor(Math.random() * p.length)].midi; }
+  while (p.length > 1 && pick === echoTarget);
+  echoTarget = pick;
+  echoStart = performance.now();
+  const v = document.getElementById('eVerdict');
+  v.innerHTML = '&nbsp;'; v.className = 'verdict';
   document.getElementById('eHeard').innerHTML = '&nbsp;';
+  document.getElementById('eShow').classList.add('hidden');
   playNote(echoTarget);
 }
 function playNote(midi){
   if (!A.ctx) return;
+  // Ignore the microphone until our own note has died away, so the app
+  // cannot "hear itself" and score before the player has touched the bass.
+  A.muteUntil = performance.now() + 1750;
   const t = A.ctx.currentTime, f = C.midiToHz(midi);
   const out = A.ctx.createGain();
   out.gain.setValueAtTime(0.0001, t);
@@ -571,17 +649,25 @@ document.getElementById('tuningSeg').addEventListener('click', e => {
   document.querySelectorAll('#tuningSeg button').forEach(x => x.classList.toggle('on', x === b));
   const st = loadShared(); st.tuning = tuning;
   try { localStorage.setItem(LS_KEY, JSON.stringify(st)); } catch(err){}
-  if (tuning === 4 && TIERS[tier].strings.includes('B') && !TIERS[tier].accidentals) tier = 2;
+  if (tuning === 4 && TIERS[tier].strings.includes('B') && !TIERS[tier].accidentals){ tier = 2; persistTier(); }
   focus = null;
   renderTierUI(); newQuestion();
 });
 document.getElementById('tierSel').addEventListener('change', e => {
-  tier = +e.target.value; focus = null; renderTierUI(); newQuestion();
+  tier = +e.target.value; focus = null; persistTier(); renderTierUI(); newQuestion();
 });
 document.getElementById('fHint').addEventListener('click', showHint);
 document.getElementById('fSkip').addEventListener('click', newQuestion);
 document.getElementById('ePlay').addEventListener('click', () => { if (echoTarget != null) playNote(echoTarget); });
 document.getElementById('eNext').addEventListener('click', newEcho);
+document.getElementById('eShow').addEventListener('click', () => {
+  if (echoTarget == null) return;
+  const name = C.NAMES[((echoTarget % 12) + 12) % 12];
+  const v = document.getElementById('eVerdict');
+  v.textContent = 'It was ' + name + '. Play it, or tap "New note".';
+  v.className = 'verdict warn';
+  playNote(echoTarget);
+});
 document.querySelectorAll('#tuningSeg button').forEach(x => x.classList.toggle('on', +x.dataset.t === tuning));
 renderTierUI();
 

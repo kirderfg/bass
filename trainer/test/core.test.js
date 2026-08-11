@@ -107,9 +107,11 @@ test('a tracker goes idle when the signal stops, and can then accept the same no
   const tracker = core.createTracker({ stableMs: 150 });
   tracker.push(97.999, 0);
   assert.equal(tracker.push(97.999, 200).state, 'stable');
+  // Silence has to be sustained, not momentary — see the decay-flicker test.
   assert.equal(tracker.push(null, 260).state, 'idle', 'silence clears the tracker');
-  tracker.push(97.999, 300);
-  assert.equal(tracker.push(97.999, 500).state, 'stable', 'the same note replayed is a new answer');
+  tracker.push(null, 420);
+  tracker.push(97.999, 460);
+  assert.equal(tracker.push(97.999, 700).state, 'stable', 'the same note replayed is a new answer');
 });
 
 test('judging an answer is strict about the octave, not just the note name', () => {
@@ -162,4 +164,65 @@ test('downsampling removes content above the new Nyquist so it cannot alias into
   for (let i = 0; i < decimated.length; i++) rms += decimated[i] * decimated[i];
   rms = Math.sqrt(rms / decimated.length);
   assert.ok(rms < 0.05, `high frequency content survived decimation (rms ${rms.toFixed(3)})`);
+});
+
+test('a note that is still ringing cannot answer the next question', () => {
+  // A plucked bass rings for seconds. Once an answer is accepted, that same
+  // ringing note must not be judged again against whatever is asked next.
+  const tracker = core.createTracker({ stableMs: 150, releaseMs: 120 });
+  const G2_HZ = 97.999;
+
+  tracker.push(G2_HZ, 0);
+  assert.equal(tracker.push(G2_HZ, 200).state, 'stable', 'the answer is accepted');
+
+  // ...the app moves on to a new question while the string still sounds.
+  assert.equal(tracker.push(G2_HZ, 1400).state, 'held', 'ring-out must not answer again');
+  assert.equal(tracker.push(G2_HZ, 3000).state, 'held');
+});
+
+test('a brief dropout while a note decays does not count as releasing the string', () => {
+  // Detection flickers as a note fades. A momentary gap must not re-arm the
+  // tracker, or the tail of one note answers the next question.
+  const tracker = core.createTracker({ stableMs: 150, releaseMs: 120 });
+  tracker.push(97.999, 0);
+  assert.equal(tracker.push(97.999, 200).state, 'stable');
+
+  tracker.push(null, 240);                       // one frame of dropout
+  assert.equal(tracker.push(97.999, 300).state, 'held', 'a 60 ms gap is not a release');
+
+  // Genuine silence, held long enough, does release it.
+  tracker.push(null, 1000);
+  tracker.push(null, 1200);
+  tracker.push(97.999, 1250);
+  assert.equal(tracker.push(97.999, 1450).state, 'stable', 'a fresh pluck answers again');
+});
+
+test('playing a different note answers immediately, without waiting for silence', () => {
+  // Fredrik answering the next question over a still-ringing string must work.
+  const tracker = core.createTracker({ stableMs: 150, releaseMs: 120 });
+  tracker.push(97.999, 0);
+  assert.equal(tracker.push(97.999, 200).state, 'stable');
+  tracker.push(55.0, 260);                       // he plays A while G rings on
+  assert.equal(tracker.push(55.0, 430).state, 'stable', 'a genuinely new note is an answer');
+});
+
+test('a badly slack string is matched to the string being tuned, not the nearest chromatic note', () => {
+  // A string 70 cents flat is chromatically closer to D#, so a plain tuner
+  // says "D#, tune DOWN" — which walks a beginner further from E.
+  const FIVE = [23, 28, 33, 38, 43]; // B0 E1 A1 D2 G2
+  const slack = core.nearestOpenString(41.203 * Math.pow(2, -70 / 1200), FIVE);
+  assert.ok(slack, 'should still recognise which string this is');
+  assert.equal(slack.name, 'E');
+  assert.equal(slack.midi, 28);
+  assert.ok(slack.cents < -60 && slack.cents > -80, `expected ~-70 cents, got ${slack.cents}`);
+
+  const inTune = core.nearestOpenString(41.203, FIVE);
+  assert.equal(inTune.name, 'E');
+  assert.ok(Math.abs(inTune.cents) < 2);
+
+  // Far from any open string — the player is fretting, not tuning.
+  assert.equal(core.nearestOpenString(300, FIVE), null);
+
+  // A 4-string has no low B, so a B0 must not be matched to a string it lacks.
+  assert.equal(core.nearestOpenString(30.868, [28, 33, 38, 43]), null);
 });

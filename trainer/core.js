@@ -127,14 +127,20 @@
    */
   function createTracker(opts) {
     const stableMs = (opts && opts.stableMs) || 150;
-    let currentMidi = null, since = 0, fired = false;
+    // Silence must persist this long to count as releasing the string.
+    // Detection flickers as a note decays; without this, the tail of one
+    // note re-arms the tracker and answers the following question.
+    const releaseMs = (opts && opts.releaseMs != null) ? opts.releaseMs : 120;
+    let currentMidi = null, since = 0, fired = false, silentSince = null;
 
     return {
       push(hz, timeMs) {
         if (hz == null) {
-          currentMidi = null; fired = false;
+          if (silentSince === null) silentSince = timeMs;
+          if (timeMs - silentSince >= releaseMs) { currentMidi = null; fired = false; }
           return { state: 'idle', midi: null, cents: 0, hz: null };
         }
+        silentSince = null;
         const note = hzToNote(hz);
         if (note.midi !== currentMidi) {
           currentMidi = note.midi; since = timeMs; fired = false;
@@ -147,7 +153,8 @@
         }
         return Object.assign({ state: 'listening' }, base);
       },
-      reset() { currentMidi = null; fired = false; },
+      /** Clear display state without re-arming: a ringing note stays consumed. */
+      reset() { since = 0; },
     };
   }
 
@@ -178,6 +185,30 @@
     const out = new Float32Array(Math.floor(samples.length / factor));
     for (let i = 0; i < out.length; i++) out[i] = smoothed[i * factor];
     return out;
+  }
+
+  /**
+   * Match a pitch to the open string the player is most likely tuning.
+   *
+   * A chromatic tuner is actively unhelpful on a slack string: 70 cents
+   * below E is closer to D#, so it says "D#, tune DOWN" and walks the
+   * player further from where they want to be. Snapping to the nearest
+   * OPEN STRING of the current tuning keeps the advice pointed at E.
+   *
+   * @param openMidis MIDI numbers of the open strings, e.g. [23,28,33,38,43]
+   * @returns {{midi:number, name:string, cents:number}|null} null when the
+   *          pitch is nowhere near an open string (they're fretting, not tuning).
+   */
+  function nearestOpenString(hz, openMidis) {
+    const MAX_CENTS = 300; // beyond ~3 semitones this isn't that string
+    let best = null;
+    for (const midi of openMidis) {
+      const cents = 1200 * Math.log2(hz / midiToHz(midi));
+      if (!best || Math.abs(cents) < Math.abs(best.cents)) {
+        best = { midi, name: NAMES[((midi % 12) + 12) % 12], cents };
+      }
+    }
+    return best && Math.abs(best.cents) <= MAX_CENTS ? best : null;
   }
 
   // How far out of tune a note may sit and still count as "found".
@@ -217,7 +248,7 @@
   }
 
   return {
-    detectPitch, hzToNote, midiToHz, createTracker, checkAnswer, tuningDrift, downsample,
+    detectPitch, hzToNote, midiToHz, createTracker, checkAnswer, tuningDrift, downsample, nearestOpenString,
     NAMES, MIN_HZ, MAX_HZ, CLARITY_MIN, CENTS_TOLERANCE,
   };
 });
