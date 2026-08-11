@@ -1,0 +1,108 @@
+/* Shared design tokens and the neck component, used by both apps.
+   Loaded with a plain <link>, so it works offline and needs no build step. */
+
+:root{
+  /* --- surfaces ------------------------------------------------------ */
+  --bg:#0f1115;
+  --panel:#171a21;
+  --panel2:#1e222c;
+  --line:#2a2f3c;
+
+  /* --- text ---------------------------------------------------------- */
+  --text:#e8eaf0;
+  --dim:#9aa3b5;
+
+  /* --- pedagogical accents (meaning is fixed across both apps) ------- */
+  --root:#ffb02e;      /* roots */
+  --tone:#4cc9f0;      /* other scale / chord tones */
+  --hl:#c792ff;        /* new / highlighted / now-playing */
+  --good:#3ddc84;
+  --bad:#ff6b6b;
+
+  /* --- fingerboard --------------------------------------------------- */
+  --fb-wood-hi:#4a3527;
+  --fb-wood:#3a2a1f;
+  --fb-wood-lo:#2a1e16;
+  --fb-nut:#e6e2d3;
+  --fb-wire-hi:#cfd6e2;
+  --fb-wire:#9aa3b2;
+  --fb-wire-lo:#6b7382;
+  --fb-string-hi:#e3e7ef;
+  --fb-string:#b9c0cc;
+  --fb-string-lo:#7d8695;
+  --fb-inlay:#efe9d8;
+}
+
+/* ==================== neck component ==================== */
+.neck{
+  display:flex; align-items:stretch; gap:0;
+  margin:10px 0 2px;
+}
+.neck-labels{
+  display:flex; flex-direction:column; flex:0 0 auto;
+  padding-right:7px;
+}
+.neck-label{
+  display:flex; align-items:center; justify-content:flex-end;
+  font-size:12.5px; font-weight:800; color:var(--dim);
+  min-width:17px; letter-spacing:.3px;
+}
+.neck-label.is-lowest{ color:#c9834a; }
+.neck-label.is-dim{ opacity:.3; }
+
+.neck-scroll{
+  overflow-x:auto; overflow-y:hidden;
+  -webkit-overflow-scrolling:touch;
+  flex:1 1 auto; min-width:0;
+  border-radius:8px;
+  scroll-behavior:smooth;
+}
+.neck-svg{ display:block; }
+
+.neck-inlay{ fill:var(--fb-inlay); opacity:.30; }
+.neck-nut{ fill:var(--fb-nut); }
+.neck-window{
+  fill:rgba(255,176,46,.10);
+  stroke:var(--root); stroke-width:1.5; stroke-dasharray:5 4;
+}
+.neck-hit{ fill:transparent; cursor:pointer; }
+.neck-hit:active{ fill:rgba(255,255,255,.10); }
+
+.neck-marker .neck-dot{
+  fill:#39404f; stroke:rgba(0,0,0,.45); stroke-width:1;
+}
+.neck-dot-label{
+  text-anchor:middle; dominant-baseline:central;
+  font-family:inherit; font-size:12px; font-weight:800;
+  fill:var(--text); pointer-events:none;
+}
+.neck-marker.is-root   .neck-dot{ fill:var(--root); }
+.neck-marker.is-root   .neck-dot-label{ fill:#241703; }
+.neck-marker.is-tone   .neck-dot{ fill:var(--tone); }
+.neck-marker.is-tone   .neck-dot-label{ fill:#04222e; }
+.neck-marker.is-highlight .neck-dot{ fill:var(--hl); }
+.neck-marker.is-highlight .neck-dot-label{ fill:#241040; }
+.neck-marker.is-correct .neck-dot{ fill:var(--good); }
+.neck-marker.is-correct .neck-dot-label{ fill:#03290f; }
+.neck-marker.is-wrong   .neck-dot{ fill:var(--bad); }
+.neck-marker.is-wrong   .neck-dot-label{ fill:#330606; }
+.neck-marker.is-ghost   .neck-dot{ fill:none; stroke:#5b6476; stroke-width:2; stroke-dasharray:3 3; }
+.neck-marker.is-ghost   .neck-dot-label{ fill:var(--dim); }
+.neck-marker.is-outside{ opacity:.22; }
+
+.neck-finger-bg{ fill:#0f1115; stroke:var(--line); stroke-width:1; }
+.neck-finger{
+  text-anchor:middle; dominant-baseline:central;
+  font-family:inherit; font-size:9px; font-weight:700; fill:var(--dim);
+  pointer-events:none;
+}
+.neck-fretnum{
+  text-anchor:middle; font-family:inherit; font-size:11px;
+  fill:var(--dim); pointer-events:none;
+}
+.neck-fretnum.is-marked{ fill:var(--text); font-weight:700; }
+.neck-fretnum.is-open{ font-size:9.5px; letter-spacing:.4px; }
+
+@media (prefers-reduced-motion:reduce){
+  .neck-scroll{ scroll-behavior:auto; }
+}
