@@ -33,8 +33,8 @@ header h1 span{color:var(--root);}
   display:flex; border:1px solid var(--line); border-radius:999px; overflow:hidden; flex:0 0 auto;
 }
 .tune-toggle button{
-  background:transparent; color:var(--dim); border:0; padding:8px 12px;
-  font-size:13px; font-weight:600; min-height:40px; cursor:pointer;
+  background:transparent; color:var(--t3); border:0; padding:8px 12px;
+  font-size:13px; font-weight:650; min-height:44px; cursor:pointer;
 }
 .tune-toggle button.on{background:var(--panel2); color:var(--text);}
 main{padding:0 12px; max-width:860px; margin:0 auto;}
@@ -70,7 +70,7 @@ button{font-family:inherit;}
   background:var(--panel2); border:1px solid var(--line); color:var(--dim);
   border-radius:10px; padding:8px 12px; min-height:44px; font-size:14px; font-weight:600; cursor:pointer;
 }
-.seg button.on{background:var(--s3); color:var(--t1); border-color:var(--line-hi); box-shadow:inset 0 -2px 0 var(--line-hi), var(--e2);}
+.seg button.on{background:var(--s4); color:var(--t1); font-weight:750; border-color:var(--line-hi); box-shadow:inset 0 -2px 0 var(--t3), var(--e2);}
 .seg.compact button{min-height:44px; min-width:44px; padding:6px 10px; font-size:13px;}
 select{
   background:var(--panel2); color:var(--text); border:1px solid var(--line);
@@ -156,9 +156,6 @@ input[type=range]{width:100%; accent-color:var(--root); min-height:44px;}
 .choices .btn.bad{background:var(--s2); border:2px solid var(--bad); color:var(--bad);}
 .feedback{min-height:24px; text-align:center; font-weight:700; margin-top:6px;}
 .feedback.ok{color:var(--good);} .feedback.no{color:var(--bad);}
-.heat td{width:calc(100%/14); height:26px; text-align:center; font-size:10px; color:var(--dim); border:1px solid var(--hair); border-radius:4px;}
-.heat{width:100%; border-collapse:separate; border-spacing:2px; margin-top:6px;}
-.heat .hh{font-weight:700;}
 /* ---------- metronome ---------- */
 .bpm-big{font-size:40px; font-weight:800; text-align:center; font-variant-numeric:tabular-nums;}
 .bpm-big small{font-size:14px; color:var(--dim); font-weight:600;}
@@ -200,7 +197,8 @@ nav.tabbar button.on{color:var(--root);}
 }
 .resource a{color:var(--tone); text-decoration:none; font-weight:600;}
 .resource li{margin:7px 0;}
-.checkpoint{border-left:3px solid var(--root); padding-left:10px; margin:8px 0;}
+.checkpoint{border-left:3px solid var(--line-hi); padding-left:10px; margin:8px 0;}
+.checkpoint.is-done{border-left-color:var(--good);}
 .okmark{color:var(--good); font-weight:800;}
 @media (min-width:700px){
   header h1{font-size:21px;}
@@ -385,12 +383,13 @@ const KIND = { root:'root', tone:'tone', hl:'highlight', ghost:'ghost', asked:'a
 function drawFretboard(el, cfg){
   const tun = TUNINGS[S.tuning];
   const frets = cfg.frets != null ? cfg.frets : 12;
+  const fromFret = cfg.fromFret || 0;
   const nStr = tun.midi.length;
 
   const dimStrings = [];
   for (let si = 0; si < nStr; si++){
     let allOff = true;
-    for (let f = 0; f <= frets && allOff; f++) if (!(cfg.disable && cfg.disable(si, f))) allOff = false;
+    for (let f = fromFret; f <= frets && allOff; f++) if (!(cfg.disable && cfg.disable(si, f))) allOff = false;
     if (allOff) dimStrings.push(si);
   }
 
@@ -398,7 +397,7 @@ function drawFretboard(el, cfg){
   const markers = [];
   for (let si = 0; si < nStr; si++){
     if (dimStrings.indexOf(si) >= 0) continue;
-    for (let f = 0; f <= frets; f++){
+    for (let f = fromFret; f <= frets; f++){
       if (cfg.disable && cfg.disable(si, f)) continue;
       const m = cfg.mark ? cfg.mark(si, f) : null;
       if (m) markers.push({ si, fret:f, kind: KIND[m.cls] || 'tone', label:m.label, finger:m.finger });
@@ -409,7 +408,7 @@ function drawFretboard(el, cfg){
   function paint(keepScroll){
     const left = keepScroll && handle ? handle.scroll.scrollLeft : null;
     handle = BassNeck.render(el, {
-      strings: tun.names, fromFret: 0, toFret: frets, scale: 'play',
+      strings: tun.names, fromFret, toFret: frets, scale: 'play',
       markers: markers.slice(), window: cfg.boxWindow, windowLabel: cfg.boxWindow ? true : false,
       dimStrings, animate: !keepScroll,
       onTap: cfg.onTap ? (si, f) => cfg.onTap(si, f, tun.midi[si] + f) : null,
@@ -572,7 +571,7 @@ function playSequence(handle, seq, msPerNote, onDone){
   }, seq.length * msPerNote + 100));
 }
 
-let scaleFbHandle = null;
+let scaleFbHandle = null, scPage = 0;
 function renderScales(){
   const el = document.getElementById('tab-scales');
   const sc = SCALES[S.scales.type];
@@ -625,7 +624,13 @@ function renderScales(){
   } else {
     h += '<p class="muted small" style="margin:8px 2px 0">Every ' + S.scales.root + ' ' + sc.name.toLowerCase() + ' note, frets 0–12. Notice the patterns repeating.</p>';
   }
-  h += '<div id="scaleFb"></div>' + fbCaption();
+  h += '<div id="scaleFb"></div>';
+  if (view === 'neck'){
+    const wins = BassNeck.windows(12);
+    h += '<div class="fret-pager seg compact" id="scPager">' + wins.map((w, i) =>
+      '<button data-k="' + i + '" class="' + (i === scPage ? 'on' : '') + '">Frets ' + w[0] + '–' + w[1] + '</button>').join('') + '</div>';
+  }
+  h += fbCaption();
   h += '<div class="legend"><span class="l-root"><i></i>root</span><span class="l-tone"><i></i>scale tone</span><span class="l-hl"><i></i>now playing</span></div>';
   h += '<div class="row" style="margin-top:6px"><button class="btn primary" id="scPlay">▶ Play scale (slow)</button><button class="btn ghost" id="scStop">■ Stop</button></div>';
   h += '</div>';
@@ -636,11 +641,16 @@ function renderScales(){
   el.innerHTML = h;
 
   // fretboard — box view extends past fret 12 when the shape needs it
-  const frets = view === 'open' ? 5 : (view === 'box' ? Math.max(12, boxHi) : 12);
+  const wins = BassNeck.windows(12);
+  if (scPage >= wins.length) scPage = 0;
+  const neckWin = wins[scPage];
+  const frets = view === 'open' ? 5 : (view === 'box' ? Math.max(12, boxHi) : neckWin[1]);
+  const neckFrom = view === 'neck' ? neckWin[0] : 0;
   const boxWin = view === 'box' ? [anchor, boxHi] : null;
   scaleFbHandle = drawFretboard(document.getElementById('scaleFb'), {
-    frets,
+    frets, fromFret: neckFrom,
     boxWindow: boxWin,
+    onTap(si, f, midi){ Audio_.note(midi); },
     mark(si, f){
       const midi = TUNINGS[S.tuning].midi[si] + f;
       const p = pc(midi);
@@ -690,6 +700,7 @@ function renderScales(){
   bindSeg('scRoot', k => { S.scales.root = k; save(); renderScales(); });
   bindSeg('scView', k => { S.scales.view = k; save(); renderScales(); });
   bindSeg('scLabels', k => { S.scales.labels = k; save(); renderScales(); });
+  bindSeg('scPager', k => { scPage = +k; renderScales(); });
 }
 function bindSeg(id, fn){
   const el = document.getElementById(id);
@@ -767,6 +778,7 @@ function renderChords(){
 
   chordFbHandle = drawFretboard(document.getElementById('chordFb'), {
     frets:12,
+    onTap(si, f, midi){ Audio_.note(midi); },
     mark(si, f){
       const midi = TUNINGS[S.tuning].midi[si] + f;
       const p = pc(midi);
@@ -1159,7 +1171,7 @@ function afterAnswer(ok, revealFn){
   document.getElementById('qScore').textContent = T.session.score;
   document.getElementById('qStreak').textContent = T.session.streak;
   if (ok){
-    qFeed.textContent = ['Nice!','Locked in. 🤘','Correct!','That\'s it!'][Math.floor(Math.random() * 4)];
+    qFeed.textContent = ['Nice!','Locked in.','Correct!','That\'s it!'][Math.floor(Math.random() * 4)];
     qFeed.className = 'feedback ok';
   } else {
     qFeed.className = 'feedback no';
@@ -1296,8 +1308,14 @@ function mountHeatNeck(){
     if (si < 0 || isNaN(fret)) continue;
     markers.push({ si, fret, kind:'heat', label:String(v), heat: v / worst });
   }
+  if (!markers.length){ host.innerHTML = ''; return; }
+  // Frame the span that actually contains misses, so the worst one is never
+  // hidden behind a horizontal scroll.
+  const frets = markers.map(m => m.fret);
+  const lo = Math.max(0, Math.min.apply(null, frets) - 1);
+  const hi = Math.min(12, Math.max(Math.max.apply(null, frets) + 1, lo + 4));
   BassNeck.render(host, {
-    strings: names, fromFret:0, toFret:12, scale:'read', markers,
+    strings: names, fromFret: lo <= 1 ? 0 : lo, toFret: hi, scale:'read', markers,
     title:'The frets you miss most often',
   });
 }
@@ -1525,7 +1543,7 @@ function renderPractice(){
   h += '<p class="muted small" style="margin:4px 0 6px">Check these honestly — they gate when you\'re ready for the next week. They stay checked (unlike the daily list).</p>';
   for (const cp of wk.checkpoints){
     const done = !!S.practice.checkpoints[cp.id];
-    h += '<div class="checkpoint"><label class="chk"><input type="checkbox" data-cp="' + cp.id + '" ' + (done ? 'checked' : '') + '> <span>' + cp.text + '</span></label></div>';
+    h += '<div class="checkpoint' + (done ? ' is-done' : '') + '"><label class="chk"><input type="checkbox" data-cp="' + cp.id + '" ' + (done ? 'checked' : '') + '> <span>' + cp.text + '</span></label></div>';
   }
   h += '</div>';
 
@@ -1539,10 +1557,10 @@ function renderPractice(){
   // report card
   const w3 = weekOf(3);
   if (w3.checkpoints.every(c => S.practice.checkpoints[c.id])){
-    h += '<div class="card" style="border-color:var(--good)"><b>🏁 3 weeks done — report to Claude</b>';
+    h += '<div class="card" style="border-color:var(--good)"><b class="t-title3">3 weeks done — report to Claude</b>';
     h += '<p class="muted small" style="margin:4px 0 6px">Copy this summary and paste it into a chat with Claude to get a personalized weeks 4–5 program.</p>';
     h += '<div class="copybox" id="reportBox">' + reportText() + '</div>';
-    h += '<button class="btn primary" id="copyReport">📋 Copy report</button>';
+    h += '<button class="btn primary" id="copyReport">Copy report</button>';
     h += '</div>';
   }
 

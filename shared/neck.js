@@ -335,10 +335,10 @@
       const drawKind = kind;
       const grp = el('g', {
         class: 'neck-marker is-' + drawKind + (outside ? ' is-outside' : '') +
-               (opts.animate && idx < 12 ? ' animate-in' : ''),
+               (opts.animate && idx < 12 && !outside ? ' animate-in' : ''),
         'data-s': m.si, 'data-f': m.fret,
       });
-      if (opts.animate && idx < 12) grp.style.animationDelay = (idx * 20) + 'ms';
+      if (opts.animate && idx < 12 && !outside) grp.style.animationDelay = (idx * 20) + 'ms';
 
       if (drawKind === 'highlight') grp.appendChild(el('circle', { cx: f.center, cy, r: S.dot + 4, class: 'neck-halo' }));
       const rr = drawKind === 'heat' ? S.dot * (0.62 + 0.38 * (m.heat || 1)) : S.dot;

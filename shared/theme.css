@@ -198,7 +198,15 @@ input[type=range]{width:100%; accent-color:var(--root); min-height:44px;}
 .neck-marker.is-correct .neck-badge{fill:var(--good);}
 .neck-marker.is-wrong .neck-badge{fill:var(--bad);}
 .neck-badge-bg{fill:var(--s1); stroke:var(--line); stroke-width:1;}
-.neck-marker.is-outside{opacity:.3;}
+.neck-marker.is-playing .neck-dot{fill:var(--hl); stroke:rgba(0,0,0,.35);}
+.neck-marker.is-playing .neck-dot-label{fill:var(--on-hl); font-weight:800;}
+/* Dim via fill-opacity, not opacity: the entry animation animates opacity
+   with fill-mode both, which would otherwise permanently win. */
+.neck-marker.is-outside .neck-dot{fill-opacity:.30; stroke-opacity:.30;}
+.neck-marker.is-outside .neck-dot-label{fill-opacity:.34;}
+.neck-marker.is-outside .neck-ring,
+.neck-marker.is-outside .neck-finger-bg,
+.neck-marker.is-outside .neck-finger{opacity:.3;}
 
 .neck-finger-bg{fill:var(--s1); stroke:var(--line); stroke-width:1;}
 .neck-finger{
