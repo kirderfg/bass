@@ -199,3 +199,79 @@ test('the tuner names the string being tuned even when it is badly slack', async
     assert.match(cents, /flat — tune UP/, `expected "tune UP", got "${cents}"`);
   } finally { await app.close(); }
 });
+
+test('the tuner does not contradict itself on a badly slack string', async () => {
+  // Regression: the big readout used the open-string reference while the
+  // drift banner used chromatic cents, so a 70-cent-flat E said "tune UP"
+  // and "30 cents sharp" in the same viewport.
+  const app = await openWithNote(E1 * Math.pow(2, -70 / 1200));
+  try {
+    const cents = await until(app.page, () => {
+      const t = document.getElementById('tCents').textContent.trim();
+      return /tune/.test(t) ? t : null;
+    });
+    assert.match(cents, /flat — tune UP/);
+
+    const banner = await until(app.page, () => {
+      const el = document.getElementById('tuneWarn');
+      return !el.classList.contains('hidden') ? el.textContent : null;
+    }, null, 9000);
+    if (banner) {
+      assert.ok(!/sharp/.test(banner),
+        `banner contradicts the readout: "${banner}"`);
+      assert.match(banner, /flat/);
+    }
+  } finally { await app.close(); }
+});
+
+test('the string labels stay visible when the fretboard scrolls to a hint', async () => {
+  // Regression: scrolling the board to reveal a high fret painted the cells
+  // over the sticky string labels, so the reveal showed an unlabelled grid.
+  const app = await openWithNote(G2);
+  try {
+    await app.page.evaluate(() => {
+      setMode('find');
+      tier = 4; focus = null; renderTierUI();
+      q = { si: 2, f: 11, midi: 66, sn: 'A', name: 'F#' };
+      hintLevel = 1; showHint();          // jump to the full reveal
+    });
+    await app.page.waitForTimeout(400);
+
+    const labelsVisible = await app.page.evaluate(() => {
+      const labels = [...document.querySelectorAll('#fBoard .lbl')];
+      if (!labels.length) return 'no labels rendered';
+      return labels.every(l => {
+        const r = l.getBoundingClientRect();
+        const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return top === l || l.contains(top);
+      });
+    });
+    assert.equal(labelsVisible, true, 'fretboard cells are covering the string labels');
+  } finally { await app.close(); }
+});
+
+test('repeated guesses at one ear-training note count as a single answer', async () => {
+  // Regression: Echo recorded every wrong guess into the shared accuracy that
+  // the Theory Trainer's checkpoints read, penalising the act of practising.
+  const app = await openWithNote(G2);
+  try {
+    await app.page.evaluate(() => {
+      localStorage.removeItem('bassTheoryTrainer.v1');
+      setMode('echo');
+      echoTarget = 45;            // A2 — we will keep "playing" G at it
+      echoWrongThisTarget = 0;
+      A.muteUntil = 0;
+    });
+    await until(app.page, () => {
+      const el = document.getElementById('eVerdict');
+      return el.className.includes('no') ? el.textContent : null;
+    });
+    // Keep guessing the same wrong note for a few seconds.
+    await app.page.waitForTimeout(2500);
+
+    const stats = await app.page.evaluate(() =>
+      JSON.parse(localStorage.getItem('bassTheoryTrainer.v1')).stats);
+    assert.equal(stats.answered, 1,
+      `hunting for the note recorded ${stats.answered} answers against accuracy`);
+  } finally { await app.close(); }
+});

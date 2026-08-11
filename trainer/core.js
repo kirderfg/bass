@@ -200,7 +200,7 @@
    *          pitch is nowhere near an open string (they're fretting, not tuning).
    */
   function nearestOpenString(hz, openMidis) {
-    const MAX_CENTS = 300; // beyond ~3 semitones this isn't that string
+    const MAX_CENTS = 250; // beyond ~2 tones they are fretting, not tuning
     let best = null;
     for (const midi of openMidis) {
       const cents = 1200 * Math.log2(hz / midiToHz(midi));

@@ -70,7 +70,7 @@ select{
 .needle{position:relative; height:46px; margin:12px 0 4px; background:var(--panel2); border-radius:10px; overflow:hidden;}
 .needle .center{position:absolute; left:50%; top:0; bottom:0; width:2px; background:var(--good); opacity:.55;}
 .needle .zone{position:absolute; left:36.5%; right:36.5%; top:0; bottom:0; background:rgba(61,220,132,.10);}
-.needle .bar{position:absolute; top:8px; bottom:8px; width:6px; border-radius:3px; background:var(--root); left:50%; transition:left .09s linear, background .2s;}
+.needle .bar{position:absolute; top:8px; bottom:8px; width:6px; margin-left:-3px; border-radius:3px; background:var(--root); left:50%; transition:left .09s linear, background .2s;}
 .needle .bar.intune{background:var(--good);}
 .needle .lbl{position:absolute; bottom:2px; font-size:10px; color:var(--dim);}
 .cents{text-align:center; font-size:14px; font-weight:700; margin-top:2px;}
@@ -87,12 +87,12 @@ select{
 .stat span{font-size:11px; color:var(--dim);}
 /* ---- fretboard (compact, for hints/reveal) ---- */
 .fb{display:grid; gap:2px; overflow-x:auto; scroll-behavior:smooth; padding-bottom:4px;}
-.fb .lbl{display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; color:var(--dim); background:var(--panel); position:sticky; left:0;}
-.fb .cell{position:relative; height:30px; background:#20242e; border-right:2px solid #3a4152; border-radius:2px;}
+.fb .lbl{display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; color:var(--dim); background:var(--panel); position:sticky; left:0; z-index:3; box-shadow:2px 0 4px rgba(0,0,0,.5);}
+.fb .cell{position:relative; z-index:1; height:30px; background:#20242e; border-right:2px solid #3a4152; border-radius:2px;}
 .fb .cell.f0{background:#161920; border-right:4px solid #cdd3e0;}
 .fb .cell.range{background:#2f3a2c;}
 .fb .cell .dot{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:10.5px; font-weight:800; background:var(--good); color:#03290f;}
-.fb .fnum{text-align:center; font-size:10px; color:var(--dim);}
+.fb .fnum{text-align:center; font-size:10px; color:var(--dim); z-index:1;}
 .hidden{display:none !important;}
 .tag{display:inline-block; background:#2b3242; border-radius:99px; padding:5px 11px; font-size:12.5px; font-weight:600;}
 </style>
@@ -141,7 +141,7 @@ select{
           <span class="lbl" style="right:6px">sharp ♯</span>
         </div>
         <div class="cents" id="tCents">&nbsp;</div>
-        <p class="muted small" style="margin:10px 0 0">Tune each open string in turn: <b id="tStrings">B E A D G</b>. Land the bar in the green zone.<br>
+        <p class="muted small" style="margin:10px 0 0">Play each <b>open</b> string in turn (no fingers on the neck): <b id="tStrings">B E A D G</b>. Land the bar in the green zone.<br>
         <span style="opacity:.8">A <b>cent</b> is a hundredth of a fret's worth of pitch — 100 cents = 1 fret. Under 15 cents is close enough for rock.</span></p>
       </div>
     </section>
@@ -164,13 +164,14 @@ select{
           <div class="stat"><b id="fAsked">0</b><span>asked</span></div>
         </div>
       </div>
-      <div class="card" style="padding:10px 12px">
+    </section>
+
+    <div class="card hidden" id="difficultyCard" style="padding:10px 12px">
         <div class="small muted" style="margin-bottom:6px">Difficulty</div>
         <select id="tierSel"></select>
         <div class="small muted" style="margin:10px 0 6px">Drill</div>
         <div class="seg" id="focusSeg"></div>
-      </div>
-    </section>
+    </div>
 
     <!-- ================= ECHO ================= -->
     <section id="secEcho" class="hidden">
@@ -316,6 +317,8 @@ function tick(){
   const now = performance.now();
   if (now < A.muteUntil){
     tracker.push(null, now);
+    document.getElementById('liveTxt').textContent = 'playing the note — listen…';
+    document.getElementById('liveDot').classList.remove('on');
     if (mode === 'tuner') renderTuner(null, null);
     return;
   }
@@ -328,13 +331,21 @@ function tick(){
   else if (reading.state === 'stable') onStableNote(reading);
   else if (mode === 'find' && reading.state === 'listening') {
     document.getElementById('fHeard').textContent = 'hearing ' + C.hzToNote(reading.hz).name + '…';
+  } else if (mode === 'find' && reading.state === 'held' && q && reading.midi === q.midi
+             && now - lastProgressAt > 2500) {
+    const hEl = document.getElementById('fHeard');
+    hEl.textContent = 'that note is still ringing from before — mute the string, then play it again';
   } else if (mode === 'find' && reading.state === 'idle') {
     const hEl = document.getElementById('fHeard');
     if (/^hearing /.test(hEl.textContent)) hEl.innerHTML = '&nbsp;';
   }
 
-  if (pitch && Math.abs(C.hzToNote(pitch.hz).cents) < 50){
-    centsHistory.push(C.hzToNote(pitch.hz).cents);
+  // Only measure drift against a note we KNOW was intended — the open string
+  // being tuned. Chromatic cents wrap at ±50, so a badly flat string would
+  // otherwise be reported as sharp of its neighbour.
+  const openMatch = pitch ? C.nearestOpenString(pitch.hz, TUNINGS[tuning].midi) : null;
+  if (openMatch){
+    centsHistory.push(openMatch.cents);
     if (centsHistory.length > 24) centsHistory.shift();
     const drift = C.tuningDrift(centsHistory.slice(-12));
     const warn = document.getElementById('tuneWarn');
@@ -365,7 +376,7 @@ function renderTuner(pitch, reading){
   const target = C.nearestOpenString(pitch.hz, TUNINGS[tuning].midi);
   const n = target ? { name: target.name, octave: C.hzToNote(C.midiToHz(target.midi)).octave, cents: target.cents }
                    : chromatic;
-  const inTune = Math.abs(n.cents) <= 15;
+  const inTune = Math.abs(Math.round(n.cents)) <= 15;  // match the number we display
   noteEl.innerHTML = n.name + '<small>' + n.octave + '</small>';
   noteEl.classList.toggle('intune', inTune);
   hzEl.textContent = pitch.hz.toFixed(2) + ' Hz' +
@@ -495,8 +506,7 @@ function onStableNote(reading){
       vEl.textContent = 'Right note! But it is ' + Math.abs(Math.round(reading.cents)) + ' cents ' +
         (reading.cents < 0 ? 'flat' : 'sharp') + ' — that string needs tuning.';
       vEl.className = 'verdict warn';
-      outOfTuneThisQ = true;
-      lastProgressAt = performance.now();
+      outOfTuneThisQ = true;   // let the stall timer escalate to the tuner
     } else if (verdict === 'wrong-octave'){
       const dir = reading.midi > q.midi ? 'higher up' : 'lower down';
       const article = /^[AEF]$/.test(heardName) ? 'an' : 'a';
@@ -520,7 +530,7 @@ function onStableNote(reading){
       vEl.textContent = 'Correct — the note was ' + targetName + '. 👂';
       vEl.className = 'verdict ok';
       sess.echo.score++; sess.echo.streak++;
-      recordEcho(true);
+      if (echoWrongThisTarget === 0) recordEcho(true);
       setTimeout(newEcho, 1600);
     } else {
       vEl.textContent = 'You played ' + heardName + ' — that is not it. Tap 🔊 to hear it again.';
@@ -565,8 +575,14 @@ function recordAnswer(ok, question, elapsedMs){
 }
 
 /* ================= echo ================= */
-let echoTarget = null, echoStart = 0;
+let echoTarget = null, echoStart = 0, echoWrongThisTarget = 0;
 function recordEcho(ok){
+  // One record per target: repeated guesses at the same note are practice,
+  // not extra wrong answers dragging down the shared accuracy figure.
+  if (!ok){
+    echoWrongThisTarget++;
+    if (echoWrongThisTarget > 1) return;
+  }
   saveStats(st => {
     st.answered++; if (ok) st.correct++;
     st.ear = st.ear || { a:0, c:0 };
@@ -584,6 +600,7 @@ function newEcho(){
   while (p.length > 1 && pick === echoTarget);
   echoTarget = pick;
   echoStart = performance.now();
+  echoWrongThisTarget = 0;
   const v = document.getElementById('eVerdict');
   v.innerHTML = '&nbsp;'; v.className = 'verdict';
   document.getElementById('eHeard').innerHTML = '&nbsp;';
@@ -616,6 +633,7 @@ function setMode(m){
   document.getElementById('secTuner').classList.toggle('hidden', m !== 'tuner');
   document.getElementById('secFind').classList.toggle('hidden', m !== 'find');
   document.getElementById('secEcho').classList.toggle('hidden', m !== 'echo');
+  document.getElementById('difficultyCard').classList.toggle('hidden', m === 'tuner');
   tracker.reset();
   if (m === 'find' && !q) newQuestion();
   if (m === 'echo') newEcho();
