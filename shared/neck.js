@@ -222,11 +222,10 @@
       if (!f) continue;
       const top = edgeTop(f.center), bot = edgeBot(f.center);
       const ys = inlay.double
-        ? [top + (bot - top) * 0.16, top + (bot - top) * 0.84]
+        ? [top + (bot - top) * 0.24, top + (bot - top) * 0.76]
         // With an odd string count the centre line is a string, so sit the
         // dot in the gap below it rather than under the string itself.
         : [(top + bot) / 2 + (g.nStrings % 2 ? g.pitchAt(f.center) * 0.5 : 0)];
-      void 0;
       for (const cy of ys) {
         svg.appendChild(el('circle', { cx: f.center, cy, r: S.inlay, class: 'neck-inlay' }));
       }
@@ -333,7 +332,7 @@
       const cy = g.stringY(m.si, f.center);
       const kind = m.kind || 'tone';
       const outside = opts.window && (m.fret < opts.window[0] || m.fret > opts.window[1]);
-      const drawKind = outside ? 'ghost' : kind;
+      const drawKind = kind;
       const grp = el('g', {
         class: 'neck-marker is-' + drawKind + (outside ? ' is-outside' : '') +
                (opts.animate && idx < 12 ? ' animate-in' : ''),
@@ -342,9 +341,11 @@
       if (opts.animate && idx < 12) grp.style.animationDelay = (idx * 20) + 'ms';
 
       if (drawKind === 'highlight') grp.appendChild(el('circle', { cx: f.center, cy, r: S.dot + 4, class: 'neck-halo' }));
+      const rr = drawKind === 'heat' ? S.dot * (0.62 + 0.38 * (m.heat || 1)) : S.dot;
       grp.appendChild(el('circle', {
-        cx: f.center, cy, r: S.dot, class: 'neck-dot',
+        cx: f.center, cy, r: rr, class: 'neck-dot',
         fill: drawKind === 'root' ? 'url(#' + uid + 'rootg)' : null,
+        'fill-opacity': drawKind === 'heat' ? (0.35 + 0.55 * (m.heat || 1)) : null,
       }));
       if (drawKind === 'root') grp.appendChild(el('circle', { cx: f.center, cy, r: S.dot - 4.5, class: 'neck-ring' }));
       if (m.label != null) {

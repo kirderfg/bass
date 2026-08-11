@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#161412">
 <title>Bass Live Trainer</title>
 <link rel="stylesheet" href="../shared/theme.css">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎙️</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23161412'/><rect x='11' y='6' width='10' height='13' rx='5' fill='none' stroke='%23F2A93B' stroke-width='2'/><path d='M16 19v5M11 24h10' stroke='%23F2A93B' stroke-width='2' stroke-linecap='round'/></svg>">
 <style>
 :root{
   /* aliases onto shared/theme.css tokens — no colour is defined here */
@@ -65,10 +65,9 @@ select{
 /* ---- tuner ---- */
 .meter{position:relative; height:52px; margin:var(--sp3) 0 2px; background:var(--s2);
   border:1px solid var(--line); border-radius:var(--r-sm); overflow:hidden;}
-.meter-track{position:absolute; left:5px; right:5px; top:0; bottom:0;}
 .meter-zone{position:absolute; left:35%; right:35%; top:0; bottom:0;
-  background:rgba(69,196,134,.12);
-  border-left:1px solid rgba(69,196,134,.3); border-right:1px solid rgba(69,196,134,.3);
+  background:color-mix(in srgb, var(--good) 12%, transparent);
+  border-left:1px solid color-mix(in srgb, var(--good) 32%, transparent); border-right:1px solid color-mix(in srgb, var(--good) 32%, transparent);
   transition:background var(--fast);}
 .meter.is-intune .meter-zone{background:var(--good);}
 .meter-center{position:absolute; left:50%; top:0; bottom:0; width:2px; margin-left:-1px; background:var(--good); opacity:.6;}
@@ -95,12 +94,6 @@ select{
 .tuner-note small{font-size:20px; color:var(--t4); font-weight:700;}
 .tuner-note.intune{color:var(--good);}
 .tuner-hz{text-align:center; color:var(--dim); font-size:13px;}
-.needle{position:relative; height:46px; margin:12px 0 4px; background:var(--panel2); border-radius:10px; overflow:hidden;}
-.needle .center{position:absolute; left:50%; top:0; bottom:0; width:2px; background:var(--good); opacity:.55;}
-.needle .zone{position:absolute; left:36.5%; right:36.5%; top:0; bottom:0; background:rgba(69,196,134,.12);}
-.needle .bar{position:absolute; top:8px; bottom:8px; width:6px; margin-left:-3px; border-radius:3px; background:var(--root); left:50%; transition:left .09s linear, background .2s;}
-.needle .bar.intune{background:var(--good);}
-.needle .lbl{position:absolute; bottom:2px; font-size:10px; color:var(--dim);}
 .cents{text-align:center; font-size:14px; font-weight:700; margin-top:2px;}
 /* ---- quiz ---- */
 .q{font-size:22px; text-align:center; font-weight:700; padding:6px 4px 2px;}
@@ -189,7 +182,7 @@ select{
         <div class="verdict" id="fVerdict">&nbsp;</div>
         <div class="heard" id="fHeard">&nbsp;</div>
         <div class="row" style="justify-content:center; margin-top:8px">
-          <button class="btn small" id="fHint">💡 Hint</button>
+          <button class="btn small" id="fHint">Hint</button>
           <button class="btn small" id="fSkip">Skip →</button>
         </div>
         <div class="stat-row">
@@ -385,7 +378,7 @@ function tick(){
     const drift = C.tuningDrift(centsHistory.slice(-12));
     const warn = document.getElementById('tuneWarn');
     if (drift.drifting){
-      warn.textContent = '⚠️ Every note is landing ' + Math.abs(Math.round(drift.meanCents)) +
+      warn.textContent = 'Every note is landing ' + Math.abs(Math.round(drift.meanCents)) +
         ' cents ' + (drift.meanCents < 0 ? 'flat (too low)' : 'sharp (too high)') +
         ' — your bass itself may be out of tune. ' + (mode === 'tuner' ? 'Tune each open string to the green zone below.' : 'Open the Tuner tab.');
       warn.classList.toggle('hidden', mode === 'tuner');   // redundant on this screen
@@ -684,7 +677,11 @@ function setMode(m){
   document.getElementById('secTuner').classList.toggle('hidden', m !== 'tuner');
   document.getElementById('secFind').classList.toggle('hidden', m !== 'find');
   document.getElementById('secEcho').classList.toggle('hidden', m !== 'echo');
-  document.getElementById('difficultyCard').classList.toggle('hidden', m === 'tuner');
+  const dc = document.getElementById('difficultyCard');
+  dc.classList.toggle('hidden', m === 'tuner');
+  // keep it below whichever exercise is showing, so it never jumps
+  const sec = document.getElementById(m === 'echo' ? 'secEcho' : 'secFind');
+  if (m !== 'tuner' && sec && sec.nextSibling !== dc) sec.parentNode.insertBefore(dc, sec.nextSibling);
   tracker.reset();
   if (m === 'find' && !q) newQuestion();
   if (m === 'echo') newEcho();

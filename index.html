@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#161412">
 <title>Bass Theory Trainer</title>
 <link rel="stylesheet" href="shared/theme.css">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎸</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23161412'/><rect x='6' y='9' width='20' height='14' rx='2' fill='%232A1D17'/><g stroke='%23F2A93B'><line x1='6' y1='13' x2='26' y2='13' stroke-width='1.2'/><line x1='6' y1='16' x2='26' y2='16' stroke-width='1.8'/><line x1='6' y1='19' x2='26' y2='19' stroke-width='2.6'/></g><rect x='9' y='8' width='1.6' height='16' fill='%23E8E2D4'/></svg>">
 <style>
 :root{
   /* aliases onto shared/theme.css tokens — no colour is defined here */
@@ -70,7 +70,7 @@ button{font-family:inherit;}
   background:var(--panel2); border:1px solid var(--line); color:var(--dim);
   border-radius:10px; padding:8px 12px; min-height:44px; font-size:14px; font-weight:600; cursor:pointer;
 }
-.seg button.on{background:var(--s3); color:var(--t1); border-color:var(--root); box-shadow:inset 0 -2px 0 var(--root);}
+.seg button.on{background:var(--s3); color:var(--t1); border-color:var(--line-hi); box-shadow:inset 0 -2px 0 var(--line-hi), var(--e2);}
 .seg.compact button{min-height:44px; min-width:44px; padding:6px 10px; font-size:13px;}
 select{
   background:var(--panel2); color:var(--text); border:1px solid var(--line);
@@ -131,7 +131,15 @@ input[type=range]{width:100%; accent-color:var(--root); min-height:44px;}
 .plink{margin-top:6px;}
 .progressbar{height:8px; background:var(--panel2); border-radius:99px; overflow:hidden; margin:8px 0 2px;}
 .progressbar i{display:block; height:100%; background:var(--good); border-radius:99px; transition:width .3s;}
-.statgrid{display:grid; grid-template-columns:repeat(auto-fit,minmax(90px,1fr)); gap:8px; margin:8px 0;}
+.statgrid{display:grid; grid-template-columns:repeat(2,1fr); gap:var(--sp2); margin:var(--sp3) 0 0;}
+@media (min-width:520px){ .statgrid{grid-template-columns:repeat(4,1fr);} }
+.stat b i{font-style:normal; font-size:14px; color:var(--t3); font-weight:650;}
+.sbar{display:flex; align-items:center; gap:var(--sp2); margin:5px 0;}
+.sbar-name{width:16px; font-weight:800; font-size:12.5px; color:var(--t3);}
+.sbar.is-lowest .sbar-name{color:var(--low-string);}
+.sbar-track{flex:1; height:8px; background:var(--s2); border-radius:99px; overflow:hidden;}
+.sbar-track i{display:block; height:100%; background:var(--tone); border-radius:99px; transition:width var(--slow) var(--ease);}
+.sbar-val{width:52px; text-align:right; font-family:var(--mono); font-size:11.5px; color:var(--t2); font-variant-numeric:tabular-nums;}
 .stat{background:var(--panel2); border-radius:10px; padding:8px; text-align:center;}
 .stat b{display:block; font-size:20px; color:var(--root);}
 .stat span{font-size:11.5px; color:var(--dim);}
@@ -172,7 +180,7 @@ body.metro-on{padding-bottom:calc(140px + env(safe-area-inset-bottom));}
 /* ---------- tab bar ---------- */
 nav.tabbar{
   position:fixed; bottom:0; left:0; right:0; z-index:50;
-  display:flex; background:var(--s4); border-top:1px solid var(--line);
+  display:flex; background:var(--s1); border-top:1px solid var(--hair);
   padding-bottom:env(safe-area-inset-bottom);
 }
 nav.tabbar button{
@@ -524,6 +532,8 @@ const SCALES = {
 };
 const SCALE_ORDER = ['minPent','natMinor','majPent','major','blues'];
 
+/** Render degree names with a real flat sign, matching the fretboard. */
+function flatSign(deg){ return String(deg).replace(/^b(?=[0-9])/, '\u266d'); }
 function stepFormula(iv){
   const steps = [];
   for (let i = 1; i < iv.length; i++) steps.push('+' + (iv[i] - iv[i-1]));
@@ -590,7 +600,7 @@ function renderScales(){
   h += '<div style="font-size:17px; font-weight:700">' + S.scales.root + ' ' + sc.name.toLowerCase() + '</div>';
   h += '<p class="muted" style="margin:4px 0 8px">' + sc.blurb + '</p>';
   h += '<div class="chips">' + notes.map((n, i) =>
-    '<span class="chip ' + (i === 0 ? 'root' : 'tone') + '">' + n + '<small>' + sc.deg[i] + '</small></span>').join('') + '</div>';
+    '<span class="chip ' + (i === 0 ? 'root' : 'tone') + '">' + n + '<small>' + flatSign(sc.deg[i]) + '</small></span>').join('') + '</div>';
   h += '<p class="small" style="margin:10px 0 0"><b>Step recipe:</b> ' + stepFormula(sc.iv) +
     '<br><span class="muted">Each number = how many frets (= half steps) to the next note. Same recipe from ANY root — that\'s why shapes are moveable.</span></p>';
   h += '</div>';
@@ -729,7 +739,7 @@ function renderChords(){
   h += '<div style="font-size:17px; font-weight:700">' + S.chords.root + ch.sym + ' — ' + ch.name.toLowerCase() + '</div>';
   h += '<p class="muted" style="margin:4px 0 8px">' + ch.blurb + '</p>';
   h += '<div class="chips">' + notes.map((n, i) =>
-    '<span class="chip ' + (i === 0 ? 'root' : 'tone') + '">' + n + '<small>' + ch.deg[i] + '</small></span>').join('') + '</div>';
+    '<span class="chip ' + (i === 0 ? 'root' : 'tone') + '">' + n + '<small>' + flatSign(ch.deg[i]) + '</small></span>').join('') + '</div>';
   h += '</div>';
 
   if (S.chords.type === 'power') h += theoryCard('fifth');
@@ -806,7 +816,7 @@ function containmentChain(ch, rp, flats){
         const p = (rp + sc.iv[i]) % 12;
         const inChord = chordPcs.has(p);
         const cls = p === rp ? 'chip root' : (inChord ? 'chip tone' : 'chip dim');
-        return '<span class="' + cls + '">' + n + '<small>' + sc.deg[i] + '</small></span>';
+        return '<span class="' + cls + '">' + n + '<small>' + flatSign(sc.deg[i]) + '</small></span>';
       }).join('') + '</div></div>';
   }
   let h = '<div class="card"><b>Where these notes live</b>';
@@ -822,7 +832,7 @@ function containmentChain(ch, rp, flats){
     h += rowFor('major', '…inside ' + root + ' major scale:');
   } else {
     h += rowFor('major', 'vs. the ' + root + ' major scale:');
-    h += '<p class="small" style="margin:6px 0 0">⚠️ The b7 pokes <b>outside</b> the plain major scale — that outside note is exactly the bluesy tension a dominant 7 is famous for.</p>';
+    h += '<p class="small" style="margin:6px 0 0">The b7 pokes <b>outside</b> the plain major scale — that outside note is exactly the bluesy tension a dominant 7 is famous for.</p>';
   }
   h += '</div>';
   return h;
@@ -986,6 +996,7 @@ function renderTrainer(){
 
   if (mode === 'study') mountStudy();
   else { newQuestion(); mountQuiz(); }
+  mountHeatNeck();
 
   bindSeg('trMode', k => { S.trainer.mode = k; save(); renderTrainer(); });
   const tsel = document.getElementById('trTier');
@@ -1159,6 +1170,7 @@ function afterAnswer(ok, revealFn){
   const wrap = document.getElementById('statsWrap');
   if (wrap){
     wrap.innerHTML = statsHtml();
+    mountHeatNeck();
     const rst = document.getElementById('trReset');
     if (rst) rst.addEventListener('click', trainerResetStats);
   }
@@ -1211,64 +1223,83 @@ function answerOctave(si, f, midi){
   });
 }
 
-/* ---------- stats + heatmap ---------- */
+/* ---------- stats ---------- */
 function statsHtml(){
   const st = S.stats;
-  const acc = st.answered ? Math.round(100 * st.correct / st.answered) : 0;
   if (!st.answered){
     return '<div class="card"><b class="t-title3">No answers yet</b>' +
       '<div class="muted small" style="margin-top:2px">Pick a test mode above. Your accuracy, streak and a map of the frets you miss will build up here.</div></div>';
   }
-  let h = '<div class="card"><b>Your stats</b> <span class="muted small">(saved on this device)</span>';
+  const acc = Math.round(100 * st.correct / st.answered);
+  const names = TUNINGS[S.tuning].names;
+
+  let h = '<div class="card"><b class="t-title3">Your progress</b> <span class="muted small">saved on this device</span>';
   h += '<div class="statgrid">';
+  h += '<div class="stat"><b>' + acc + '<i>%</i></b><span>accuracy</span></div>';
   h += '<div class="stat"><b>' + st.correct + '</b><span>correct</span></div>';
-  h += '<div class="stat"><b>' + acc + '%</b><span>accuracy</span></div>';
   h += '<div class="stat"><b>' + st.bestStreak + '</b><span>best streak</span></div>';
   if (st.speed && st.speed.length >= 5){
     const avg = st.speed.reduce((a, b) => a + b, 0) / st.speed.length;
-    h += '<div class="stat"><b>' + avg.toFixed(1) + 's</b><span>avg answer' + (avg < 2 ? ' ✓' : '') + '</span></div>';
+    h += '<div class="stat"><b>' + avg.toFixed(1) + '<i>s</i></b><span>per answer</span></div>';
   }
   h += '</div>';
+
   const tr = (st.tierRecent || {})[S.trainer.tier];
   if (tr && tr.length >= 20 && S.trainer.tier < TIERS.length - 1 &&
       tr.reduce((a, b) => a + b, 0) / tr.length >= 0.9){
-    h += '<p class="small" style="margin:4px 0; color:var(--good)">🎉 You own this tier — your last 20 answers here are 90%+. Ready to try tier ' + (S.trainer.tier + 2) + '?</p>';
+    h += '<div class="note-box good" style="margin-top:10px">You own this tier — your last 20 answers here are 90%+. Ready for tier ' + (S.trainer.tier + 2) + '?</div>';
   }
-  const names = TUNINGS[S.tuning].names;
-  const perStr = names.slice().reverse().map(n => {
-    const s = st.byString[n];
-    if (!s || !s.a) return null;
-    const rec = s.recent && s.recent.length ? Math.round(100 * s.recent.reduce((x, y) => x + y, 0) / s.recent.length) : null;
-    let line = '<b>' + n + ' string:</b> ';
-    if (rec != null) line += rec + '% on last ' + s.recent.length + (s.recent.length >= 20 && rec >= 90 ? ' ✓' : '');
-    line += ' <span class="muted">(lifetime ' + Math.round(100 * s.c / s.a) + '%, ' + s.c + '/' + s.a + ')</span>';
-    return line;
-  }).filter(Boolean);
-  if (perStr.length){
-    h += '<p class="small" style="margin:4px 0">' + perStr.join('<br>') + '</p>';
-    h += '<p class="muted small" style="margin:4px 0">The week 2–3 checkpoints look at your <b>last 20</b> answers per string — old mistakes stop counting against you.</p>';
-  }
-  // heatmap
-  const hasHeat = Object.keys(st.heat).length > 0;
-  if (hasHeat){
-    h += '<p class="small" style="margin:8px 0 0"><b>Mistake heatmap</b> <span class="muted">— redder = more misses there</span></p>';
-    h += '<table class="heat"><tr><td class="hh"></td>';
-    for (let f = 0; f <= 12; f++) h += '<td class="hh">' + f + '</td>';
-    h += '</tr>';
-    for (const n of names.slice().reverse()){
-      h += '<tr><td class="hh">' + n + '</td>';
-      for (let f = 0; f <= 12; f++){
-        const v = st.heat[n + ':' + f] || 0;
-        const a = v ? Math.min(0.85, 0.2 + v * 0.16) : 0;
-        h += '<td style="background:rgba(228,103,92,' + a + ')">' + (v || '') + '</td>';
-      }
-      h += '</tr>';
+
+  // Per string: one bar, one number. (It used to state each figure three times.)
+  const rows = names.slice().reverse().filter(n => st.byString[n] && st.byString[n].a);
+  if (rows.length){
+    h += '<div class="t-eyebrow" style="margin:14px 0 6px">Accuracy by string</div>';
+    for (const n of rows){
+      const bs = st.byString[n];
+      const rec = bs.recent && bs.recent.length
+        ? Math.round(100 * bs.recent.reduce((a, b) => a + b, 0) / bs.recent.length)
+        : Math.round(100 * bs.c / bs.a);
+      const pass = bs.recent && bs.recent.length >= 20 && rec >= 90;
+      h += '<div class="sbar' + (n === names[0] ? ' is-lowest' : '') + '">' +
+        '<span class="sbar-name">' + n + '</span>' +
+        '<span class="sbar-track"><i style="width:' + rec + '%"></i></span>' +
+        '<span class="sbar-val">' + rec + '%' + (pass ? ' ✓' : '') + '</span></div>';
     }
-    h += '</table>';
+    h += '<div class="muted small" style="margin-top:6px">Bars show your <b>last 20</b> answers per string — that\'s what the week 2 and 3 checkpoints look at.</div>';
   }
-  h += '<div class="row" style="margin-top:10px"><button class="btn small ghost" id="trReset">Reset stats</button></div>';
+
+  // The misses belong on the instrument, not in a table of the same coordinates.
+  const heatKeys = Object.keys(st.heat).filter(k => st.heat[k] > 0);
+  if (heatKeys.length){
+    h += '<div class="t-eyebrow" style="margin:16px 0 4px">Frets you miss most</div>';
+    h += '<div id="heatNeck"></div>';
+    h += '<div class="muted small">Bigger, brighter marks = more misses there. Drill those spots.</div>';
+  }
+  h += '<div class="row" style="margin-top:14px"><button class="btn small ghost" id="trReset">Reset progress</button></div>';
   h += '</div>';
   return h;
+}
+
+/** Draw the mistake heatmap onto a read-scale neck. */
+function mountHeatNeck(){
+  const host = document.getElementById('heatNeck');
+  if (!host || !window.BassNeck) return;
+  const names = TUNINGS[S.tuning].names;
+  const worst = Math.max.apply(null, Object.keys(S.stats.heat).map(k => S.stats.heat[k]).concat([1]));
+  const markers = [];
+  for (const key in S.stats.heat){
+    const v = S.stats.heat[key];
+    if (!v) continue;
+    const parts = key.split(':');
+    const si = names.indexOf(parts[0]);
+    const fret = +parts[1];
+    if (si < 0 || isNaN(fret)) continue;
+    markers.push({ si, fret, kind:'heat', label:String(v), heat: v / worst });
+  }
+  BassNeck.render(host, {
+    strings: names, fromFret:0, toFret:12, scale:'read', markers,
+    title:'The frets you miss most often',
+  });
 }
 /* ================= METRONOME ================= */
 const Metro = (() => {
@@ -1448,7 +1479,7 @@ function renderPractice(){
   // streak/overview
   if (ps.total === 0 && doneCount === 0){
     h += '<div class="card tight"><b class="t-title3">Day 1 — welcome.</b>' +
-      '<div class="muted small" style="margin-top:2px">Work through the four items below and you\'ve started. ' +
+      '<div class="muted small" style="margin-top:2px">Work through the ' + wk.items.length + ' items below and you\'ve started. ' +
       'Your streak begins today.</div></div>';
   } else {
     h += '<div class="card tight"><div class="statgrid">' +

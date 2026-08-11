@@ -100,7 +100,7 @@ body{
   transition:background var(--fast), color var(--fast), border-color var(--fast);
 }
 .seg button:hover{background:var(--s3);}
-.seg button.on{background:var(--s3); color:var(--t1); border-color:var(--line-hi); box-shadow:var(--e2);}
+.seg button.on{background:var(--s3); color:var(--t1); border-color:var(--line-hi); box-shadow:inset 0 -2px 0 var(--line-hi), var(--e2);}
 .seg.compact button{padding:8px 11px; font-size:13px;}
 
 select{
@@ -185,8 +185,8 @@ input[type=range]{width:100%; accent-color:var(--root); min-height:44px;}
 .neck-marker.is-highlight .neck-dot{fill:var(--hl);}
 .neck-marker.is-highlight .neck-dot-label{fill:var(--on-hl);}
 .neck-marker.is-highlight .neck-halo{fill:none; stroke:rgba(181,139,245,.42); stroke-width:3;}
-.neck-marker.is-ghost .neck-dot{fill:none; stroke:rgba(214,205,194,.28); stroke-width:1.5; stroke-dasharray:3 3;}
-.neck-marker.is-ghost .neck-dot-label{fill:var(--t4); font-weight:700;}
+.neck-marker.is-ghost .neck-dot{fill:rgba(14,13,12,.55); stroke:rgba(214,205,194,.40); stroke-width:1.5; stroke-dasharray:3 3;}
+.neck-marker.is-ghost .neck-dot-label{fill:var(--t3); font-weight:700;}
 .neck-marker.is-correct .neck-dot{fill:var(--good);}
 .neck-marker.is-correct .neck-dot-label{fill:var(--on-good);}
 /* a wrong answer is drawn as "not yet", never as a red block */
@@ -297,3 +297,5 @@ input[type=range]{width:100%; accent-color:var(--root); min-height:44px;}
   fill:var(--on-root); text-anchor:middle; dominant-baseline:central;
 }
 .drill-host{margin:var(--sp3) 0;}
+.neck-marker.is-heat .neck-dot{fill:var(--bad); stroke:rgba(0,0,0,.35);}
+.neck-marker.is-heat .neck-dot-label{fill:var(--t1); font-weight:800;}
