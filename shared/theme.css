@@ -242,3 +242,58 @@ input[type=range]{width:100%; accent-color:var(--root); min-height:44px;}
   .neck-scroll{scroll-behavior:auto;}
   .btn:active{transform:none;}
 }
+
+/* ==================== drill illustrations ==================== */
+/* One family: amber = what you do, teal = the second of a pair,
+   structure in --t3/--t4. No green or red — these are instructions. */
+.drill{display:block; width:100%; max-width:328px; height:auto; margin:var(--sp3) 0;}
+.drill-puck rect{fill:var(--root); stroke:none;}
+.drill-puck.is-alt rect{fill:var(--tone);}
+.drill-puck-label{
+  font-family:var(--sans); font-size:11px; font-weight:800;
+  fill:var(--on-root); text-anchor:middle; dominant-baseline:central;
+}
+.drill-puck.is-alt .drill-puck-label{fill:var(--on-tone);}
+.drill-label{
+  font-family:var(--sans); font-size:10px; font-weight:700; letter-spacing:.08em;
+  text-transform:uppercase; fill:var(--t4); dominant-baseline:central;
+}
+.drill-rail{stroke:var(--line); stroke-width:1.5; stroke-linecap:round;}
+.drill-tick{stroke:var(--t4); stroke-width:1.5; stroke-linecap:round;}
+.drill-tick.is-strong{stroke:var(--root); stroke-width:2;}
+.drill-arc{fill:none; stroke:var(--t3); stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round;}
+.drill-arc.is-dashed{stroke-dasharray:4 3;}
+.drill-head{fill:var(--t3);}
+.drill-thumb{fill:var(--t3); opacity:.85;}
+.drill-thumb-label{
+  font-family:var(--sans); font-size:8.5px; font-weight:800; letter-spacing:.06em;
+  fill:var(--s0); text-anchor:middle; dominant-baseline:central;
+}
+.drill-x{
+  font-family:var(--sans); font-size:13px; font-weight:800;
+  fill:var(--t3); text-anchor:middle; dominant-baseline:central;
+}
+.drill-note{fill:var(--root);}
+.drill-note.is-alt{fill:var(--tone);}
+.drill-stem{stroke:var(--root); stroke-width:1.5;}
+.drill-stem.is-alt{stroke:var(--tone); stroke-width:1.5;}
+.drill-beam{stroke:var(--root); stroke-width:3; stroke-linecap:round;}
+.drill-metro{fill:none; stroke:var(--t4); stroke-width:1.5; stroke-linejoin:round;}
+.drill-metro-arm{stroke:var(--root); stroke-width:1.5; stroke-linecap:round;}
+.drill-slot{fill:var(--s3);}
+.drill-slot.is-strong{fill:var(--root);}
+.drill-arrowtext{
+  font-family:var(--sans); font-size:13px; font-weight:700;
+  fill:var(--t4); text-anchor:middle; dominant-baseline:central;
+}
+.drill-strlabel{
+  font-family:var(--sans); font-size:9.5px; font-weight:800;
+  fill:var(--t4); text-anchor:end; dominant-baseline:central;
+}
+.drill-strlabel.is-lowest{fill:var(--low-string);}
+.drill-rootdot circle{fill:var(--root); stroke:rgba(0,0,0,.35); stroke-width:1;}
+.drill-rootdot-label{
+  font-family:var(--sans); font-size:10.5px; font-weight:800;
+  fill:var(--on-root); text-anchor:middle; dominant-baseline:central;
+}
+.drill-host{margin:var(--sp3) 0;}

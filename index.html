@@ -27,7 +27,7 @@ header{
   padding:10px 14px 8px;
   display:flex; align-items:center; justify-content:space-between; gap:8px;
 }
-header h1{font-size:18px; margin:0; letter-spacing:.3px;}
+header h1{margin:0; white-space:nowrap;}
 header h1 span{color:var(--root);}
 .tune-toggle{
   display:flex; border:1px solid var(--line); border-radius:999px; overflow:hidden; flex:0 0 auto;
@@ -41,8 +41,8 @@ main{padding:0 12px; max-width:860px; margin:0 auto;}
 section.tab{display:none;}
 section.tab.on{display:block; animation:fade .18s ease;}
 @keyframes fade{from{opacity:.4; transform:translateY(3px);} to{opacity:1; transform:none;}}
-h2{font-size:17px; margin:14px 2px 8px;}
-h3{font-size:15px; margin:12px 2px 6px; color:var(--dim); font-weight:600; text-transform:uppercase; letter-spacing:.6px;}
+h2{font-size:clamp(22px,5.6vw,26px); line-height:1.15; font-weight:750; letter-spacing:-.02em; color:var(--t1); margin:var(--sp5) 2px var(--sp2);}
+h3{font-size:11px; margin:var(--sp4) 2px var(--sp2); color:var(--t3); font-weight:700; text-transform:uppercase; letter-spacing:.11em;}
 .card{
   background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
   padding:12px; margin:10px 0;
@@ -187,10 +187,10 @@ nav.tabbar button.on{color:var(--root);}
 </head>
 <body>
 <header>
-  <h1>🎸 Bass <span>Theory</span> Trainer</h1>
+  <h1 class="t-title2">Bass <span>Theory</span></h1>
   <div class="tune-toggle" id="tuneToggle">
-    <button data-t="5" class="on">5-str BEADG</button>
-    <button data-t="4">4-str EADG</button>
+    <button data-t="5" class="on">5-str</button>
+    <button data-t="4">4-str</button>
   </div>
 </header>
 <main>
@@ -211,6 +211,7 @@ nav.tabbar button.on{color:var(--root);}
   <button data-tab="trainer"><span class="ic">🧠</span>Trainer</button>
 </nav>
 <script src="shared/neck.js"></script>
+<script src="shared/diagrams.js"></script>
 <script>
 "use strict";
 /* ================= CORE: notes, state, audio, fretboard ================= */
@@ -1326,14 +1327,14 @@ const WEEKS = [
   { n:1, title:'Hands, fretboard & first notes',
     goal:'Get your hands working and learn where the notes are on E and A.',
     items:[
-      { id:'w1a', cat:'Warm-up', min:5,
+      { id:'w1a', diagram:'chromatic', cat:'Warm-up', min:5,
         text:'Chromatic 1-2-3-4 ("chromatic" just means every fret, no skips): on each string play frets 1-2-3-4, one finger per fret (index-middle-ring-pinky), then move to the next string. Up all strings and back. Slow + clean beats fast + sloppy.', met:60 },
       { id:'w1b', cat:'Fretboard', min:5,
         text:'Note names on the E and A strings, frets 0–5. Study first, then try a few rounds of "Find the note".',
         link:{ label:'Open note trainer (E+A, 0–5)', spec:{ tab:'trainer', trainer:{ tier:0, mode:'study', focus:null, study:{ show:true, strings:['E','A'], naturalsOnly:true, maxFret:5 } } } } },
-      { id:'w1c', cat:'Technique', min:10,
+      { id:'w1c', diagram:'floatingThumb', cat:'Technique', min:10,
         text:'Plucking: alternate index-middle fingers on the OPEN E string, one note per click at 60 bpm, ~2 min. Then the same on A. Rest your plucking thumb on the B string the whole time (floating thumb) so it never rings.', met:60 },
-      { id:'w1d', cat:'Music', min:10,
+      { id:'w1d', diagram:'plucking', cat:'Music', min:10,
         text:'Groove on one note: open E, one note per click, every note landing ON the beat. Boring is the point — this steady pulse IS the bassist\'s job, and it\'s literally the TNT verse feel.', met:60 }
     ],
     checkpoints:[
@@ -1345,14 +1346,14 @@ const WEEKS = [
   { n:2, title:'Eighth notes + E minor pentatonic',
     goal:'Lock in eighth notes and memorize the most important scale in rock.',
     items:[
-      { id:'w2a', cat:'Warm-up', min:5,
+      { id:'w2a', diagram:'chromatic', cat:'Warm-up', min:5,
         text:'Chromatic 1-2-3-4 on all strings — push to 65 bpm if yesterday was clean.', met:65 },
       { id:'w2b', cat:'Scales', min:5,
         text:'E minor pentatonic, open position: E G A B D. Play it up and down slowly until your fingers know it in both directions. Use "Play scale" to check yourself.',
         link:{ label:'Open E minor pentatonic', spec:{ tab:'scales', scales:{ root:'E', type:'minPent', view:'open', labels:'names' } } } },
-      { id:'w2c', cat:'Technique', min:10,
+      { id:'w2c', diagram:'eighthNotes', cat:'Technique', min:10,
         text:'Eighth notes: TWO notes per click (count "1-and-2-and"), strict index-middle alternation, on open E at 60–70 bpm. Every 4 beats switch to a different pentatonic note (G, A…) without breaking the rhythm.', met:65 },
-      { id:'w2d', cat:'Music', min:10,
+      { id:'w2d', diagram:'eighthNotes', cat:'Music', min:10,
         text:'Pentatonic groove: pick E → G → A, play eighth notes on each for 4 beats, loop it. Stay locked to the click — smooth switches matter more than speed.', met:65 },
       { id:'w2e', cat:'Bonus', min:5,
         text:'Note trainer: "Find the note" on E + A naturals. Use the "E only" drill button to bank 20 E-string answers at 90%+.',
@@ -1373,9 +1374,9 @@ const WEEKS = [
         text:'The MOVEABLE pentatonic box. On your 5-string, the root E sits on the B string at fret 5 — the box anchors there. Same note recipe as the open position, packed into one closed shape with no open strings, so you can slide it anywhere.',
         note4:'On a 4-string, E\'s box anchors at fret 12 — or practice the identical shape as A minor pentatonic at fret 5.',
         link:{ label:'Open the moveable box', spec:{ tab:'scales', scales:{ root:'E', type:'minPent', view:'box', labels:'names' } } } },
-      { id:'w3c', cat:'Technique', min:10,
+      { id:'w3c', diagram:'tntRoots', cat:'Technique', min:10,
         text:'TNT chorus moves: roots E → A → G as eighth notes, 4 beats each, at 60 then 70 bpm. These three notes are the roots of the song\'s chords — and all three live in E minor pentatonic.', met:70 },
-      { id:'w3d', cat:'Music', min:10,
+      { id:'w3d', diagram:'tntRoots', cat:'Music', min:10,
         text:'T.N.T.: verse = steady eighth notes on E (palm-relaxed, locked to click). Chorus = the E→A→G shifts. Loop verse → chorus. Full speed is ~126 bpm — start at 70 and work up.',
         link:{ label:'TNT bass tab (Songsterr)', href:'https://www.songsterr.com/a/wsa/acdc-tnt-bass-tab-s407' } },
       { id:'w3e', cat:'Bonus', min:5,
@@ -1449,6 +1450,7 @@ function renderPractice(){
     h += '<input type="checkbox" data-item="' + it.id + '" ' + (done ? 'checked' : '') + ' aria-label="done">';
     h += '<div class="ptext"><span class="pmain" data-toggle="' + it.id + '"><span class="pcat">' + it.cat + ' · ' + it.min + ' min</span><br>' + it.text +
       (it.note4 && S.tuning === 4 ? '<br><span class="muted small">' + it.note4 + '</span>' : '') + '</span>';
+    if (it.diagram) h += '<div class="drill-host" data-diagram="' + it.diagram + '"></div>';
     h += '<div class="plink row">';
     if (it.met) h += '<button class="btn small" data-met="' + it.met + '">🎵 Metronome ' + it.met + '</button>';
     if (it.link && it.link.spec) h += '<button class="btn small" data-dl="' + encodeURIComponent(JSON.stringify(it.link.spec)) + '">↪ ' + it.link.label + '</button>';
@@ -1528,6 +1530,9 @@ function renderPractice(){
   el.querySelectorAll('[data-dl]').forEach(b => b.addEventListener('click', () => {
     deepLink(JSON.parse(decodeURIComponent(b.dataset.dl)));
   }));
+  el.querySelectorAll('.drill-host').forEach(hostEl => {
+    if (window.BassDiagrams) BassDiagrams.draw(hostEl.dataset.diagram, hostEl, TUNINGS[S.tuning].names);
+  });
   const rt = document.getElementById('restoreTips');
   if (rt) rt.addEventListener('click', () => { S.practice.dismissed = []; save(); renderPractice(); });
   const cpBtn = document.getElementById('copyReport');

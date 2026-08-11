@@ -6,7 +6,7 @@ const http = require('http');
 const path = require('path');
 const os = require('os');
 
-const ROOT = path.join(__dirname, '..');
+const ROOT = path.join(__dirname, '..', '..');   // repo root: matches the deploy
 const PW = '/opt/node22/lib/node_modules/playwright';
 const CHROME = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 
@@ -14,7 +14,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css
 
 function startServer() {
   const server = http.createServer((req, res) => {
-    const rel = decodeURIComponent(req.url.split('?')[0]).replace(/^\/+/, '') || 'index.html';
+    const rel = decodeURIComponent(req.url.split('?')[0]).replace(/^\/+/, '') || 'trainer/index.html';
     const file = path.join(ROOT, rel);
     if (!file.startsWith(ROOT) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
       res.writeHead(404); return res.end('not found');
@@ -72,7 +72,7 @@ async function openWithNote(hz) {
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));
-  await page.goto(`http://127.0.0.1:${port}/index.html`);
+  await page.goto(`http://127.0.0.1:${port}/trainer/index.html`);
   await page.click('#startBtn');
   await page.waitForSelector('#app:not(.hidden)', { timeout: 5000 });
 

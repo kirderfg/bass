@@ -382,12 +382,16 @@
       }
     }
 
-    scroll.appendChild(svg);
-    host.appendChild(labels);
-    host.appendChild(scroll);
+    if (opts.bare) {
+      host.appendChild(svg);
+    } else {
+      scroll.appendChild(svg);
+      host.appendChild(labels);
+      host.appendChild(scroll);
+    }
 
     // Only mask/scroll-hint when the board genuinely overflows.
-    requestAnimationFrame(() => {
+    if (!opts.bare) requestAnimationFrame(() => {
       if (svg.getBoundingClientRect().width > scroll.clientWidth + 2) {
         scroll.classList.add('is-scrollable');
       }

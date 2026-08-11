@@ -5,13 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0f1115">
 <title>Bass Live Trainer</title>
+<link rel="stylesheet" href="../shared/theme.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎙️</text></svg>">
 <style>
 :root{
-  --bg:#0f1115; --panel:#171a21; --panel2:#1e222c; --line:#2a2f3c;
-  --text:#e8eaf0; --dim:#9aa3b5;
-  --root:#ffb02e; --tone:#4cc9f0; --hl:#c792ff;
-  --good:#3ddc84; --bad:#ff6b6b;
+  /* aliases onto shared/theme.css tokens — no colour is defined here */
+  --bg:var(--s0); --panel:var(--s1); --panel2:var(--s2);
+  --text:var(--t1); --dim:var(--t3);
 }
 *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
 html,body{margin:0; padding:0;}
@@ -85,14 +85,6 @@ select{
 .stat{background:var(--panel2); border-radius:10px; padding:6px 12px; text-align:center; min-width:74px;}
 .stat b{display:block; font-size:19px; color:var(--root);}
 .stat span{font-size:11px; color:var(--dim);}
-/* ---- fretboard (compact, for hints/reveal) ---- */
-.fb{display:grid; gap:2px; overflow-x:auto; scroll-behavior:smooth; padding-bottom:4px;}
-.fb .lbl{display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; color:var(--dim); background:var(--panel); position:sticky; left:0; z-index:3; box-shadow:2px 0 4px rgba(0,0,0,.5);}
-.fb .cell{position:relative; z-index:1; height:30px; background:#20242e; border-right:2px solid #3a4152; border-radius:2px;}
-.fb .cell.f0{background:#161920; border-right:4px solid #cdd3e0;}
-.fb .cell.range{background:#2f3a2c;}
-.fb .cell .dot{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:10.5px; font-weight:800; background:var(--good); color:#03290f;}
-.fb .fnum{text-align:center; font-size:10px; color:var(--dim); z-index:1;}
 .hidden{display:none !important;}
 .tag{display:inline-block; background:#2b3242; border-radius:99px; padding:5px 11px; font-size:12.5px; font-weight:600;}
 </style>
@@ -206,6 +198,7 @@ select{
   </div>
 </main>
 
+<script src="../shared/neck.js"></script>
 <script src="core.js"></script>
 <script>
 "use strict";
@@ -452,33 +445,28 @@ function showHint(){
   }
 }
 function drawBoard(opts){
-  const t = tierNow(), el = document.getElementById('fBoard');
-  if (!q){ el.innerHTML = ''; return; }
-  const frets = t.maxFret;
+  const t = tierNow(), host = document.getElementById('fBoard');
+  if (!q){ host.innerHTML = ''; return; }
   const names = TUNINGS[tuning].names;
-  let h = '<div class="fb" style="grid-template-columns:28px repeat(' + (frets+1) + ',minmax(26px,1fr))">';
-  for (let si = names.length - 1; si >= 0; si--){
-    const active = t.strings.includes(names[si]);
-    h += '<div class="lbl"' + (active ? '' : ' style="opacity:.35"') + '>' + names[si] + '</div>';
-    for (let f = 0; f <= frets; f++){
-      const isTarget = opts.reveal && si === q.si && f === q.f;
-      const inRange = opts.range && si === q.si && f >= opts.range[0] && f <= opts.range[1];
-      h += '<div class="cell' + (f===0?' f0':'') + (inRange?' range':'') + '"' + (active?'':' style="opacity:.3"') + '>' +
-        (isTarget ? '<span class="dot">' + q.name + '</span>' : '') + '</div>';
+  const dimStrings = [];
+  for (let si = 0; si < names.length; si++) if (!t.strings.includes(names[si])) dimStrings.push(si);
+
+  const markers = [];
+  if (opts.reveal){
+    markers.push({ si:q.si, fret:q.f, kind:'correct', label:q.name });
+  } else if (opts.range){
+    // Mark the search area on the target string without giving away the fret.
+    for (let f = opts.range[0]; f <= opts.range[1]; f++){
+      markers.push({ si:q.si, fret:f, kind:'asked', label:'?' });
     }
   }
-  h += '<div></div>';
-  for (let f = 0; f <= frets; f++) h += '<div class="fnum">' + (f === 0 ? '0' : f) + '</div>';
-  h += '</div>';
-  el.innerHTML = h;
-  // At 380px the board is wider than the screen — make sure the thing we are
-  // pointing at is actually on screen.
-  const focusCell = el.querySelector('.cell .dot') || el.querySelector('.cell.range');
-  if (focusCell){
-    const cell = focusCell.closest ? (focusCell.closest('.cell') || focusCell) : focusCell;
-    const board = el.querySelector('.fb');
-    if (board && cell) board.scrollLeft = Math.max(0, cell.offsetLeft - board.clientWidth / 2);
-  }
+  BassNeck.render(host, {
+    strings: names, fromFret:0, toFret:t.maxFret, scale:'read',
+    markers, dimStrings,
+    title: opts.reveal ? (q.name + ' is on the ' + q.sn + ' string, fret ' + q.f)
+                       : 'the ' + q.sn + ' string, frets ' + (opts.range ? opts.range.join(' to ') : ''),
+    scrollToFret: q.f,
+  });
 }
 function updateFindStats(){
   document.getElementById('fScore').textContent = sess.find.score;

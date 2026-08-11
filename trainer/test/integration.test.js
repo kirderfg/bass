@@ -238,7 +238,7 @@ test('the string labels stay visible when the fretboard scrolls to a hint', asyn
     await app.page.waitForTimeout(400);
 
     const labelsVisible = await app.page.evaluate(() => {
-      const labels = [...document.querySelectorAll('#fBoard .lbl')];
+      const labels = [...document.querySelectorAll('#fBoard .neck-label')];
       if (!labels.length) return 'no labels rendered';
       return labels.every(l => {
         const r = l.getBoundingClientRect();
