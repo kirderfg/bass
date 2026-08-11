@@ -63,8 +63,31 @@ select{
 .dot{width:9px; height:9px; border-radius:50%; background:var(--bad);}
 .dot.on{background:var(--good); box-shadow:0 0 8px var(--good);}
 /* ---- tuner ---- */
-.tuner-note{font-size:74px; font-weight:800; text-align:center; line-height:1; margin:6px 0 0; font-variant-numeric:tabular-nums;}
-.tuner-note small{font-size:22px; color:var(--dim); font-weight:700;}
+.meter{position:relative; height:52px; margin:var(--sp3) 0 2px; background:var(--s2);
+  border:1px solid var(--line); border-radius:var(--r-sm); overflow:hidden;}
+.meter-zone{position:absolute; left:36.5%; right:36.5%; top:0; bottom:0;
+  background:rgba(69,196,134,.12); border-left:1px solid rgba(69,196,134,.3); border-right:1px solid rgba(69,196,134,.3);}
+.meter-center{position:absolute; left:50%; top:0; bottom:0; width:2px; margin-left:-1px; background:var(--good); opacity:.6;}
+.meter-ticks i{position:absolute; top:0; width:1px; height:9px; background:var(--t4); opacity:.7;}
+.meter-needle{
+  position:absolute; top:8px; bottom:8px; left:50%; width:6px; margin-left:-3px;
+  border-radius:3px; background:var(--root);
+  transform:translate3d(0,0,0); transition:transform 90ms linear;
+}
+.meter-needle.intune{background:var(--good);}
+.meter-scale{display:flex; justify-content:space-between; font-family:var(--mono);
+  font-size:10px; color:var(--t4); padding:0 1px;}
+.tune-list{display:flex; gap:6px; justify-content:center; margin:var(--sp3) 0 0;}
+.tune-chip{
+  display:flex; align-items:center; justify-content:center; gap:3px;
+  min-width:44px; min-height:34px; border-radius:var(--r-sm);
+  background:var(--s2); border:1px solid var(--line);
+  font-weight:800; font-size:13px; color:var(--t3);
+}
+.tune-chip.is-active{border-color:var(--root); color:var(--root);}
+.tune-chip.is-done{background:var(--good-tint); border-color:var(--good); color:var(--good);}
+.tuner-note{font-size:clamp(52px,15vw,64px); font-weight:800; text-align:center; line-height:1; margin:6px 0 0; font-variant-numeric:tabular-nums;}
+.tuner-note small{font-size:20px; color:var(--t4); font-weight:700;}
 .tuner-note.intune{color:var(--good);}
 .tuner-hz{text-align:center; color:var(--dim); font-size:13px;}
 .needle{position:relative; height:46px; margin:12px 0 4px; background:var(--panel2); border-radius:10px; overflow:hidden;}
@@ -126,13 +149,17 @@ select{
       <div class="card">
         <div class="tuner-note" id="tNote">—</div>
         <div class="tuner-hz" id="tHz">play a note</div>
-        <div class="needle">
-          <div class="zone"></div><div class="center"></div>
-          <div class="bar" id="tBar"></div>
-          <span class="lbl" style="left:6px">♭ flat</span>
-          <span class="lbl" style="right:6px">sharp ♯</span>
+        <div class="meter">
+          <div class="meter-zone"></div>
+          <div class="meter-center"></div>
+          <div class="meter-ticks"><i style="left:0%"></i><i style="left:22.5%"></i><i style="left:50%"></i><i style="left:77.5%"></i><i style="left:100%"></i></div>
+          <div class="meter-needle" id="tBar"></div>
+        </div>
+        <div class="meter-scale">
+          <span>♭ 50</span><span>25</span><span>0</span><span>25</span><span>50 ♯</span>
         </div>
         <div class="cents" id="tCents">&nbsp;</div>
+        <div class="tune-list" id="tuneList"></div>
         <p class="muted small" style="margin:10px 0 0">Play each <b>open</b> string in turn (no fingers on the neck): <b id="tStrings">B E A D G</b>. Land the bar in the green zone.<br>
         <span style="opacity:.8">A <b>cent</b> is a hundredth of a fret's worth of pitch — 100 cents = 1 fret. Under 15 cents is close enough for rock.</span></p>
       </div>
@@ -352,6 +379,18 @@ function tick(){
 }
 
 /* ================= tuner ================= */
+const tunedStrings = {};
+function renderTuneList(activeName){
+  const host = document.getElementById('tuneList');
+  if (!host) return;
+  const names = TUNINGS[tuning].names;
+  const html = names.map(n => {
+    const done = tunedStrings[n];
+    const cls = done ? 'is-done' : (n === activeName ? 'is-active' : '');
+    return '<span class="tune-chip ' + cls + '">' + n + (done ? ' ✓' : '') + '</span>';
+  }).join('');
+  if (host.dataset.sig !== html){ host.innerHTML = html; host.dataset.sig = html; }
+}
 function renderTuner(pitch, reading){
   const noteEl = document.getElementById('tNote'), hzEl = document.getElementById('tHz');
   const bar = document.getElementById('tBar'), centsEl = document.getElementById('tCents');
@@ -359,7 +398,8 @@ function renderTuner(pitch, reading){
     noteEl.textContent = '—'; noteEl.classList.remove('intune');
     hzEl.textContent = 'play a note';
     centsEl.innerHTML = '&nbsp;';
-    bar.style.left = '50%'; bar.classList.remove('intune');
+    bar.style.transform = 'translate3d(0,0,0)'; bar.classList.remove('intune');
+    renderTuneList(null);
     return;
   }
   const chromatic = C.hzToNote(pitch.hz);
@@ -374,9 +414,13 @@ function renderTuner(pitch, reading){
   noteEl.classList.toggle('intune', inTune);
   hzEl.textContent = pitch.hz.toFixed(2) + ' Hz' +
     (target ? ' · tuning the ' + target.name + ' string' : ' · not near an open string');
-  const pos = 50 + Math.max(-50, Math.min(50, n.cents)) * 0.9;
-  bar.style.left = pos + '%';
+  // Clamp to the meter's range so a wildly-off note pins at the edge
+  // instead of sliding out from under the scale.
+  const clamped = Math.max(-50, Math.min(50, n.cents));
+  bar.style.transform = 'translate3d(' + (clamped * 0.9 * (bar.parentElement.clientWidth / 100)) + 'px,0,0)';
   bar.classList.toggle('intune', inTune);
+  if (target && inTune) tunedStrings[target.name] = true;
+  renderTuneList(target && target.name);
   centsEl.textContent = inTune ? '✓ in tune'
     : Math.abs(Math.round(n.cents)) + ' cents ' + (n.cents > 0 ? 'sharp — tune DOWN' : 'flat — tune UP');
   centsEl.style.color = inTune ? 'var(--good)' : 'var(--root)';
