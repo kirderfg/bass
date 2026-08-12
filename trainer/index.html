@@ -14,7 +14,7 @@
   --text:var(--t1); --dim:var(--t3);
 }
 *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
-html,body{margin:0; padding:0;}
+html,body{margin:0;}
 body{
   background:var(--bg); color:var(--text);
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -27,7 +27,7 @@ header{
 header h1{font-size:17px; margin:0;}
 header h1 span{color:var(--root);}
 header a{color:var(--tone); font-size:12.5px; text-decoration:none; font-weight:600; text-align:right; min-height:44px; display:flex; align-items:center;}
-main{padding:0 12px; max-width:920px; margin:0 auto;}
+main{padding:0 12px; max-width:1080px; margin:0 auto;}
 .card{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px; margin:10px 0;}
 .muted{color:var(--dim); font-size:14px;}
 .small{font-size:13px;}
@@ -153,7 +153,7 @@ select{
 
     <!-- ================= TUNER ================= -->
     <section id="secTuner">
-      <div class="card">
+      <div class="two-col"><div class="card">
         <div class="tuner-note" id="tNote">—</div>
         <div class="tuner-hz" id="tHz">play a note</div>
         <div class="meter">
@@ -170,7 +170,16 @@ select{
         <div class="tune-list" id="tuneList"></div>
         <p class="muted small" style="margin:10px 0 0">Play each <b>open</b> string in turn (no fingers on the neck): <b id="tStrings">B E A D G</b>. Line the needle up in the green zone.<br>
         <span style="opacity:.8">A <b>cent</b> is a hundredth of a fret's worth of pitch — 100 cents = 1 fret. Under 15 cents is close enough for rock.</span></p>
-      </div>
+      </div><div class="card" id="tunerAside">
+        <b class="t-title3">How to tune up</b>
+        <ol class="t-caption" style="margin:6px 0 0; padding-left:18px; line-height:1.7">
+          <li>Play one <b>open</b> string and let it ring.</li>
+          <li>Read the big note name — it tells you which string it thinks you're on.</li>
+          <li>Turn the peg the way the app says until the needle sits in the green.</li>
+          <li>Work through <b id="tStrings2">B E A D G</b>; each one ticks off as it lands.</li>
+        </ol>
+        <p class="t-caption" style="margin-top:10px">Press <b>Direct Monitor</b> on the Scarlett and use headphones — you'll hear yourself with no delay at all.</p>
+      </div></div>
     </section>
 
     <!-- ================= FIND IT ================= -->
@@ -516,8 +525,9 @@ function drawBoard(opts){
       markers.push({ si:q.si, fret:f, kind:'asked', label:'?' });
     }
   }
+  const wide = window.matchMedia('(min-width:1000px)').matches;
   BassNeck.render(host, {
-    strings: names, fromFret:0, toFret:t.maxFret, scale:'read',
+    strings: names, fromFret:0, toFret:t.maxFret, scale: wide ? 'desk' : 'read',
     markers, dimStrings,
     title: opts.reveal ? (q.name + ' is on the ' + q.sn + ' string, fret ' + q.f)
                        : 'the ' + q.sn + ' string, frets ' + (opts.range ? opts.range.join(' to ') : ''),
@@ -702,6 +712,8 @@ function renderTierUI(){
     b.addEventListener('click', () => { focus = b.dataset.f || null; renderTierUI(); newQuestion(); });
   });
   document.getElementById('tStrings').textContent = TUNINGS[tuning].names.join(' ');
+  const t2 = document.getElementById('tStrings2');
+  if (t2) t2.textContent = TUNINGS[tuning].names.join(' ');
 }
 
 document.getElementById('startBtn').addEventListener('click', () => startListening());

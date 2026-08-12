@@ -14,7 +14,7 @@
   --text:var(--t1); --dim:var(--t3); --radius:var(--r-lg);
 }
 *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
-html,body{margin:0; padding:0;}
+html,body{margin:0;}
 body{
   background:var(--bg); color:var(--text);
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -226,6 +226,7 @@ nav.tabbar button.on{color:var(--root);}
   <button class="btn small" id="mbStop">■ Stop</button>
 </div>
 <nav class="tabbar" id="tabbar">
+  <div class="rail-title">Bass <span>Theory</span></div>
   <button data-tab="practice"><svg viewBox="0 0 24 24" class="ic"><rect x="4" y="3" width="16" height="18" rx="2.5"/><path d="M8.5 9.5l2 2 4-4.5"/><path d="M9 15h7"/></svg>Practice</button>
   <button data-tab="scales"><svg viewBox="0 0 24 24" class="ic"><path d="M4 17.5a2.5 2.5 0 1 0 5 0V6l9-2.5v9"/><path d="M13 13.5a2.5 2.5 0 1 0 5 0"/></svg>Scales</button>
   <button data-tab="chords"><svg viewBox="0 0 24 24" class="ic"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="8" cy="6" r="2.2" fill="currentColor" stroke="none"/><circle cx="14" cy="12" r="2.2" fill="currentColor" stroke="none"/><circle cx="10" cy="18" r="2.2" fill="currentColor" stroke="none"/></svg>Chords</button>
@@ -408,7 +409,7 @@ function drawFretboard(el, cfg){
   function paint(keepScroll){
     const left = keepScroll && handle ? handle.scroll.scrollLeft : null;
     handle = BassNeck.render(el, {
-      strings: tun.names, fromFret, toFret: frets, scale: 'play',
+      strings: tun.names, fromFret, toFret: frets, scale: cfg.scale || neckScale(),
       markers: markers.slice(), window: cfg.boxWindow, windowLabel: cfg.boxWindow ? true : false,
       dimStrings, animate: !keepScroll,
       onTap: cfg.onTap ? (si, f) => cfg.onTap(si, f, tun.midi[si] + f) : null,
@@ -491,6 +492,10 @@ function dismissCard(id){
 }
 
 /* ---------------- routing ---------------- */
+/** Board size for the current viewport: a desk gets a neck you can read
+    from a metre away; a phone gets the tappable one. */
+function neckScale(){ return window.matchMedia('(min-width:1000px)').matches ? 'desk' : 'play'; }
+function readScale(){ return window.matchMedia('(min-width:1000px)').matches ? 'readbig' : 'read'; }
 const TABS = ['practice','scales','chords','trainer'];
 let currentTab = 'practice';
 function show(tab){
@@ -625,7 +630,7 @@ function renderScales(){
     h += '<p class="muted small" style="margin:8px 2px 0">Every ' + S.scales.root + ' ' + sc.name.toLowerCase() + ' note, frets 0–12. Notice the patterns repeating.</p>';
   }
   h += '<div id="scaleFb"></div>';
-  if (view === 'neck'){
+  if (view === 'neck' && !window.matchMedia('(min-width:1000px)').matches){
     const wins = BassNeck.windows(12);
     h += '<div class="fret-pager seg compact" id="scPager">' + wins.map((w, i) =>
       '<button data-k="' + i + '" class="' + (i === scPage ? 'on' : '') + '">Frets ' + w[0] + '–' + w[1] + '</button>').join('') + '</div>';
@@ -641,9 +646,10 @@ function renderScales(){
   el.innerHTML = h;
 
   // fretboard — box view extends past fret 12 when the shape needs it
+  const wide = window.matchMedia('(min-width:1000px)').matches;
   const wins = BassNeck.windows(12);
   if (scPage >= wins.length) scPage = 0;
-  const neckWin = wins[scPage];
+  const neckWin = wide ? [0, 12] : wins[scPage];
   const frets = view === 'open' ? 5 : (view === 'box' ? Math.max(12, boxHi) : neckWin[1]);
   const neckFrom = view === 'neck' ? neckWin[0] : 0;
   const boxWin = view === 'box' ? [anchor, boxHi] : null;
@@ -1315,7 +1321,7 @@ function mountHeatNeck(){
   const lo = Math.max(0, Math.min.apply(null, frets) - 1);
   const hi = Math.min(12, Math.max(Math.max.apply(null, frets) + 1, lo + 4));
   BassNeck.render(host, {
-    strings: names, fromFret: lo <= 1 ? 0 : lo, toFret: hi, scale:'read', markers,
+    strings: names, fromFret: lo <= 1 ? 0 : lo, toFret: hi, scale: readScale(), markers,
     title:'The frets you miss most often',
   });
 }
@@ -1661,6 +1667,15 @@ document.querySelectorAll('#tuneToggle button').forEach(x =>
 // unlock audio on first touch (mobile requirement)
 document.body.addEventListener('pointerdown', () => Audio_.ensure(), { once:true });
 show('practice');
+
+let rzTimer = null, lastWide = window.matchMedia('(min-width:1000px)').matches;
+window.addEventListener('resize', () => {
+  clearTimeout(rzTimer);
+  rzTimer = setTimeout(() => {
+    const nowWide = window.matchMedia('(min-width:1000px)').matches;
+    if (nowWide !== lastWide){ lastWide = nowWide; render(currentTab); }
+  }, 200);
+});
 </script>
 </body>
 </html>

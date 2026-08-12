@@ -20,6 +20,9 @@
     play:  { openCol:44, nut:7, col:46, row:46, dot:11.5, inlay:5.5, fretNum:20, label:13,   gaugeMul:1,    finger:true  },
     read:  { openCol:26, nut:5, col:34, row:30, dot:9, inlay:4.0, fretNum:16, label:10.5, gaugeMul:0.68, finger:false },
     micro: { openCol:18, nut:4, col:26, row:22, dot:7.5, inlay:3.0, fretNum:13, label:9,   gaugeMul:0.5,  finger:false },
+    desk:  { openCol:64, nut:9, col:76, row:64, dot:17, inlay:8.0, fretNum:28, label:16, gaugeMul:1.5, finger:true },
+    /* read-scale board, sized for a desktop card rather than a phone hint */
+    readbig:{ openCol:38, nut:7, col:46, row:40, dot:12, inlay:5.5, fretNum:20, label:13, gaugeMul:0.9, finger:false },
   };
   // Relative gauges of a real 5-string set (.130 → .045). The low B has to
   // look like the low B; this is the detail that sells the instrument.

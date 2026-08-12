@@ -307,3 +307,43 @@ input[type=range]{width:100%; accent-color:var(--root); min-height:44px;}
 .drill-host{margin:var(--sp3) 0;}
 .neck-marker.is-heat .neck-dot{fill:var(--bad); stroke:rgba(0,0,0,.35);}
 .neck-marker.is-heat .neck-dot-label{fill:var(--t1); font-weight:800;}
+
+/* ==================== desktop ====================
+   Fredrik plays at his desk with the bass in his hands, so the wide layout
+   is not "the phone, stretched": the nav leaves the content column alone,
+   the instrument gets the space, and prose keeps a readable measure. */
+@media (min-width:1000px){
+  body{ padding-left:200px; padding-bottom:var(--sp7); }
+  body main{ max-width:1140px !important; }
+
+  body nav.tabbar{
+    position:fixed; inset:0 auto 0 0; height:100vh; width:200px;
+    flex-direction:column; justify-content:flex-start; gap:var(--sp1);
+    padding:var(--sp5) var(--sp3); border-top:0; border-right:1px solid var(--hair);
+  }
+  body nav.tabbar button{
+    flex:0 0 auto !important; flex-direction:row; gap:var(--sp3); justify-content:flex-start;
+    padding:12px 14px; border-radius:var(--r-md); font-size:15px; min-height:48px;
+  }
+  body nav.tabbar button.on{ background:var(--s2); }
+
+  /* a board narrower than its card should sit centred, not adrift at the left */
+  .neck{ justify-content:center; }
+  .neck-scroll{ flex:0 1 auto; }
+  nav.tabbar .rail-title{
+    font-size:19px; font-weight:750; color:var(--t1); letter-spacing:-.01em;
+    padding:0 14px var(--sp4);
+  }
+  nav.tabbar .rail-title span{ color:var(--root); }
+
+  /* prose stops running to 1000px; the instrument is free to */
+  .card p, .card .muted, .t-body, .ptext{ max-width:66ch; }
+  body .card{ padding:var(--sp5); }
+
+  /* content beside its controls, instead of stacked half-empty */
+  .two-col{ display:grid; grid-template-columns:minmax(0,1fr) 320px; gap:var(--sp5); align-items:start; }
+  .two-col > * { min-width:0; }
+}
+@media (min-width:1000px) and (max-width:1199px){
+  .two-col{ grid-template-columns:1fr; }
+}
