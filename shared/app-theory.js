@@ -1463,12 +1463,23 @@ function thisWeekHtml(){
     : (lifetime != null ? 'nothing this week · ' + lifetime + '% lifetime over ' + answered + ' answers'
                         : 'nothing answered yet')) + '</div>');
 
-  // Am I better than last week? Only claims with data behind them get made.
+  /* Am I better than last week? Only claims with data behind them get made — but
+     a skill line that goes SILENT for want of a previous week leaves the card
+     answering "you showed up more", which is not the question. So the two lines
+     that are about getting better say where they stand either way, and only the
+     comparison waits for data. */
   const cmp = [];
   if (q.pct != null && qPrev.pct != null)
     cmp.push('Note-quiz accuracy <b>' + q.pct + '%</b>, ' + trendWord(q.pct, qPrev.pct) + ' <b>' + qPrev.pct + '%</b> the 7 days before');
+  else if (q.pct != null)
+    cmp.push('Note-quiz accuracy <b>' + q.pct + '%</b> — first week with answers in it, so there is nothing to compare against yet');
   if (dr.banked || dr.bankedPrev)
     cmp.push('Mastery days banked <b>' + dr.banked + '</b>, ' + trendWord(dr.banked, dr.bankedPrev) + ' <b>' + dr.bankedPrev + '</b>');
+  else if (dr.total)
+    cmp.push('Mastery days banked <b>0</b> — one comes from the day’s first run of a shape, played clean and in time with the click');
+  if (sg.best != null)
+    cmp.push('Best on the root <b>' + Math.round(sg.best * 100) + '%</b> in a song' +
+      (sg.bestFull ? '' : ' (part of a roadmap — a full play is what a best is kept from)'));
   if (dr.runs || dr.runsPrev)
     cmp.push('Drill runs <b>' + dr.runs + '</b>, ' + trendWord(dr.runs, dr.runsPrev) + ' <b>' + dr.runsPrev + '</b>');
   if (days || daysPrev)
