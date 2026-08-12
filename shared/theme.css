@@ -3,6 +3,18 @@
    Loaded by both apps with a plain <link>: no build step, works
    offline, works from file://. Tokens are the contract; app files
    must not hard-code colour, size or timing values.
+
+   ONE ANSWER PER COMPONENT. The two apps used to be two pages, each
+   with its own <style> that re-declared .card, .btn, .seg, .stat,
+   header, main and select — differently. The same .card rendered at
+   12px padding on one page and 14px on the other. Both copies are
+   gone; this file is the only definition, and app-theory.css /
+   app-live.css (which load after it, and would therefore win) hold
+   nothing but rules that exist nowhere else.
+
+   Where the two old copies disagreed, the Theory Trainer's version
+   won: it was the newer, designed one. Each such case is marked
+   "app1 wins" below.
    ============================================================ */
 
 :root{
@@ -44,17 +56,32 @@
   --fast:120ms; --base:180ms; --slow:260ms; --cheer:420ms;
   --ease:cubic-bezier(.2,.6,.2,1); --ease-out:cubic-bezier(0,.55,.45,1);
   --pop:cubic-bezier(.34,1.4,.64,1);
+
+  /* --- height of the bottom nav, so the metronome transport and the page
+         itself can clear it without repeating the number */
+  --nav-h:94px;
+
+  /* --- aliases the app stylesheets were written against. Both apps declared
+         this identical block locally; it defines no colour of its own. */
+  --bg:var(--s0); --panel:var(--s1); --panel2:var(--s2);
+  --text:var(--t1); --dim:var(--t3); --radius:var(--r-lg);
 }
 
 /* ==================== base ==================== */
 *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
 html,body{margin:0; padding:0;}
+/* app1 wins: 16px/1.45 and --t1 ink (both apps overrode the old 15.5px/1.6
+   here identically), and a padding-bottom that clears the fixed nav. */
 body{
-  background:var(--s0); color:var(--t2);
-  font-family:var(--sans); font-size:15.5px; line-height:1.6;
+  background:var(--bg); color:var(--text);
+  font-family:var(--sans); font-size:16px; line-height:1.45;
   -webkit-font-smoothing:antialiased;
+  padding-bottom:calc(var(--nav-h) + 18px + env(safe-area-inset-bottom));
 }
 :focus-visible{outline:2px solid var(--root); outline-offset:2px;}
+/* A bare <button> otherwise falls back to the UA's own font. */
+button{font-family:inherit;}
+.hidden{display:none !important;}
 
 /* ==================== type roles ==================== */
 .t-display{font-size:clamp(52px,15vw,64px); line-height:1; font-weight:800; letter-spacing:-.03em; font-variant-numeric:tabular-nums; color:var(--t1);}
@@ -67,6 +94,12 @@ body{
 .t-data{font-family:var(--mono); font-size:12px; line-height:1.4; font-weight:500; color:var(--t4); font-variant-numeric:tabular-nums;}
 .t-body{font-size:15.5px; line-height:1.6; max-width:62ch;}
 .num{font-variant-numeric:tabular-nums;}
+/* The bare headings the Practice/Scales/Chords markup is written with. Same
+   sizes as .t-title1 / .t-eyebrow — these carry the section rhythm too. */
+h2{font-size:clamp(22px,5.6vw,26px); line-height:1.15; font-weight:750; letter-spacing:-.02em; color:var(--t1); margin:var(--sp5) 2px var(--sp2);}
+h3{font-size:11px; margin:var(--sp4) 2px var(--sp2); color:var(--t3); font-weight:700; text-transform:uppercase; letter-spacing:.11em;}
+.muted{color:var(--dim); font-size:14px;}
+.small{font-size:13px;}
 
 /* ==================== surfaces ==================== */
 .card{
@@ -100,7 +133,12 @@ body{
   transition:background var(--fast), color var(--fast), border-color var(--fast);
 }
 .seg button:hover{background:var(--s3);}
-.seg button.on{background:var(--s3); color:var(--t1); border-color:var(--line-hi); box-shadow:inset 0 -2px 0 var(--line-hi), var(--e2);}
+/* app1 wins, and this is the one that mattered: the Theory Trainer marks the
+   selected segment with a lifted surface, a brighter inset underline and
+   elevation, so "which one is on" survives a glance. The Live Trainer had
+   drifted to a flat, slightly lighter surface — one shade of grey against
+   another, which is not a state. */
+.seg button.on{background:var(--s4); color:var(--t1); font-weight:750; border-color:var(--line-hi); box-shadow:inset 0 -2px 0 var(--t3), var(--e2);}
 .seg.compact button{padding:8px 11px; font-size:13px;}
 
 select{
@@ -122,6 +160,7 @@ input[type=range]{width:100%; accent-color:var(--root); min-height:44px;}
 .pill.warn{background:var(--root-tint); border-color:var(--root); color:var(--root);}
 
 /* note/degree chips */
+.chips{display:flex; flex-wrap:wrap; gap:var(--sp2);}
 .chip{
   display:inline-flex; flex-direction:column; align-items:center; justify-content:center;
   min-width:46px; min-height:46px; padding:4px 9px; border-radius:var(--r-sm);
@@ -134,6 +173,13 @@ input[type=range]{width:100%; accent-color:var(--root); min-height:44px;}
 .chip.tone small{color:var(--tone); opacity:.72;}
 .chip.dim{opacity:.34;}
 
+/* number tiles. app1 wins: 8px on every side and a 20px figure, against the
+   Live Trainer's 6px/12px and 19px. The Live Trainer's stat ROW still sets a
+   min-width on its three tiles — see app-live.css. */
+.stat{background:var(--panel2); border-radius:var(--r-sm); padding:8px; text-align:center;}
+.stat b{display:block; font-size:20px; color:var(--root);}
+.stat span{font-size:11.5px; color:var(--dim);}
+
 /* messages */
 .note-box{
   border-radius:var(--r-md); padding:var(--sp3); font-size:14px;
@@ -142,6 +188,79 @@ input[type=range]{width:100%; accent-color:var(--root); min-height:44px;}
 .note-box.warn{background:var(--root-tint); border-color:rgba(242,169,59,.4); color:#F6D9A8;}
 .note-box.good{background:var(--good-tint); border-color:rgba(69,196,134,.4); color:#B7E8CE;}
 .note-box.bad{background:var(--bad-tint); border-color:rgba(228,103,92,.4); color:#F3C3BD;}
+
+/* ==================== app shell ====================
+   Header, content column, section switching and nav. There is one of each in
+   the whole app now, and index.html renders them, so they are themed here
+   rather than in either app's stylesheet. */
+/* app1 wins: the gradient header that fades into the page, and z-index 30 so
+   it stays above the fixed metronome transport. */
+header{
+  position:sticky; top:0; z-index:30;
+  background:linear-gradient(180deg,var(--s1) 80%,rgba(14,13,12,0));
+  padding:10px 14px 8px;
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+}
+/* app1 wins: nowrap plus the 700px step up, against a flat 17px. The size
+   itself comes from .t-title2 on the element. */
+header h1{margin:0; white-space:nowrap;}
+header h1 span{color:var(--root);}
+@media (min-width:700px){ header h1{font-size:21px;} }
+
+/* the 5-str / 4-str toggle, which lives in the header */
+.tune-toggle{
+  display:flex; border:1px solid var(--line); border-radius:var(--r-pill); overflow:hidden; flex:0 0 auto;
+}
+.tune-toggle button{
+  background:transparent; color:var(--t3); border:0; padding:8px 12px;
+  font-size:13px; font-weight:650; min-height:44px; cursor:pointer;
+}
+.tune-toggle button.on{background:var(--panel2); color:var(--text);}
+
+/* app1 wins: an 860px measure against 1080px. Below 1000px neither one is
+   reached on any real viewport, and at 1000px and up the desktop block
+   overrides both with 1140px. */
+main{padding:0 12px; max-width:860px; margin:0 auto;}
+
+/* one section visible at a time; the others keep their DOM, and therefore
+   their in-progress state, while hidden */
+section.tab{display:none;}
+section.tab.on{display:block; animation:fade .18s ease;}
+@keyframes fade{from{opacity:.4; transform:translateY(3px);} to{opacity:1; transform:none;}}
+
+/* ---------- nav ----------
+   Nine destinations in one undifferentiated row is a smear. Four of them work
+   with nothing but the screen; the other five listen to the bass. So the bar
+   is two labelled groups with a rule between them, and the Live group's label
+   is the warning: you need the bass plugged in. */
+nav.tabbar{
+  position:fixed; bottom:0; left:0; right:0; z-index:50;
+  display:flex; flex-direction:column;
+  background:var(--s1); border-top:1px solid var(--hair);
+  padding-bottom:env(safe-area-inset-bottom);
+}
+nav.tabbar .rail-title{display:none;}        /* the rail's own title: desk only */
+.tab-group{display:flex; align-items:stretch;}
+.tab-group + .tab-group{border-top:1px solid var(--hair);}
+.tab-grouplabel{
+  flex:0 0 44px; display:flex; flex-direction:column; justify-content:center;
+  padding-left:var(--sp2); line-height:1.25;
+  font-size:8.5px; font-weight:800; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--t4);
+}
+/* two lines, never three: the second line must not break mid-phrase */
+.tab-grouplabel .needs-short{font-weight:700; letter-spacing:.02em; text-transform:none; font-size:9px; white-space:nowrap;}
+.tab-grouplabel .needs-long{display:none;}
+nav.tabbar button{
+  flex:1 1 0; min-width:0; background:transparent; border:0; color:var(--dim);
+  padding:5px 2px 6px; font-size:10px; font-weight:700; cursor:pointer;
+  display:flex; flex-direction:column; align-items:center; gap:2px; min-height:46px;
+}
+nav.tabbar button svg.ic{
+  width:20px; height:20px; fill:none; stroke:currentColor;
+  stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round;
+}
+nav.tabbar button.on{color:var(--root);}
 
 /* ==================== neck component ==================== */
 .neck{display:flex; align-items:stretch; margin:var(--sp3) 0 var(--sp1);}
@@ -313,6 +432,8 @@ input[type=range]{width:100%; accent-color:var(--root); min-height:44px;}
    is not "the phone, stretched": the nav leaves the content column alone,
    the instrument gets the space, and prose keeps a readable measure. */
 @media (min-width:1000px){
+  /* the bar becomes a rail, so nothing has to clear the bottom of the page */
+  :root{ --nav-h:0px; }
   body{ padding-left:200px; padding-bottom:var(--sp7); }
   body main{ max-width:1140px !important; }
 
@@ -320,17 +441,33 @@ input[type=range]{width:100%; accent-color:var(--root); min-height:44px;}
     position:fixed; inset:0 auto 0 0; height:100vh; width:200px;
     flex-direction:column; justify-content:flex-start; gap:var(--sp1);
     padding:var(--sp5) var(--sp3); border-top:0; border-right:1px solid var(--hair);
+    overflow-y:auto;
   }
   body nav.tabbar button{
     flex:0 0 auto !important; flex-direction:row; gap:var(--sp3); justify-content:flex-start;
     padding:12px 14px; border-radius:var(--r-md); font-size:15px; min-height:48px;
   }
+  body nav.tabbar button svg.ic{ width:24px; height:24px; }
   body nav.tabbar button.on{ background:var(--s2); }
+
+  /* the rail has room for the group names in full, and for the sentence that
+     tells you what the Live group needs */
+  body .tab-group{ flex-direction:column; align-items:stretch; gap:var(--sp1); border-top:0; }
+  body .tab-group + .tab-group{ margin-top:var(--sp4); padding-top:var(--sp4); border-top:1px solid var(--hair); }
+  body .tab-grouplabel{
+    flex:0 0 auto; padding:0 14px var(--sp1); font-size:11px; letter-spacing:.11em; line-height:1.35;
+  }
+  body .tab-grouplabel .needs-short{ display:none; }
+  body .tab-grouplabel .needs-long{
+    display:block; font-size:11.5px; font-weight:450; letter-spacing:0;
+    text-transform:none; color:var(--t4);
+  }
 
   /* a board narrower than its card should sit centred, not adrift at the left */
   .neck{ justify-content:center; }
   .neck-scroll{ flex:0 1 auto; }
   nav.tabbar .rail-title{
+    display:block;
     font-size:19px; font-weight:750; color:var(--t1); letter-spacing:-.01em;
     padding:0 14px var(--sp4);
   }

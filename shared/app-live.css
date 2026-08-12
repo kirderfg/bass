@@ -1,0 +1,116 @@
+/* ============================================================
+   Bass Live Trainer — the Live half of the page
+   (Tuner, Find it, Ear training, Drills, Songs).
+
+   Lifted out of trainer/index.html when the two apps became one
+   document. Loads AFTER shared/theme.css, which is the trap this
+   repo keeps falling into: anything here silently beats the design
+   system. So this file holds ONLY rules that exist nowhere else —
+   every shared component (.card, .btn, .seg, select, .row, .stat,
+   header, nav) lives in theme.css and is not repeated here. See the
+   reconciliation note at the top of that file.
+   ============================================================ */
+
+/* ---- mic gate ----
+   Shown inline in whichever Live mode you arrived at, and never again once
+   the mic is armed: one button grants the mic AND starts what you came for. */
+#gate{text-align:center; padding:var(--sp5) 10px;}
+.gate-art{width:150px; height:60px; margin:0 auto var(--sp3);}
+#gate p{max-width:420px; margin:10px auto;}
+#gate .err{color:var(--bad); font-weight:600;}
+#gate .t-eyebrow{margin-bottom:var(--sp1);}
+/* ---- level meter ---- */
+.level{height:8px; background:var(--panel2); border-radius:99px; overflow:hidden; margin:8px 0 2px;}
+.level i{display:block; height:100%; width:0%; background:var(--good); border-radius:99px; transition:width .08s linear;}
+.listening{display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--dim);}
+.dot{width:9px; height:9px; border-radius:50%; background:var(--bad);}
+.dot.on{background:var(--good); box-shadow:0 0 8px var(--good);}
+/* ---- tuner ---- */
+.meter{position:relative; height:52px; margin:var(--sp3) 0 2px; background:var(--s2);
+  border:1px solid var(--line); border-radius:var(--r-sm); overflow:hidden;}
+.meter-zone{position:absolute; left:35%; right:35%; top:0; bottom:0;
+  background:color-mix(in srgb, var(--good) 12%, transparent);
+  border-left:1px solid color-mix(in srgb, var(--good) 32%, transparent); border-right:1px solid color-mix(in srgb, var(--good) 32%, transparent);
+  transition:background var(--fast);}
+.meter.is-intune .meter-zone{background:var(--good);}
+.meter-center{position:absolute; left:50%; top:0; bottom:0; width:2px; margin-left:-1px; background:var(--good); opacity:.6;}
+.meter-ticks i{position:absolute; top:0; width:1px; height:9px; background:var(--t4); opacity:.7;}
+.meter-needle{
+  position:absolute; top:8px; bottom:8px; left:50%; width:6px; margin-left:-3px;
+  border-radius:3px; background:var(--root);
+  transform:translate3d(0,0,0); transition:transform 90ms linear;
+}
+/* green-on-green would vanish at the exact moment of success */
+.meter-needle.intune{background:var(--s0);}
+.meter-scale{position:relative; height:14px; font-family:var(--mono); font-size:10px; color:var(--t4);}
+.meter-scale span{position:absolute; transform:translateX(-50%); white-space:nowrap;}
+.tune-list{display:flex; gap:6px; justify-content:center; margin:var(--sp3) 0 0;}
+.tune-chip{
+  display:flex; align-items:center; justify-content:center; gap:3px;
+  min-width:44px; min-height:34px; border-radius:var(--r-sm);
+  background:var(--s2); border:1px solid var(--line);
+  font-weight:800; font-size:13px; color:var(--t3);
+}
+.tune-chip.is-active{border-color:var(--root); color:var(--root);}
+.tune-chip.is-done{background:var(--good-tint); border-color:var(--good); color:var(--good);}
+.tuner-note{font-size:clamp(52px,15vw,64px); font-weight:800; text-align:center; line-height:1; margin:6px 0 0; font-variant-numeric:tabular-nums;}
+.tuner-note small{font-size:20px; color:var(--t4); font-weight:700;}
+.tuner-note.intune{color:var(--good);}
+.tuner-hz{text-align:center; color:var(--dim); font-size:13px;}
+.cents{text-align:center; font-size:14px; font-weight:700; margin-top:2px;}
+/* ---- quiz ---- */
+.q{font-size:22px; text-align:center; font-weight:700; padding:6px 4px 2px;}
+.q b{color:var(--hl);}
+.qsub{text-align:center; color:var(--dim); font-size:13.5px; margin-bottom:6px;}
+.verdict{min-height:30px; text-align:center; font-weight:700; font-size:16px; margin-top:6px;}
+.verdict.ok{color:var(--good);} .verdict.no{color:var(--bad);} .verdict.warn{color:var(--root);}
+.heard{text-align:center; font-size:13px; color:var(--dim); min-height:20px;}
+/* Three tiles side by side in a narrow card need a floor, or "correct" and
+   "streak" collapse to different widths and the row reads as broken. */
+.stat-row{display:flex; gap:8px; justify-content:center; margin:8px 0 0;}
+.stat-row .stat{padding:6px 12px; min-width:74px;}
+/* ---- drills ---- */
+#secDrill label span{display:block; margin-bottom:3px;}
+.dr-row{display:flex; gap:var(--sp2); align-items:center; justify-content:space-between;
+  flex-wrap:wrap; padding:var(--sp2) 0; border-top:1px solid var(--hair);}
+.dr-row:first-child{border-top:0;}
+.dr-row .dr-name{font-size:14px; font-weight:650; color:var(--t1); flex:1 1 150px;}
+/* the checkbox itself is 26px by design, so the LABEL carries the 44px target */
+.dr-check{gap:var(--sp2); min-height:44px; padding:0 var(--sp2) 0 0; cursor:pointer;}
+.dr-step{min-width:44px; text-align:center;}
+/* stacked on a phone the second column needs air; as a grid column it must not */
+@media (max-width:999px){ #drPick .two-col > div + div{margin-top:var(--sp5);} }
+@media (min-width:1000px){ #drPick .row > label{max-width:340px;} }
+#drPanel .note-box{margin-top:var(--sp3);}
+#drPanel p{margin:6px 0 0;}
+#drPanel .t-eyebrow{color:inherit; opacity:.85;}
+/* ---- songs ---- */
+.sg-item{border-top:1px solid var(--hair); padding:var(--sp4) 0 var(--sp3);}
+.sg-item:first-child{border-top:0; padding-top:0;}
+.sg-item p{margin:var(--sp2) 0 0;}
+.sg-strip{display:flex; flex-wrap:wrap; gap:var(--sp1); margin:var(--sp3) 0 0;}
+.sg-seg{display:inline-flex; align-items:center; gap:6px; background:var(--s2);
+  border:1px solid var(--line); border-radius:var(--r-sm); padding:5px 9px; font-size:12.5px; color:var(--t3);}
+.sg-seg b{font-weight:650; color:var(--t2);}
+.sg-seg i{font-style:normal; font-weight:800; color:var(--root);}
+#secSongs a.btn{display:inline-flex; align-items:center; text-decoration:none; color:var(--t1);}
+.sg-now{display:flex; gap:var(--sp6); align-items:center; flex-wrap:wrap; margin:var(--sp3) 0 0;}
+.sg-root{color:var(--root); margin:0;}
+.sg-beats{display:flex; gap:var(--sp2);}
+.sg-beat{width:30px; height:30px; border-radius:var(--r-pill); background:var(--s2);
+  border:1px solid var(--line); color:var(--t4); font-size:12px; font-weight:750;
+  display:flex; align-items:center; justify-content:center; font-variant-numeric:tabular-nums;}
+.sg-beat.one{border-color:var(--line-hi); color:var(--t3);}
+.sg-beat.on{background:var(--hl); border-color:var(--hl); color:var(--on-hl);}
+.sg-beat.count.on{background:var(--s4); border-color:var(--t4); color:var(--t1);}
+/* a wrong note is an outline and a mark, never a filled red block */
+.pill.off{background:transparent; border-color:var(--bad); color:var(--bad);}
+#secSongs summary{min-height:44px; display:flex; align-items:center; gap:var(--sp2);
+  cursor:pointer; list-style:none;}
+#secSongs summary::-webkit-details-marker{display:none;}
+#secSongs summary::before{content:'▸'; color:var(--root); font-weight:800;}
+#secSongs details[open] summary::before{content:'▾';}
+#sgSetupBody p{margin:var(--sp3) 0 0;}
+#sgSummary .note-box{margin-top:var(--sp3);}
+#sgSummary p{margin:6px 0 0;}
+#sgSummary .t-eyebrow{color:inherit; opacity:.85;}

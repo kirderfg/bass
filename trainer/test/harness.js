@@ -14,7 +14,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css
 
 function startServer() {
   const server = http.createServer((req, res) => {
-    const rel = decodeURIComponent(req.url.split('?')[0]).replace(/^\/+/, '') || 'trainer/index.html';
+    const rel = decodeURIComponent(req.url.split('?')[0]).replace(/^\/+/, '') || 'index.html';
     const file = path.join(ROOT, rel);
     if (!file.startsWith(ROOT) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
       res.writeHead(404); return res.end('not found');
@@ -48,10 +48,17 @@ function writeNoteWav(hz, file, seconds = 3, rate = 44100) {
 }
 
 /**
- * Open the Live Trainer with `hz` playing continuously into its microphone.
- * @returns {{page, close}} page is already past the mic gate and listening.
+ * Open the app with `hz` playing continuously into the microphone and stop
+ * there: nothing is clicked, so the mic has NOT been granted. Tests about the
+ * gate itself — and about the promise that the practice plan never asks for a
+ * microphone — need to see the app in that state.
+ *
+ * `url` is served from the repo root, so it can be '/index.html#drill' or
+ * '/trainer/index.html#drill' (which redirects).
+ *
+ * @returns {{page, errors, gum, goto, close}} gum() counts getUserMedia calls.
  */
-async function openWithNote(hz) {
+async function openApp(hz, url = '/index.html') {
   const { chromium } = require(PW);
   const { server, port } = await startServer();
   const wav = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'basswav-')), 'note.wav');
@@ -72,18 +79,42 @@ async function openWithNote(hz) {
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));
-  await page.goto(`http://127.0.0.1:${port}/trainer/index.html`);
-  await page.click('#startBtn');
-  await page.waitForSelector('#app:not(.hidden)', { timeout: 5000 });
+  // Permission is pre-granted here, so nothing prompts: the only way to prove
+  // the mic was left alone is to count the calls.
+  await page.addInitScript(() => {
+    window.__gum = 0;
+    const md = navigator.mediaDevices;
+    if (md && md.getUserMedia) {
+      const orig = md.getUserMedia.bind(md);
+      md.getUserMedia = (...a) => { window.__gum++; return orig(...a); };
+    }
+  });
+  const base = `http://127.0.0.1:${port}`;
+  await page.goto(base + url);
 
   return {
     page,
     errors,
+    gum: () => page.evaluate(() => window.__gum),
+    goto: rel => page.goto(base + rel),
     async close() {
       await browser.close();
       await new Promise(r => server.close(r));
     },
   };
+}
+
+/**
+ * Open the Live tabs with `hz` playing continuously into the microphone.
+ * The two apps are one page now, so this lands on the Tuner via its hash and
+ * arms the mic from the gate that mode shows.
+ * @returns {{page, close}} page is already past the mic gate and listening.
+ */
+async function openWithNote(hz) {
+  const app = await openApp(hz, '/index.html#tuner');
+  await app.page.click('#startBtn');
+  await app.page.waitForSelector('#app:not(.hidden)', { timeout: 5000 });
+  return app;
 }
 
 /** Poll until `fn` (run in the page) returns a truthy value, or time out. */
@@ -98,4 +129,4 @@ async function until(page, fn, arg, timeout = 6000) {
   return last;
 }
 
-module.exports = { openWithNote, until, writeNoteWav };
+module.exports = { openApp, openWithNote, until, writeNoteWav };

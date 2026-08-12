@@ -1,0 +1,1759 @@
+/* ==================================================================
+   Bass Theory Trainer — the Learn half of the app: Practice, Scales,
+   Chords and the tap-a-fret note quiz. Nothing here touches the
+   microphone, which is the point: opening the app must never ask for
+   it.
+
+   Lifted verbatim out of index.html when the two apps became one
+   page. It is wrapped in an IIFE because both apps now share one
+   global scope and both declare TUNINGS, SCALES, NAMES, S and pcOf —
+   textual concatenation would have made one of them win at random.
+   The only thing published is window.BassTheory, at the bottom.
+   ================================================================== */
+(function(){
+"use strict";
+/* ================= CORE: notes, state, audio, fretboard ================= */
+const NAMES_S = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const NAMES_F = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+const FLAT_ROOTS = new Set(['F','Bb','Eb','Ab','Db']); // keys spelled with flats
+const NATURALS = new Set(['C','D','E','F','G','A','B']);
+const ALL_ROOTS = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+
+// open-string MIDI numbers, low to high
+const TUNINGS = {
+  5:{ midi:[23,28,33,38,43], names:['B','E','A','D','G'] },   // B0 E1 A1 D2 G2
+  4:{ midi:[28,33,38,43],    names:['E','A','D','G'] }
+};
+function pc(midi){ return ((midi % 12) + 12) % 12; }
+function noteName(midi, useFlats){ return (useFlats ? NAMES_F : NAMES_S)[pc(midi)]; }
+function bothNames(midi){
+  const s = NAMES_S[pc(midi)], f = NAMES_F[pc(midi)];
+  return s === f ? s : s + '/' + f;
+}
+function rootPc(rootName){
+  let i = NAMES_S.indexOf(rootName);
+  if (i < 0) i = NAMES_F.indexOf(rootName);
+  return i;
+}
+function freq(midi){ return 440 * Math.pow(2, (midi - 69) / 12); }
+
+/* ---------------- state ---------------- */
+const LS_KEY = 'bassTheoryTrainer.v1';
+function defaultState(){
+  return {
+    tuning:5,
+    scales:{ root:'E', type:'minPent', view:'open', labels:'names' },
+    chords:{ root:'E', type:'power', labels:'names' },
+    trainer:{
+      tier:0, mode:'study', focus:null,
+      study:{ show:true, strings:null, naturalsOnly:true, maxFret:12 }
+    },
+    stats:{
+      answered:0, correct:0, bestStreak:0,
+      byString:{},        // 'E': {a:0,c:0,recent:[0/1...]}
+      heat:{},            // 'E:3' -> mistakes
+      tierRecent:{},      // tier index -> last 20 answers (0/1)
+      speed:[]            // last 20 answer times, seconds
+    },
+    practice:{
+      week:1,
+      log:{},             // '2026-08-10' -> {items:['w1a'], done:false}
+      checkpoints:{},     // 'w1cp0' -> true
+      dismissed:[]        // theory card ids
+    }
+  };
+}
+let S = loadState();
+function loadState(){
+  try{
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return defaultState();
+    const st = defaultState();
+    const saved = JSON.parse(raw);
+    // deep-merge saved over defaults (one level is enough for our shape)
+    for (const k in saved){
+      if (saved[k] && typeof saved[k] === 'object' && !Array.isArray(saved[k]))
+        st[k] = Object.assign({}, st[k], saved[k]);
+      else st[k] = saved[k];
+    }
+    return normalizeState(st);
+  }catch(e){ return defaultState(); }
+}
+/* A store written by an older build, half-written, or hand-edited must degrade
+   to empty rather than throw the first time something indexes into it — this
+   page's records are now read alongside two other apps' stores. */
+function normalizeState(st){
+  const D = defaultState();
+  const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
+  st.tuning = +st.tuning === 4 ? 4 : 5;
+  st.trainer = isObj(st.trainer) ? st.trainer : D.trainer;
+  st.trainer.study = isObj(st.trainer.study) ? st.trainer.study : D.trainer.study;
+  st.scales = isObj(st.scales) ? st.scales : D.scales;
+  st.chords = isObj(st.chords) ? st.chords : D.chords;
+  st.stats = isObj(st.stats) ? st.stats : D.stats;
+  st.stats.answered = Number(st.stats.answered) || 0;
+  st.stats.correct = Number(st.stats.correct) || 0;
+  st.stats.bestStreak = Number(st.stats.bestStreak) || 0;
+  st.stats.byString = isObj(st.stats.byString) ? st.stats.byString : {};
+  st.stats.heat = isObj(st.stats.heat) ? st.stats.heat : {};
+  st.stats.tierRecent = isObj(st.stats.tierRecent) ? st.stats.tierRecent : {};
+  st.stats.daily = isObj(st.stats.daily) ? st.stats.daily : {};
+  st.stats.speed = Array.isArray(st.stats.speed) ? st.stats.speed : [];
+  st.practice = isObj(st.practice) ? st.practice : D.practice;
+  st.practice.week = [1,2,3].indexOf(+st.practice.week) >= 0 ? +st.practice.week : 1;
+  st.practice.log = isObj(st.practice.log) ? st.practice.log : {};
+  st.practice.checkpoints = isObj(st.practice.checkpoints) ? st.practice.checkpoints : {};
+  st.practice.dismissed = Array.isArray(st.practice.dismissed) ? st.practice.dismissed : [];
+  return st;
+}
+function save(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(S)); }catch(e){} }
+function todayKey(){
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+/* ---------------- audio ---------------- */
+const Audio_ = (() => {
+  let ctx = null, master = null;
+  function ensure(){
+    if (!ctx){
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctx = new AC();
+      master = ctx.createGain();
+      master.gain.value = 0.9;
+      // gentle limiter so stacked notes don't clip on phone speakers
+      const comp = ctx.createDynamicsCompressor();
+      master.connect(comp); comp.connect(ctx.destination);
+    }
+    if (ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+  // bass pluck: saw fundamental + octave partial through a lowpass.
+  // The octave partial matters: phone speakers can't reproduce 31 Hz,
+  // so the upper harmonics carry the pitch.
+  function note(midi, dur = 0.6, when = 0, vel = 1){
+    const c = ensure(); const t = c.currentTime + when;
+    const f = freq(midi);
+    const out = c.createGain();
+    out.gain.setValueAtTime(0.0001, t);
+    out.gain.exponentialRampToValueAtTime(0.55 * vel, t + 0.012);
+    out.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    const lp = c.createBiquadFilter();
+    lp.type = 'lowpass'; lp.Q.value = 2;
+    lp.frequency.setValueAtTime(Math.min(Math.max(f * 16, 700), 2600), t);
+    lp.frequency.exponentialRampToValueAtTime(Math.max(f * 6, 400), t + dur * 0.7);
+    const o1 = c.createOscillator(); o1.type = 'sawtooth'; o1.frequency.value = f;
+    const o2 = c.createOscillator(); o2.type = 'square'; o2.frequency.value = f * 2;
+    const g2 = c.createGain(); g2.gain.value = 0.38;
+    const o3 = c.createOscillator(); o3.type = 'sine'; o3.frequency.value = f * 4;
+    const g3 = c.createGain(); g3.gain.value = 0.10;
+    o1.connect(lp); o2.connect(g2); g2.connect(lp); o3.connect(g3); g3.connect(lp);
+    lp.connect(out); out.connect(master);
+    o1.start(t); o2.start(t); o3.start(t);
+    const end = t + dur + 0.08;
+    o1.stop(end); o2.stop(end); o3.stop(end);
+  }
+  function click(accent, when = 0){
+    const c = ensure(); const t = c.currentTime + when;
+    const o = c.createOscillator(); o.type = 'square';
+    o.frequency.value = accent ? 1800 : 1150;
+    const g = c.createGain();
+    g.gain.setValueAtTime(accent ? 0.5 : 0.32, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t + 0.06);
+  }
+  return { ensure, note, click, now:() => (ctx ? ctx.currentTime : 0) };
+})();
+
+/* ---------------- fretboard component ----------------
+   cfg = {
+     frets: 12,
+     strings: [indices into tuning, low->high] or null = all,
+     mark(stringIdx, fret) -> null | {cls:'root|tone|hl|ghost|good|bad', label, finger},
+     onTap(stringIdx, fret, midi),
+     disable(stringIdx, fret) -> bool,
+     boxWindow: [lo, hi] or null  (frets outside get dimmed)
+   }
+   stringIdx is index into TUNINGS[S.tuning].midi (0 = lowest string).
+   Rendered top row = HIGHEST string (like reading tab).
+------------------------------------------------------- */
+/* Adapter onto the shared SVG neck renderer (shared/neck.js).
+   Keeps the call sites below unchanged while the drawing itself is now a
+   real fingerboard rather than a table of cells. */
+const KIND = { root:'root', tone:'tone', hl:'highlight', ghost:'ghost', asked:'asked',
+               good:'correct', bad:'wrong', playing:'highlight' };
+
+function drawFretboard(el, cfg){
+  const tun = TUNINGS[S.tuning];
+  const frets = cfg.frets != null ? cfg.frets : 12;
+  const fromFret = cfg.fromFret || 0;
+  const nStr = tun.midi.length;
+
+  const dimStrings = [];
+  for (let si = 0; si < nStr; si++){
+    let allOff = true;
+    for (let f = fromFret; f <= frets && allOff; f++) if (!(cfg.disable && cfg.disable(si, f))) allOff = false;
+    if (allOff) dimStrings.push(si);
+  }
+
+  // Snapshot the marks once; setNote() edits this list and redraws.
+  const markers = [];
+  for (let si = 0; si < nStr; si++){
+    if (dimStrings.indexOf(si) >= 0) continue;
+    for (let f = fromFret; f <= frets; f++){
+      if (cfg.disable && cfg.disable(si, f)) continue;
+      const m = cfg.mark ? cfg.mark(si, f) : null;
+      if (m) markers.push({ si, fret:f, kind: KIND[m.cls] || 'tone', label:m.label, finger:m.finger });
+    }
+  }
+
+  let handle = null;
+  function paint(keepScroll){
+    const left = keepScroll && handle ? handle.scroll.scrollLeft : null;
+    handle = BassNeck.render(el, {
+      strings: tun.names, fromFret, toFret: frets, scale: cfg.scale || neckScale(),
+      markers: markers.slice(), window: cfg.boxWindow, windowLabel: cfg.boxWindow ? true : false,
+      dimStrings, animate: !keepScroll,
+      onTap: cfg.onTap ? (si, f) => cfg.onTap(si, f, tun.midi[si] + f) : null,
+      title: cfg.title,
+    });
+    if (left != null) handle.scroll.scrollLeft = left;
+  }
+  paint(false);
+
+  function put(si, f, kind, label){
+    const i = markers.findIndex(m => m.si === si && m.fret === f);
+    if (i >= 0) markers[i] = { si, fret:f, kind, label: label != null ? label : markers[i].label };
+    else markers.push({ si, fret:f, kind, label });
+    paint(true);
+  }
+
+  return {
+    get el(){ return handle.svg; },
+    cellAt(si, f){ return handle.marker(si, f); },
+    setNote(si, f, cls, label){ put(si, f, KIND[cls] || cls || 'tone', label); },
+    clearNote(si, f){
+      const i = markers.findIndex(m => m.si === si && m.fret === f);
+      if (i >= 0){ markers.splice(i, 1); paint(true); }
+    },
+    setPlaying(si, f){
+      handle.svg.querySelectorAll('.neck-marker.is-playing')
+        .forEach(n => n.classList.remove('is-playing'));
+      const m = handle.marker(si, f);
+      if (m) m.classList.add('is-playing');
+    },
+    clearPlaying(){
+      handle.svg.querySelectorAll('.neck-marker.is-playing')
+        .forEach(n => n.classList.remove('is-playing'));
+    },
+    pulse(si, f){ handle.pulse(si, f); },
+    scrollToFret(f){ handle.scrollTo(f); },
+  };
+}
+
+/* orientation helper line shown under fretboards */
+function fbCaption(){
+  const low = S.tuning === 5 ? 'B' : 'E';
+  return '<div class="muted small" style="margin:2px 4px 6px">Reads like tab: thin G string on top, thick low ' + low + ' at the bottom. Tap any fret to hear it.</div>';
+}
+
+/* ---------------- theory cards ---------------- */
+const CARDS = {
+  degrees:{ title:'Degrees 101: what "R, b3, 5" means',
+    body:'Notes in a scale get numbers counted from the root: R (root) = 1, then 2, 3… A "b" (flat) means one fret lower. So b3 = "the 3rd, lowered one fret" — that single fret is what makes minor sound dark instead of happy.' },
+  bcef:{ title:'The B–C and E–F rule',
+    body:'Between most letter names there\'s a sharp note (one fret apart). B→C and E→F are the exceptions: NO sharp in between — they sit on neighboring frets. Memorize those two pairs and the whole fretboard gets easier.' },
+  octave:{ title:'The octave shape',
+    body:'Same note one octave up = 2 strings up + 2 frets up. It\'s one moveable shape that works everywhere on the neck. Find a root, and you instantly know a second place to play it.' },
+  fifth:{ title:'Why metal loves the 5th',
+    body:'The 5th is the interval in a power chord (R + 5). It\'s neither major nor minor — no 3rd — so it sounds huge and neutral under distortion. As a bassist: root and 5th are your two best friends.' },
+  relative:{ title:'Em and G major are twins',
+    body:'E minor and G major contain the exact same 7 notes — they just treat a different note as home base. That\'s called relative major/minor. It\'s why TNT (in E minor) can lean on a G: it\'s family.' },
+  enharm:{ title:'C# and Db are the same fret',
+    body:'One fret, two names. Which name you use depends on the key you\'re in — but under your finger it\'s identical. Don\'t let double names scare you.' },
+  flat7:{ title:'"7" means flat 7 (by default)',
+    body:'When a chord is written E7 or Em7, the 7 means the FLAT 7th — the rock/blues flavor. The "pretty" natural 7th gets a longer name: maj7. Default 7 = b7. That\'s why rock is full of 7 chords.' },
+  rootsJob:{ title:'Roots are the bassist\'s job',
+    body:'When the band plays an E chord, your job #1 is to land on E. Nail the root on beat 1, keep the rhythm locked, and you\'re already a real bassist. Everything else (5ths, octaves, fills) is decoration on top.' },
+  bstring:{ title:'Taming the low B string',
+    body:'The B string is the E string\'s mirror, 5 frets up: any note on the E string also lives on the B string 5 frets HIGHER. Example: E is B-string fret 5, G is B-string fret 8. Learn E-string notes and the B string comes free.' },
+  fretHalfStep:{ title:'1 fret = a half step',
+    body:'Every fret raises the pitch by one half step (semitone) — the smallest step in Western music. 2 frets = whole step. All scale formulas are just recipes of half steps, which is why shapes are moveable.' }
+};
+function theoryCard(id){
+  if (S.practice.dismissed.includes(id) || !CARDS[id]) return '';
+  const c = CARDS[id];
+  return '<div class="tcard" data-card="' + id + '">' +
+    '<button class="dismiss" title="Dismiss" onclick="dismissCard(\'' + id + '\')">✕</button>' +
+    '<h4>' + c.title + '</h4><p>' + c.body + '</p></div>';
+}
+function dismissCard(id){
+  if (!S.practice.dismissed.includes(id)) S.practice.dismissed.push(id);
+  save();
+  document.querySelectorAll('[data-card="' + id + '"]').forEach(e => e.remove());
+}
+
+/* ---------------- routing ---------------- */
+/** Board size for the current viewport: a desk gets a neck you can read
+    from a metre away; a phone gets the tappable one. */
+function neckScale(){ return window.matchMedia('(min-width:1000px)').matches ? 'desk' : 'play'; }
+function readScale(){ return window.matchMedia('(min-width:1000px)').matches ? 'readbig' : 'read'; }
+const TABS = ['practice','scales','chords','trainer'];
+let currentTab = 'practice';
+/** Show one of this app's four tabs, or none of them (`null`) when a Live tab
+    has the screen. The shell calls this; it never calls render directly. */
+function show(tab){
+  stopPlayback();
+  /* Both apps live in one document now and both write bassTheoryTrainer.v1.
+     A Live mode banks answers into it while this app is off-screen, so re-read
+     the store on the way in — otherwise the next save() here would write back
+     a copy of the state from before those answers and quietly lose them. */
+  S = loadState();
+  syncTuneToggle();
+  currentTab = tab;
+  TABS.forEach(t => {
+    document.getElementById('tab-' + t).classList.toggle('on', t === tab);
+  });
+  document.querySelectorAll('#tabbar button').forEach(b =>
+    b.classList.toggle('on', b.dataset.tab === tab));
+  if (!tab) return;
+  render(tab);
+}
+function render(tab){
+  if (tab === 'practice') renderPractice();
+  if (tab === 'scales') renderScales();
+  if (tab === 'chords') renderChords();
+  if (tab === 'trainer') renderTrainer();
+}
+function deepLink(spec){
+  if (spec.scales) Object.assign(S.scales, spec.scales);
+  if (spec.chords) Object.assign(S.chords, spec.chords);
+  if (spec.trainer) Object.assign(S.trainer, spec.trainer);
+  save();
+  /* Through the shell, not straight to show(): a deep link may be followed
+     from a Live tab, and only the shell knows to put that section away. */
+  navigate(spec.tab);
+}
+/** Route a destination through the shell. Replaced by mount(); the fallback
+    keeps this app usable on its own if it is ever loaded without one. */
+let navigate = show;
+/* ================= FEATURE 1: SCALE EXPLORER ================= */
+const SCALES = {
+  minPent:{ name:'Minor pentatonic', iv:[0,3,5,7,10], deg:['R','b3','4','5','b7'],
+    blurb:'The skeleton of ~80% of rock & metal riffs. If you learn ONE scale, it\'s this one.' },
+  natMinor:{ name:'Natural minor', iv:[0,2,3,5,7,8,10], deg:['R','2','b3','4','5','b6','b7'],
+    blurb:'Minor pentatonic + two extra notes (2 and b6). The full "dark/heavy" scale.' },
+  majPent:{ name:'Major pentatonic', iv:[0,2,4,7,9], deg:['R','2','3','5','6'],
+    blurb:'The bright cousin of minor pentatonic — same shape, different home note.' },
+  major:{ name:'Major scale', iv:[0,2,4,5,7,9,11], deg:['R','2','3','4','5','6','7'],
+    blurb:'The "do-re-mi" ruler that every formula is measured against.' },
+  blues:{ name:'Blues scale', iv:[0,3,5,6,7,10], deg:['R','b3','4','b5','5','b7'],
+    blurb:'Minor pentatonic + one spicy note (the b5). Instant attitude.' }
+};
+const SCALE_ORDER = ['minPent','natMinor','majPent','major','blues'];
+
+/** Render degree names with a real flat sign, matching the fretboard. */
+function flatSign(deg){ return String(deg).replace(/^b(?=[0-9])/, '\u266d'); }
+function stepFormula(iv){
+  const steps = [];
+  for (let i = 1; i < iv.length; i++) steps.push('+' + (iv[i] - iv[i-1]));
+  steps.push('+' + (12 - iv[iv.length-1]) + ' → R');
+  return 'R ' + steps.join(' ');
+}
+function scaleNotes(rootName, iv){
+  const rp = rootPc(rootName);
+  const flats = FLAT_ROOTS.has(rootName);
+  return iv.map(i => (flats ? NAMES_F : NAMES_S)[(rp + i) % 12]);
+}
+function lowestStringRootFret(rootName){
+  const rp = rootPc(rootName);
+  const open = TUNINGS[S.tuning].midi[0];
+  for (let f = 1; f <= 12; f++) if (pc(open + f) === rp) return f;
+  return 12; // pc(open) === rp -> octave at 12
+}
+let playTimers = [];
+function stopPlayback(){
+  playTimers.forEach(t => clearTimeout(t));
+  playTimers = [];
+  [scaleFbHandle, chordFbHandle].forEach(h => { if (h && h.clearPlaying) h.clearPlaying(); });
+}
+function playSequence(handle, seq, msPerNote, onDone){
+  stopPlayback();
+  Audio_.ensure();
+  seq.forEach((p, i) => {
+    playTimers.push(setTimeout(() => {
+      Audio_.note(p.midi, 0.55);
+      handle.setPlaying(p.si, p.f);
+    }, i * msPerNote));
+  });
+  playTimers.push(setTimeout(() => {
+    handle.clearPlaying();
+    if (onDone) onDone();
+  }, seq.length * msPerNote + 100));
+}
+
+let scaleFbHandle = null, scPage = 0;
+function renderScales(){
+  const el = document.getElementById('tab-scales');
+  const sc = SCALES[S.scales.type];
+  const rp = rootPc(S.scales.root);
+  const flats = FLAT_ROOTS.has(S.scales.root);
+  const scalePcs = new Set(sc.iv.map(i => (rp + i) % 12));
+  const degOf = {};
+  sc.iv.forEach((i, k) => degOf[(rp + i) % 12] = sc.deg[k]);
+  const notes = scaleNotes(S.scales.root, sc.iv);
+  const anchor = lowestStringRootFret(S.scales.root);
+  const boxHi = anchor + 3 + (sc.iv.length > 5 ? 1 : 0);
+  const view = S.scales.view;
+
+  let h = '<h2>Scale explorer</h2>';
+  h += '<div class="card tight">';
+  h += '<h3>Scale</h3><div class="seg" id="scType">' + SCALE_ORDER.map(k =>
+    '<button data-k="' + k + '" class="' + (k === S.scales.type ? 'on' : '') + '">' + SCALES[k].name + '</button>').join('') + '</div>';
+  h += '<h3>Root note</h3><div class="seg compact" id="scRoot">' + ALL_ROOTS.map(r =>
+    '<button data-k="' + r + '" class="' + (r === S.scales.root ? 'on' : '') + '">' + r + '</button>').join('') + '</div>';
+  h += '</div>';
+
+  h += theoryCard('degrees');
+
+  h += '<div class="card">';
+  h += '<div style="font-size:17px; font-weight:700">' + S.scales.root + ' ' + sc.name.toLowerCase() + '</div>';
+  h += '<p class="muted" style="margin:4px 0 8px">' + sc.blurb + '</p>';
+  h += '<div class="chips">' + notes.map((n, i) =>
+    '<span class="chip ' + (i === 0 ? 'root' : 'tone') + '">' + n + '<small>' + flatSign(sc.deg[i]) + '</small></span>').join('') + '</div>';
+  h += '<p class="small" style="margin:10px 0 0"><b>Step recipe:</b> ' + stepFormula(sc.iv) +
+    '<br><span class="muted">Each number = how many frets (= half steps) to the next note. Same recipe from ANY root — that\'s why shapes are moveable.</span></p>';
+  h += '</div>';
+
+  h += theoryCard('fretHalfStep');
+
+  h += '<div class="card">';
+  h += '<div class="row between">';
+  h += '<div class="seg compact" id="scView">' +
+    '<button data-k="open" class="' + (view === 'open' ? 'on' : '') + '">Open position</button>' +
+    '<button data-k="box" class="' + (view === 'box' ? 'on' : '') + '">Moveable box</button>' +
+    '<button data-k="neck" class="' + (view === 'neck' ? 'on' : '') + '">Whole neck</button></div>';
+  h += '<div class="seg compact" id="scLabels">' +
+    '<button data-k="names" class="' + (S.scales.labels === 'names' ? 'on' : '') + '">Names</button>' +
+    '<button data-k="degrees" class="' + (S.scales.labels === 'degrees' ? 'on' : '') + '">Degrees</button></div>';
+  h += '</div>';
+  if (view === 'open'){
+    h += '<p class="muted small" style="margin:8px 2px 0">Open position = frets 0–5, using open strings where you can. Home base for beginners.</p>';
+  } else if (view === 'box'){
+    h += '<p class="muted small" style="margin:8px 2px 0">The moveable box, anchored where the root (' + S.scales.root + ') sits on your lowest string — fret ' + anchor + '. Slide the whole box to a new root and it\'s the same scale in a new key. Numbers on the dots = suggested finger (1=index, 2=middle, 3=ring, 4=pinky).' +
+      (anchor >= 10 ? ' Cramped this high up? Slide the identical shape lower — anchored at fret 5 it becomes ' + noteName(TUNINGS[S.tuning].midi[0] + 5, false) + ' ' + sc.name.toLowerCase() + '.' : '') + '</p>';
+  } else {
+    h += '<p class="muted small" style="margin:8px 2px 0">Every ' + S.scales.root + ' ' + sc.name.toLowerCase() + ' note, frets 0–12. Notice the patterns repeating.</p>';
+  }
+  h += '<div id="scaleFb"></div>';
+  if (view === 'neck' && !window.matchMedia('(min-width:1000px)').matches){
+    const wins = BassNeck.windows(12);
+    h += '<div class="fret-pager seg compact" id="scPager">' + wins.map((w, i) =>
+      '<button data-k="' + i + '" class="' + (i === scPage ? 'on' : '') + '">Frets ' + w[0] + '–' + w[1] + '</button>').join('') + '</div>';
+  }
+  h += fbCaption();
+  h += '<div class="legend"><span class="l-root"><i></i>root</span><span class="l-tone"><i></i>scale tone</span><span class="l-hl"><i></i>now playing</span></div>';
+  h += '<div class="row" style="margin-top:6px"><button class="btn primary" id="scPlay">▶ Play scale (slow)</button><button class="btn ghost" id="scStop">■ Stop</button></div>';
+  h += '</div>';
+
+  if ((S.scales.type === 'minPent' || S.scales.type === 'natMinor') && S.scales.root === 'E') h += theoryCard('relative');
+  h += theoryCard('octave');
+
+  el.innerHTML = h;
+
+  // fretboard — box view extends past fret 12 when the shape needs it
+  const wide = window.matchMedia('(min-width:1000px)').matches;
+  const wins = BassNeck.windows(12);
+  if (scPage >= wins.length) scPage = 0;
+  const neckWin = wide ? [0, 12] : wins[scPage];
+  const frets = view === 'open' ? 5 : (view === 'box' ? Math.max(12, boxHi) : neckWin[1]);
+  const neckFrom = view === 'neck' ? neckWin[0] : 0;
+  const boxWin = view === 'box' ? [anchor, boxHi] : null;
+  scaleFbHandle = drawFretboard(document.getElementById('scaleFb'), {
+    frets, fromFret: neckFrom,
+    boxWindow: boxWin,
+    onTap(si, f, midi){ Audio_.note(midi); },
+    mark(si, f){
+      const midi = TUNINGS[S.tuning].midi[si] + f;
+      const p = pc(midi);
+      if (!scalePcs.has(p)) return null;
+      const isRoot = p === rp;
+      const label = S.scales.labels === 'degrees' ? degOf[p] : noteName(midi, flats);
+      const m = { cls: isRoot ? 'root' : 'tone', label };
+      if (boxWin && f >= boxWin[0] && f <= boxWin[1]){
+        m.finger = String(Math.min(4, f - anchor + 1));
+      }
+      return m;
+    }
+  });
+  if (view === 'box') scaleFbHandle.scrollToFret(anchor);
+
+  // sequence for playback: in-view scale tones, one octave up from lowest root, then back
+  function buildSeq(){
+    const tun = TUNINGS[S.tuning];
+    const pos = [];
+    const lo = boxWin ? boxWin[0] : 0, hi = boxWin ? boxWin[1] : frets;
+    for (let si = 0; si < tun.midi.length; si++)
+      for (let f = lo === 0 ? 0 : lo; f <= hi; f++){
+        const midi = tun.midi[si] + f;
+        if (scalePcs.has(pc(midi))) pos.push({ si, f, midi });
+      }
+    pos.sort((a, b) => a.midi - b.midi || a.si - b.si);
+    const firstRoot = pos.find(p => pc(p.midi) === rp);
+    if (!firstRoot) return [];
+    const start = firstRoot.midi;
+    const seen = new Set();
+    const asc = [];
+    for (const p of pos){
+      if (p.midi >= start && p.midi <= start + 12 && !seen.has(p.midi)){
+        seen.add(p.midi); asc.push(p);
+      }
+    }
+    const desc = asc.slice(0, -1).reverse();
+    return asc.concat(desc);
+  }
+  document.getElementById('scPlay').addEventListener('click', () => {
+    playSequence(scaleFbHandle, buildSeq(), 550);
+  });
+  document.getElementById('scStop').addEventListener('click', stopPlayback);
+
+  // controls
+  bindSeg('scType', k => { S.scales.type = k; save(); renderScales(); });
+  bindSeg('scRoot', k => { S.scales.root = k; save(); renderScales(); });
+  bindSeg('scView', k => { S.scales.view = k; save(); renderScales(); });
+  bindSeg('scLabels', k => { S.scales.labels = k; save(); renderScales(); });
+  bindSeg('scPager', k => { scPage = +k; renderScales(); });
+}
+function bindSeg(id, fn){
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.querySelectorAll('button').forEach(b =>
+    b.addEventListener('click', () => { stopPlayback(); fn(b.dataset.k); }));
+}
+
+/* ================= FEATURE 2: CHORD / ARPEGGIO EXPLORER ================= */
+const CHORDS = {
+  power:{ name:'Power chord (5)', sym:'5', iv:[0,7], deg:['R','5'],
+    blurb:'Root + 5th, nothing else. No 3rd = neither major nor minor — just weight. THE rock/metal sound. On bass you play these as two single notes, not a strum.' },
+  maj:{ name:'Major triad', sym:'', iv:[0,4,7], deg:['R','3','5'],
+    blurb:'Root + bright 3rd + 5th. The "happy" chord. As a bassist you outline it one note at a time (an arpeggio).' },
+  min:{ name:'Minor triad', sym:'m', iv:[0,3,7], deg:['R','b3','5'],
+    blurb:'"m" flattens the 3rd by one fret — that single fret turns bright into dark. Root + b3 + 5.' },
+  m7:{ name:'Minor 7', sym:'m7', iv:[0,3,7,10], deg:['R','b3','5','b7'],
+    blurb:'Decoder: m = flat 3rd (dark) + 7 = flat 7 by default (rock flavor). A minor triad with a smoky b7 on top.' },
+  dom7:{ name:'Dominant 7', sym:'7', iv:[0,4,7,10], deg:['R','3','5','b7'],
+    blurb:'Bright major 3rd + gritty flat 7 = built-in blues tension. AC/DC and every blues-rock band live here.' }
+};
+const CHORD_ORDER = ['power','min','maj','m7','dom7'];
+
+let chordFbHandle = null;
+function renderChords(){
+  const el = document.getElementById('tab-chords');
+  const ch = CHORDS[S.chords.type];
+  const rp = rootPc(S.chords.root);
+  const flats = FLAT_ROOTS.has(S.chords.root);
+  const chordPcs = new Set(ch.iv.map(i => (rp + i) % 12));
+  const degOf = {};
+  ch.iv.forEach((i, k) => degOf[(rp + i) % 12] = ch.deg[k]);
+  const notes = scaleNotes(S.chords.root, ch.iv);
+
+  let h = '<h2>Chords &amp; arpeggios</h2>';
+  h += '<p class="muted small" style="margin:2px 2px 8px">Bassists don\'t strum chords — we spell them out one note at a time. That\'s an <b>arpeggio</b>.</p>';
+  h += '<div class="card tight">';
+  h += '<h3>Chord type</h3><div class="seg" id="chType">' + CHORD_ORDER.map(k =>
+    '<button data-k="' + k + '" class="' + (k === S.chords.type ? 'on' : '') + '">' + CHORDS[k].name + '</button>').join('') + '</div>';
+  h += '<h3>Root note</h3><div class="seg compact" id="chRoot">' + ALL_ROOTS.map(r =>
+    '<button data-k="' + r + '" class="' + (r === S.chords.root ? 'on' : '') + '">' + r + '</button>').join('') + '</div>';
+  h += '</div>';
+
+  h += theoryCard('degrees');
+
+  h += '<div class="card">';
+  h += '<div style="font-size:17px; font-weight:700">' + S.chords.root + ch.sym + ' — ' + ch.name.toLowerCase() + '</div>';
+  h += '<p class="muted" style="margin:4px 0 8px">' + ch.blurb + '</p>';
+  h += '<div class="chips">' + notes.map((n, i) =>
+    '<span class="chip ' + (i === 0 ? 'root' : 'tone') + '">' + n + '<small>' + flatSign(ch.deg[i]) + '</small></span>').join('') + '</div>';
+  h += '</div>';
+
+  if (S.chords.type === 'power') h += theoryCard('fifth');
+  if (S.chords.type === 'm7' || S.chords.type === 'dom7') h += theoryCard('flat7');
+
+  // fretboard: chord tones everywhere, shape window anchored at root
+  const eIdx = S.tuning === 5 ? 1 : 0; // E string index
+  const eOpen = TUNINGS[S.tuning].midi[eIdx];
+  let anchorE = null;
+  for (let f = 0; f <= 12; f++) if (pc(eOpen + f) === rp){ anchorE = f; break; }
+  h += '<div class="card">';
+  h += '<div class="row between"><b>Arpeggio on the fretboard</b>';
+  h += '<div class="seg compact" id="chLabels">' +
+    '<button data-k="names" class="' + (S.chords.labels === 'names' ? 'on' : '') + '">Names</button>' +
+    '<button data-k="degrees" class="' + (S.chords.labels === 'degrees' ? 'on' : '') + '">Degrees</button></div></div>';
+  h += '<div id="chordFb"></div>' + fbCaption();
+  h += '<div class="legend"><span class="l-root"><i></i>root</span><span class="l-tone"><i></i>chord tone</span><span class="l-hl"><i></i>now playing</span></div>';
+  h += '<div class="row" style="margin-top:6px"><button class="btn primary" id="chPlay">▶ Play arpeggio</button><button class="btn ghost" id="chStop">■ Stop</button></div>';
+  h += '</div>';
+
+  // containment chain
+  h += containmentChain(ch, rp, flats);
+  h += theoryCard('rootsJob');
+  el.innerHTML = h;
+
+  chordFbHandle = drawFretboard(document.getElementById('chordFb'), {
+    frets:12,
+    onTap(si, f, midi){ Audio_.note(midi); },
+    mark(si, f){
+      const midi = TUNINGS[S.tuning].midi[si] + f;
+      const p = pc(midi);
+      if (!chordPcs.has(p)) return null;
+      const isRoot = p === rp;
+      const label = S.chords.labels === 'degrees' ? degOf[p] : noteName(midi, flats);
+      return { cls: isRoot ? 'root' : 'tone', label };
+    }
+  });
+  if (anchorE > 4) chordFbHandle.scrollToFret(anchorE);
+
+  document.getElementById('chPlay').addEventListener('click', () => {
+    const tun = TUNINGS[S.tuning];
+    const pos = [];
+    for (let si = 0; si < tun.midi.length; si++)
+      for (let f = 0; f <= 12; f++){
+        const midi = tun.midi[si] + f;
+        if (chordPcs.has(pc(midi))) pos.push({ si, f, midi });
+      }
+    pos.sort((a, b) => a.midi - b.midi || a.si - b.si);
+    const rootStart = pos.find(p => pc(p.midi) === rp && p.f > 0) || pos[0];
+    const seen = new Set(); const asc = [];
+    for (const p of pos){
+      if (p.midi >= rootStart.midi && p.midi <= rootStart.midi + 12 && !seen.has(p.midi)){
+        seen.add(p.midi); asc.push(p);
+      }
+    }
+    playSequence(chordFbHandle, asc.concat(asc.slice(0, -1).reverse()), 500);
+  });
+  document.getElementById('chStop').addEventListener('click', stopPlayback);
+
+  bindSeg('chType', k => { S.chords.type = k; save(); renderChords(); });
+  bindSeg('chRoot', k => { S.chords.root = k; save(); renderChords(); });
+  bindSeg('chLabels', k => { S.chords.labels = k; save(); renderChords(); });
+}
+
+function containmentChain(ch, rp, flats){
+  const isMinorFamily = ch.iv.includes(3) || ch.iv.length === 2;
+  const isMajorFamily = ch.iv.includes(4);
+  const chordPcs = new Set(ch.iv.map(i => (rp + i) % 12));
+  const root = S.chords.root;
+  function rowFor(scaleKey, label){
+    const sc = SCALES[scaleKey];
+    const ns = scaleNotes(root, sc.iv);
+    return '<div style="margin:8px 0"><div class="small muted" style="margin-bottom:4px">' + label + '</div><div class="chips">' +
+      ns.map((n, i) => {
+        const p = (rp + sc.iv[i]) % 12;
+        const inChord = chordPcs.has(p);
+        const cls = p === rp ? 'chip root' : (inChord ? 'chip tone' : 'chip dim');
+        return '<span class="' + cls + '">' + n + '<small>' + flatSign(sc.deg[i]) + '</small></span>';
+      }).join('') + '</div></div>';
+  }
+  let h = '<div class="card"><b>Where these notes live</b>';
+  h += '<p class="muted small" style="margin:4px 0 2px">Bright chips = chord tones. Faded chips = the other scale notes around them. Chord ⊂ pentatonic ⊂ full scale — smaller sets nest inside bigger ones.</p>';
+  if (isMinorFamily && ch.iv.includes(3)){
+    h += rowFor('minPent', '…inside ' + root + ' minor pentatonic:');
+    h += rowFor('natMinor', '…inside ' + root + ' natural minor:');
+  } else if (ch.iv.length === 2){
+    h += rowFor('minPent', '…inside ' + root + ' minor pentatonic (fits the major side too):');
+    h += rowFor('natMinor', '…inside ' + root + ' natural minor:');
+  } else if (isMajorFamily && !ch.iv.includes(10)){
+    h += rowFor('majPent', '…inside ' + root + ' major pentatonic:');
+    h += rowFor('major', '…inside ' + root + ' major scale:');
+  } else {
+    h += rowFor('major', 'vs. the ' + root + ' major scale:');
+    h += '<p class="small" style="margin:6px 0 0">The b7 pokes <b>outside</b> the plain major scale — that outside note is exactly the bluesy tension a dominant 7 is famous for.</p>';
+  }
+  h += '</div>';
+  return h;
+}
+/* ================= FEATURE 3: FRETBOARD TRAINER ================= */
+const TIERS = [
+  { label:'1 · E + A strings, frets 0–5', strings:['E','A'], maxFret:5, accidentals:false,
+    tip:'Start here: these two strings are where most rock basslines live.' },
+  { label:'2 · E + A strings, frets 0–12', strings:['E','A'], maxFret:12, accidentals:false,
+    tip:'Same strings, whole neck. Remember: fret 12 = same name as the open string.' },
+  { label:'3 · add D + G strings', strings:['E','A','D','G'], maxFret:12, accidentals:false,
+    tip:'Four strings now. The octave shape (+2 strings, +2 frets) is your shortcut.' },
+  { label:'4 · add the low B string', strings:['B','E','A','D','G'], maxFret:12, accidentals:false,
+    tip:'The trick: the B string mirrors the E string 5 frets up. E-string fret 0 (E) = B-string fret 5.' },
+  { label:'5 · everything + sharps/flats', strings:['B','E','A','D','G'], maxFret:12, accidentals:true,
+    tip:'Final boss. Remember sharps and flats share a fret (C# = Db).' }
+];
+const MODES = [
+  { k:'study',  label:'Study' },
+  { k:'find',   label:'Find the note' },
+  { k:'name',   label:'Name the note' },
+  { k:'octave', label:'Octave shape' }
+];
+let T = { q:null, session:{ score:0, streak:0, asked:0 }, lock:false, lastQ:'', timer:null };
+
+function tierFor(idx){
+  const t = TIERS[idx];
+  const avail = TUNINGS[S.tuning].names;
+  return Object.assign({}, t, { strings: t.strings.filter(s => avail.includes(s)) });
+}
+function stringIdxByName(name){ return TUNINGS[S.tuning].names.indexOf(name); }
+
+function trainerPool(tier){
+  const pool = [];
+  let strs = tier.strings;
+  if (S.trainer.focus && S.trainer.focus.length){
+    const focused = strs.filter(s => S.trainer.focus.includes(s));
+    if (focused.length) strs = focused;
+  }
+  for (const sn of strs){
+    const si = stringIdxByName(sn);
+    if (si < 0) continue;
+    for (let f = 0; f <= tier.maxFret; f++){
+      const midi = TUNINGS[S.tuning].midi[si] + f;
+      if (!tier.accidentals && !NATURALS.has(NAMES_S[pc(midi)])) continue;
+      pool.push({ si, f, midi, sn });
+    }
+  }
+  return pool;
+}
+function newQuestion(){
+  const tier = tierFor(S.trainer.tier);
+  const mode = S.trainer.mode;
+  let pool = trainerPool(tier);
+  if (mode === 'octave'){
+    const nStr = TUNINGS[S.tuning].midi.length;
+    pool = pool.filter(p => p.si + 2 < nStr && p.f + 2 <= 12);
+  }
+  if (!pool.length){ T.q = null; return; }
+  // draw from a shuffled bag so every position comes up before repeats
+  const bagKey = mode + '|' + S.trainer.tier + '|' + S.tuning + '|' + (S.trainer.focus || []).join(',');
+  if (T.bagKey !== bagKey || !T.bag || !T.bag.length){
+    T.bagKey = bagKey;
+    T.bag = shuffle(pool.slice());
+    if (T.bag.length > 1 && (T.bag[0].sn + ':' + T.bag[0].f) === T.lastQ)
+      T.bag.push(T.bag.shift());
+  }
+  const p = T.bag.shift();
+  const q = { mode, si: p.si, f: p.f, midi: p.midi, sn: p.sn, name: NAMES_S[pc(p.midi)] };
+  T.lastQ = q.sn + ':' + q.f;
+  if (mode === 'name'){
+    const correct = tier.accidentals ? bothNames(q.midi) : q.name;
+    const opts = new Set([correct]);
+    const letters = tier.accidentals ? null : ['C','D','E','F','G','A','B'];
+    while (opts.size < 4){
+      let cand;
+      if (letters) cand = letters[Math.floor(Math.random() * 7)];
+      else cand = bothNames(Math.floor(Math.random() * 12));
+      opts.add(cand);
+    }
+    q.choices = shuffle([...opts]);
+    q.correctLabel = correct;
+  }
+  T.q = q;
+}
+function shuffle(a){
+  for (let i = a.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+/* A day-stamped roll-up of answers, so "am I better than last week" can be
+   answered with numbers instead of with a streak. Bounded to 60 days: that is
+   two week-on-week comparisons' worth and it keeps the store small. */
+function bumpDaily(stats, ok){
+  const daily = stats.daily || (stats.daily = {});
+  const k = todayKey();
+  const day = daily[k] || (daily[k] = { a:0, c:0 });
+  day.a++; if (ok) day.c++;
+  const keys = Object.keys(daily).sort();
+  while (keys.length > 60) delete daily[keys.shift()];
+}
+function recordAnswer(ok, q){
+  S.stats.answered++;
+  if (ok) S.stats.correct++;
+  bumpDaily(S.stats, ok);
+  const bs = S.stats.byString[q.sn] || (S.stats.byString[q.sn] = { a:0, c:0 });
+  bs.a++; if (ok) bs.c++;
+  if (!bs.recent) bs.recent = [];
+  bs.recent.push(ok ? 1 : 0);
+  if (bs.recent.length > 20) bs.recent.shift();
+  if (!S.stats.tierRecent) S.stats.tierRecent = {};
+  const tr = S.stats.tierRecent[S.trainer.tier] || (S.stats.tierRecent[S.trainer.tier] = []);
+  tr.push(ok ? 1 : 0);
+  if (tr.length > 20) tr.shift();
+  if (T.qStart){
+    if (!S.stats.speed) S.stats.speed = [];
+    S.stats.speed.push(Math.min(30, (Date.now() - T.qStart) / 1000));
+    if (S.stats.speed.length > 20) S.stats.speed.shift();
+  }
+  if (ok){
+    T.session.streak++;
+    T.session.score++;
+    if (T.session.streak > S.stats.bestStreak) S.stats.bestStreak = T.session.streak;
+  } else {
+    T.session.streak = 0;
+    const key = q.sn + ':' + q.f;
+    S.stats.heat[key] = (S.stats.heat[key] || 0) + 1;
+  }
+  T.session.asked++;
+  save();
+}
+
+let trainerFb = null;
+function renderTrainer(){
+  clearTimeout(T.timer);
+  const el = document.getElementById('tab-trainer');
+  const mode = S.trainer.mode;
+  const tier = tierFor(S.trainer.tier);
+
+  let h = '<h2>Fretboard trainer</h2>';
+  h += '<div class="card tight">';
+  h += '<div class="seg" id="trMode">' + MODES.map(m =>
+    '<button data-k="' + m.k + '" class="' + (m.k === mode ? 'on' : '') + '">' + m.label + '</button>').join('') + '</div>';
+  if (mode !== 'study'){
+    h += '<h3>Difficulty</h3><select id="trTier" style="width:100%">' + TIERS.map((t, i) => {
+      const locked = t.strings.includes('B') && S.tuning === 4;
+      const dis = locked && !t.accidentals; // tier 5 still works on 4-string (accidentals), tier 4 is pure B-string
+      return '<option value="' + i + '" ' + (i === S.trainer.tier ? 'selected' : '') + (dis ? ' disabled' : '') + '>' +
+        'Tier ' + t.label + (dis ? ' — needs the 5-string toggle' : '') + '</option>';
+    }).join('') + '</select>';
+    h += '<p class="muted small" style="margin:6px 2px 2px">' + tier.tip + '</p>';
+  }
+  h += '</div>';
+
+  // Both halves are tabs of one page now, so this is a switch, not a page load.
+  h += '<button class="card tight" data-live="tuner" style="display:block; width:100%; text-align:left; font:inherit; cursor:pointer; border-color:var(--line-hi)">' +
+    '<b style="color:var(--hl)">Live Trainer — play it, don\'t tap it</b>' +
+    '<div class="muted small" style="margin-top:2px">Plug your bass in (or use your phone\'s mic) and the app checks what you actually play: a <b>tuner</b>, single-note tests that feed the stats below, <b>ear training</b>, <b>Drills</b> that check you play a whole scale in the right order, and <b>Songs</b> — put on a tab player with the bass track muted, and the app follows the section roadmap and tells you how often you were on the root.</div></button>';
+
+  if (mode === 'study') h += studyHtml();
+  else h += quizShellHtml(mode, tier);
+
+  // stats
+  h += '<div id="statsWrap">' + statsHtml() + '</div>';
+  // theory cards in context
+  h += theoryCard('bcef');
+  if (mode === 'octave') h += theoryCard('octave');
+  if (S.trainer.tier >= 3 && S.tuning === 5) h += theoryCard('bstring');
+  if (S.trainer.tier >= 4) h += theoryCard('enharm');
+
+  el.innerHTML = h;
+
+  if (mode === 'study') mountStudy();
+  else { newQuestion(); mountQuiz(); }
+  mountHeatNeck();
+
+  bindSeg('trMode', k => { S.trainer.mode = k; save(); renderTrainer(); });
+  const tsel = document.getElementById('trTier');
+  if (tsel) tsel.addEventListener('change', () => {
+    S.trainer.tier = +tsel.value; S.trainer.focus = null; save(); renderTrainer();
+  });
+  const rst = document.getElementById('trReset');
+  if (rst) rst.addEventListener('click', trainerResetStats);
+}
+function trainerResetStats(){
+  if (confirm('Reset all trainer stats (score, accuracy, heatmap)?')){
+    S.stats = defaultState().stats; save(); renderTrainer();
+  }
+}
+
+/* ---------- study mode ---------- */
+function studyHtml(){
+  const st = S.trainer.study;
+  const names = TUNINGS[S.tuning].names;
+  let h = '<div class="card">';
+  h += '<p class="muted small" style="margin:0 0 6px">Look around, tap frets to hear them. When you feel ready, switch to a test mode above.</p>';
+  h += '<div class="row" style="margin-bottom:6px">';
+  h += '<div class="seg compact" id="stShow"><button data-k="1" class="' + (st.show ? 'on' : '') + '">Names on</button><button data-k="0" class="' + (!st.show ? 'on' : '') + '">Names hidden</button></div>';
+  h += '<div class="seg compact" id="stNat"><button data-k="1" class="' + (st.naturalsOnly ? 'on' : '') + '">Naturals only</button><button data-k="0" class="' + (!st.naturalsOnly ? 'on' : '') + '">All 12 notes</button></div>';
+  h += '</div>';
+  h += '<div class="row" style="margin-bottom:6px"><div class="seg compact" id="stFrets"><button data-k="5" class="' + ((st.maxFret || 12) === 5 ? 'on' : '') + '">Frets 0–5</button><button data-k="12" class="' + ((st.maxFret || 12) === 12 ? 'on' : '') + '">Frets 0–12</button></div></div>';
+  h += '<div class="seg compact" id="stStrings">' + names.slice().reverse().map(n => {
+    const on = !st.strings || st.strings.includes(n);
+    return '<button data-k="' + n + '" class="' + (on ? 'on' : '') + '">' + n + ' string</button>';
+  }).join('') + '</div>';
+  h += '<p class="muted small" style="margin:6px 2px 0">Tap the string buttons to show/hide strings — start with just E and A.</p>';
+  h += '<div id="studyFb" style="margin-top:8px"></div>' + fbCaption();
+  if (!st.show) h += '<p class="muted small">Names hidden — tap a fret to reveal + hear it. Self-quiz!</p>';
+  h += '</div>';
+  return h;
+}
+function mountStudy(){
+  const st = S.trainer.study;
+  const names = TUNINGS[S.tuning].names;
+  const active = st.strings ? st.strings.filter(n => names.includes(n)) : names.slice();
+  trainerFb = drawFretboard(document.getElementById('studyFb'), {
+    frets: st.maxFret || 12,
+    disable(si, f){ return !active.includes(names[si]); },
+    mark(si, f){
+      if (!active.includes(names[si])) return null;
+      const midi = TUNINGS[S.tuning].midi[si] + f;
+      const isNat = NATURALS.has(NAMES_S[pc(midi)]);
+      if (st.naturalsOnly && !isNat) return null;
+      if (!st.show) return null;
+      return { cls: isNat ? 'tone' : 'ghost', label: NAMES_S[pc(midi)] };
+    },
+    onTap(si, f, midi){
+      Audio_.note(midi);
+      if (!st.show){
+        const isNat = NATURALS.has(NAMES_S[pc(midi)]);
+        if (st.naturalsOnly && !isNat) return;
+        trainerFb.setNote(si, f, isNat ? 'tone' : 'ghost', NAMES_S[pc(midi)]);
+        setTimeout(() => { try{ trainerFb.clearNote(si, f); }catch(e){} }, 1400);
+      }
+    }
+  });
+  bindSeg('stShow', k => { st.show = k === '1'; save(); renderTrainer(); });
+  bindSeg('stNat', k => { st.naturalsOnly = k === '1'; save(); renderTrainer(); });
+  bindSeg('stFrets', k => { st.maxFret = +k; save(); renderTrainer(); });
+  const ss = document.getElementById('stStrings');
+  ss.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+    let cur = st.strings ? st.strings.slice() : names.slice();
+    if (cur.includes(b.dataset.k)){
+      if (cur.length > 1) cur = cur.filter(x => x !== b.dataset.k);
+    } else cur.push(b.dataset.k);
+    st.strings = cur; save(); renderTrainer();
+  }));
+}
+
+/* ---------- quiz modes ---------- */
+function quizShellHtml(mode, tier){
+  let h = '<div class="card">';
+  h += '<div class="row between" style="margin-bottom:4px">';
+  h += '<span class="small muted">Session: <b id="qScore" style="color:var(--text)">0</b> pts · streak <b id="qStreak" style="color:var(--root)">0</b></span>';
+  h += '<button class="btn small ghost" id="qSkip">Skip →</button></div>';
+  if (tier.strings.length > 1){
+    const f = S.trainer.focus;
+    h += '<div class="row" style="margin-bottom:4px"><span class="small muted">Drill:</span><div class="seg compact" id="qFocus">' +
+      '<button data-k="" class="' + (!f || !f.length ? 'on' : '') + '">All strings</button>' +
+      tier.strings.map(s => '<button data-k="' + s + '" class="' + (f && f.includes(s) ? 'on' : '') + '">' + s + ' only</button>').join('') +
+      '</div></div>';
+  }
+  h += '<div class="quiz-q" id="qText"></div>';
+  h += '<div id="quizFb"></div>' + fbCaption();
+  h += '<div id="qChoices"></div>';
+  h += '<div class="feedback" id="qFeed"></div>';
+  h += '</div>';
+  return h;
+}
+function mountQuiz(){
+  drawQuiz();
+  const skip = document.getElementById('qSkip');
+  if (skip) skip.addEventListener('click', () => { newQuestion(); drawQuiz(); });
+  bindSeg('qFocus', k => { S.trainer.focus = k ? [k] : null; save(); renderTrainer(); });
+}
+function drawQuiz(){
+  clearTimeout(T.timer);
+  T.qStart = Date.now();
+  const q = T.q;
+  const tier = tierFor(S.trainer.tier);
+  const qText = document.getElementById('qText');
+  const qChoices = document.getElementById('qChoices');
+  const qFeed = document.getElementById('qFeed');
+  document.getElementById('qScore').textContent = T.session.score;
+  document.getElementById('qStreak').textContent = T.session.streak;
+  qFeed.textContent = ''; qFeed.className = 'feedback';
+  qChoices.innerHTML = '';
+  T.lock = false;
+  if (!q){
+    qText.innerHTML = 'No notes available at this tier — check your tuning toggle.';
+    document.getElementById('quizFb').innerHTML = '';
+    return;
+  }
+  const names = TUNINGS[S.tuning].names;
+  const frets = q.mode === 'find' ? tier.maxFret : (q.mode === 'octave' ? 12 : tier.maxFret);
+
+  if (q.mode === 'find'){
+    qText.innerHTML = 'Find <b>' + q.name + '</b> on the <b>' + q.sn + ' string</b>';
+    trainerFb = drawFretboard(document.getElementById('quizFb'), {
+      frets,
+      disable(si, f){ return si !== q.si; },
+      mark(){ return null; },
+      onTap(si, f, midi){ answerFind(si, f, midi); }
+    });
+  }
+  if (q.mode === 'name'){
+    qText.innerHTML = 'What note is the <b>marked fret</b>? <span class="muted small">(' + q.sn + ' string)</span>';
+    trainerFb = drawFretboard(document.getElementById('quizFb'), {
+      frets,
+      disable(si, f){ return !tier.strings.includes(names[si]); },
+      mark(si, f){ return (si === q.si && f === q.f) ? { cls:'asked', label:'?' } : null; },
+      onTap(si, f, midi){ Audio_.note(midi); }
+    });
+    qChoices.innerHTML = '<div class="choices">' + q.choices.map(c =>
+      '<button class="btn" data-c="' + c + '">' + c + '</button>').join('') + '</div>';
+    qChoices.querySelectorAll('button').forEach(b =>
+      b.addEventListener('click', () => answerName(b)));
+    trainerFb.scrollToFret(q.f);
+    Audio_.note(q.midi);
+  }
+  if (q.mode === 'octave'){
+    qText.innerHTML = 'This is <b>' + q.name + '</b>. Find the <b>same note one octave up</b>: 2 strings up + 2 frets up.<br><span class="muted small" style="font-weight:400">The question starts on the tier\'s strings — the answer lands 2 strings higher, so all strings are open for tapping.</span>';
+    trainerFb = drawFretboard(document.getElementById('quizFb'), {
+      frets,
+      mark(si, f){ return (si === q.si && f === q.f) ? { cls:'asked', label:q.name } : null; },
+      onTap(si, f, midi){ answerOctave(si, f, midi); }
+    });
+    trainerFb.scrollToFret(q.f);
+    Audio_.note(q.midi);
+  }
+}
+function afterAnswer(ok, revealFn){
+  const qFeed = document.getElementById('qFeed');
+  recordAnswer(ok, T.q);
+  document.getElementById('qScore').textContent = T.session.score;
+  document.getElementById('qStreak').textContent = T.session.streak;
+  if (ok){
+    qFeed.textContent = ['Nice!','Locked in.','Correct!','That\'s it!'][Math.floor(Math.random() * 4)];
+    qFeed.className = 'feedback ok';
+  } else {
+    qFeed.className = 'feedback no';
+    if (revealFn) revealFn(qFeed);
+    qFeed.scrollIntoView({ block:'nearest', behavior:'smooth' });
+  }
+  T.lock = true;
+  const wrap = document.getElementById('statsWrap');
+  if (wrap){
+    wrap.innerHTML = statsHtml();
+    mountHeatNeck();
+    const rst = document.getElementById('trReset');
+    if (rst) rst.addEventListener('click', trainerResetStats);
+  }
+  T.timer = setTimeout(() => { newQuestion(); drawQuiz(); }, ok ? 850 : 2100);
+}
+function answerFind(si, f, midi){
+  if (T.lock) return;
+  const q = T.q;
+  Audio_.note(midi);
+  const ok = pc(midi) === pc(q.midi);
+  if (ok){
+    trainerFb.setNote(si, f, 'good', q.name);
+    trainerFb.pulse(si, f);
+  } else {
+    trainerFb.setNote(si, f, 'bad', NAMES_S[pc(midi)]);
+  }
+  afterAnswer(ok, feed => {
+    feed.textContent = 'That was ' + bothNames(midi) + '. ' + q.name + ' is marked in green.';
+    // reveal every correct spot on that string
+    for (let fr = 0; fr <= tierFor(S.trainer.tier).maxFret; fr++){
+      if (pc(TUNINGS[S.tuning].midi[q.si] + fr) === pc(q.midi)) trainerFb.setNote(q.si, fr, 'good', q.name);
+    }
+  });
+}
+function answerName(btn){
+  if (T.lock) return;
+  const q = T.q;
+  const ok = btn.dataset.c === q.correctLabel;
+  btn.classList.add(ok ? 'good' : 'bad');
+  btn.textContent = (ok ? '✓ ' : '✕ ') + btn.textContent;
+  if (!ok){
+    const right = document.querySelector('#qChoices button[data-c="' + q.correctLabel + '"]');
+    if (right){ right.classList.add('good'); right.textContent = '✓ ' + right.textContent; }
+  }
+  trainerFb.setNote(q.si, q.f, ok ? 'good' : 'bad', q.correctLabel);
+  Audio_.note(q.midi);
+  afterAnswer(ok, feed => { feed.textContent = 'It\'s ' + q.correctLabel + ' — ' + q.sn + ' string, fret ' + q.f + '.'; });
+}
+function answerOctave(si, f, midi){
+  if (T.lock) return;
+  const q = T.q;
+  if (si === q.si && f === q.f) return; // tapped the given note
+  Audio_.note(midi);
+  const ok = pc(midi) === pc(q.midi) && midi > q.midi;
+  if (ok) trainerFb.setNote(si, f, 'good', q.name);
+  else trainerFb.setNote(si, f, 'bad', NAMES_S[pc(midi)]);
+  afterAnswer(ok, feed => {
+    feed.textContent = 'The shape: 2 strings up + 2 frets up (green).';
+    trainerFb.setNote(q.si + 2, q.f + 2, 'good', q.name);
+  });
+}
+
+/* ---------- stats ---------- */
+function statsHtml(){
+  const st = S.stats;
+  if (!st.answered){
+    return '<div class="card"><b class="t-title3">No answers yet</b>' +
+      '<div class="muted small" style="margin-top:2px">Pick a test mode above. Your accuracy, streak and a map of the frets you miss will build up here.</div></div>';
+  }
+  const acc = Math.round(100 * st.correct / st.answered);
+  const names = TUNINGS[S.tuning].names;
+
+  let h = '<div class="card"><b class="t-title3">Your progress</b> <span class="muted small">saved on this device</span>';
+  h += '<div class="statgrid">';
+  h += '<div class="stat"><b>' + acc + '<i>%</i></b><span>accuracy</span></div>';
+  h += '<div class="stat"><b>' + st.correct + '</b><span>correct</span></div>';
+  h += '<div class="stat"><b>' + st.bestStreak + '</b><span>best streak</span></div>';
+  if (st.speed && st.speed.length >= 5){
+    const avg = st.speed.reduce((a, b) => a + b, 0) / st.speed.length;
+    h += '<div class="stat"><b>' + avg.toFixed(1) + '<i>s</i></b><span>per answer</span></div>';
+  }
+  h += '</div>';
+
+  const tr = (st.tierRecent || {})[S.trainer.tier];
+  if (tr && tr.length >= 20 && S.trainer.tier < TIERS.length - 1 &&
+      tr.reduce((a, b) => a + b, 0) / tr.length >= 0.9){
+    h += '<div class="note-box good" style="margin-top:10px">You own this tier — your last 20 answers here are 90%+. Ready for tier ' + (S.trainer.tier + 2) + '?</div>';
+  }
+
+  // Per string: one bar, one number. (It used to state each figure three times.)
+  const rows = names.slice().reverse().filter(n => st.byString[n] && st.byString[n].a);
+  if (rows.length){
+    h += '<div class="t-eyebrow" style="margin:14px 0 6px">Accuracy by string</div>';
+    for (const n of rows){
+      const bs = st.byString[n];
+      const rec = bs.recent && bs.recent.length
+        ? Math.round(100 * bs.recent.reduce((a, b) => a + b, 0) / bs.recent.length)
+        : Math.round(100 * bs.c / bs.a);
+      const pass = bs.recent && bs.recent.length >= 20 && rec >= 90;
+      h += '<div class="sbar' + (n === names[0] ? ' is-lowest' : '') + '">' +
+        '<span class="sbar-name">' + n + '</span>' +
+        '<span class="sbar-track"><i style="width:' + rec + '%"></i></span>' +
+        '<span class="sbar-val">' + rec + '%' + (pass ? ' ✓' : '') + '</span></div>';
+    }
+    h += '<div class="muted small" style="margin-top:6px">Bars show your <b>last 20</b> answers per string — that\'s what the week 2 and 3 checkpoints look at.</div>';
+  }
+
+  // The misses belong on the instrument, not in a table of the same coordinates.
+  const heatKeys = Object.keys(st.heat).filter(k => st.heat[k] > 0);
+  if (heatKeys.length){
+    h += '<div class="t-eyebrow" style="margin:16px 0 4px">Frets you miss most</div>';
+    h += '<div id="heatNeck"></div>';
+    h += '<div class="muted small">Bigger, brighter marks = more misses there. Drill those spots.</div>';
+  }
+  h += '<div class="row" style="margin-top:14px"><button class="btn small ghost" id="trReset">Reset progress</button></div>';
+  h += '</div>';
+  return h;
+}
+
+/** Draw the mistake heatmap onto a read-scale neck. */
+function mountHeatNeck(){
+  const host = document.getElementById('heatNeck');
+  if (!host || !window.BassNeck) return;
+  const names = TUNINGS[S.tuning].names;
+  const worst = Math.max.apply(null, Object.keys(S.stats.heat).map(k => S.stats.heat[k]).concat([1]));
+  const markers = [];
+  for (const key in S.stats.heat){
+    const v = S.stats.heat[key];
+    if (!v) continue;
+    const parts = key.split(':');
+    const si = names.indexOf(parts[0]);
+    const fret = +parts[1];
+    if (si < 0 || isNaN(fret)) continue;
+    markers.push({ si, fret, kind:'heat', label:String(v), heat: v / worst });
+  }
+  if (!markers.length){ host.innerHTML = ''; return; }
+  // Frame the span that actually contains misses, so the worst one is never
+  // hidden behind a horizontal scroll.
+  const frets = markers.map(m => m.fret);
+  const lo = Math.max(0, Math.min.apply(null, frets) - 1);
+  const hi = Math.min(12, Math.max(Math.max.apply(null, frets) + 1, lo + 4));
+  BassNeck.render(host, {
+    strings: names, fromFret: lo <= 1 ? 0 : lo, toFret: hi, scale: readScale(), markers,
+    title:'The frets you miss most often',
+  });
+}
+/* ================= METRONOME ================= */
+const Metro = (() => {
+  let running = false, bpm = 60, beat = 0, nextTime = 0, timer = null;
+  function schedule(){
+    const c = Audio_.ensure();
+    while (nextTime < c.currentTime + 0.15){
+      Audio_.click(beat % 4 === 0, nextTime - c.currentTime);
+      const b = beat % 4, tt = nextTime;
+      setTimeout(() => flash(b), Math.max(0, (tt - c.currentTime) * 1000));
+      beat++; nextTime += 60 / bpm;
+    }
+  }
+  function flash(b){
+    document.querySelectorAll('.beatdots i').forEach((d, i) => d.classList.toggle('on', i === b));
+    const dot = document.getElementById('mbDot');
+    if (dot){ dot.classList.add('tick'); setTimeout(() => dot.classList.remove('tick'), 90); }
+  }
+  function start(){
+    const c = Audio_.ensure();
+    beat = 0; nextTime = c.currentTime + 0.1; running = true;
+    clearInterval(timer); timer = setInterval(schedule, 30);
+    ui();
+  }
+  function stop(){
+    running = false; clearInterval(timer); timer = null;
+    document.querySelectorAll('.beatdots i').forEach(d => d.classList.remove('on'));
+    ui();
+  }
+  function setBpm(v){
+    bpm = Math.max(40, Math.min(220, v));
+    ui();
+  }
+  function ui(){
+    const bar = document.getElementById('metrobar');
+    bar.classList.toggle('on', running);
+    document.body.classList.toggle('metro-on', running);
+    document.getElementById('mbBpm').textContent = bpm + ' bpm';
+    const big = document.getElementById('bpmBig');
+    if (big) big.innerHTML = bpm + ' <small>bpm</small>';
+    const sld = document.getElementById('bpmSlider');
+    if (sld && +sld.value !== bpm) sld.value = bpm;
+    const btn = document.getElementById('metStart');
+    if (btn){
+      btn.textContent = running ? '■ Stop' : '▶ Start';
+      btn.classList.toggle('primary', !running);
+    }
+  }
+  return { start, stop, setBpm, ui, get running(){ return running; }, get bpm(){ return bpm; } };
+})();
+document.getElementById('mbStop').addEventListener('click', () => Metro.stop());
+
+function metronomeHtml(){
+  return '<div class="card" id="metCard"><b>Metronome</b>' +
+    '<div class="bpm-big" id="bpmBig">' + Metro.bpm + ' <small>bpm</small></div>' +
+    '<div class="beatdots"><i></i><i></i><i></i><i></i></div>' +
+    '<input type="range" id="bpmSlider" min="40" max="220" step="1" value="' + Metro.bpm + '">' +
+    '<div class="row" style="justify-content:center">' +
+    '<button class="btn" id="bpmM5">−5</button>' +
+    '<button class="btn primary" id="metStart" style="min-width:110px">▶ Start</button>' +
+    '<button class="btn" id="bpmP5">+5</button></div>' +
+    '<p class="muted small" style="text-align:center; margin:8px 0 0">First beat of 4 is accented. It keeps running while you use other tabs.</p></div>';
+}
+function mountMetronome(){
+  const sld = document.getElementById('bpmSlider');
+  if (!sld) return;
+  sld.addEventListener('input', () => Metro.setBpm(+sld.value));
+  document.getElementById('bpmM5').addEventListener('click', () => Metro.setBpm(Metro.bpm - 5));
+  document.getElementById('bpmP5').addEventListener('click', () => Metro.setBpm(Metro.bpm + 5));
+  document.getElementById('metStart').addEventListener('click', () => Metro.running ? Metro.stop() : Metro.start());
+  Metro.ui();
+}
+
+/* ================= FEATURE 5: PRACTICE PLAN ================= */
+const WEEKS = [
+  { n:1, title:'Hands, fretboard & first notes',
+    goal:'Get your hands working and learn where the notes are on E and A.',
+    items:[
+      { id:'w1t', cat:'First', min:2,
+        text:'Tune up. Play each open string and match it to the green zone. An out-of-tune bass makes everything below sound wrong — and teaches your ear the wrong thing.',
+        link:{ label:'Open the tuner', live:'tuner' } },
+      { id:'w1a', diagram:'chromatic', cat:'Warm-up', min:5,
+        text:'Chromatic 1-2-3-4: one finger per fret, up every string and back. Slow and clean beats fast and sloppy.', met:60 },
+      { id:'w1b', cat:'Fretboard', min:5,
+        text:'Note names on the E and A strings, frets 0–5. Study first, then try a few rounds of "Find the note".',
+        link:{ label:'Open note trainer (E+A, 0–5)', spec:{ tab:'trainer', trainer:{ tier:0, mode:'study', focus:null, study:{ show:true, strings:['E','A'], naturalsOnly:true, maxFret:5 } } } } },
+      { id:'w1c', diagram:'floatingThumb', cat:'Technique', min:8,
+        text:'Alternate index and middle on the open E, one note per click. Rest your thumb on the B string so it stays silent.', met:60 },
+      { id:'w1d', diagram:'plucking', cat:'Music', min:10,
+        text:'Groove on one note: open E, one note per click, every note dead on the beat. Boring is the point — that steady pulse is the TNT verse.', met:60 }
+    ],
+    checkpoints:[
+      { id:'w1cp0', text:'Chromatic warmup is clean at 60 bpm (no buzzes, one finger per fret)' },
+      { id:'w1cp1', text:'I can name any note on E or A, frets 0–5, in under 2 seconds ("avg answer" in trainer stats helps check this)' },
+      { id:'w1cp2', text:'My thumb mutes the B string without me thinking about it' }
+    ],
+    theory:['fretHalfStep','bcef'] },
+  { n:2, title:'Eighth notes + E minor pentatonic',
+    goal:'Lock in eighth notes and memorize the most important scale in rock.',
+    items:[
+      { id:'w2a', diagram:'chromatic', cat:'Warm-up', min:5,
+        text:'Chromatic 1-2-3-4 on all strings. Push to 65 bpm if yesterday was clean.', met:65 },
+      { id:'w2b', cat:'Scales', min:5,
+        text:'E minor pentatonic, open position: E G A B D. Play it up and down slowly until your fingers know it in both directions. Use "Play scale" to check yourself.',
+        link:{ label:'Open E minor pentatonic', spec:{ tab:'scales', scales:{ root:'E', type:'minPent', view:'open', labels:'names' } } },
+        link2:{ label:'Then check it in Drills', live:'drill' } },
+      { id:'w2c', diagram:'eighthNotes', cat:'Technique', min:10,
+        text:'Eighth notes on the open E: two notes per click, strict index-middle alternation. Every 4 beats, switch to another pentatonic note without breaking the rhythm.', met:65 },
+      { id:'w2d', cat:'Music', min:10,
+        text:'Loop E → G → A, eighth notes, 4 beats each. Smooth switches matter more than speed.', met:65 },
+      { id:'w2e', cat:'Bonus', min:5,
+        text:'Note trainer: "Find the note" on E + A naturals. Use the "E only" drill button to bank 20 E-string answers at 90%+.',
+        link:{ label:'Find the note (tier 1)', spec:{ tab:'trainer', trainer:{ tier:0, mode:'find', focus:null } } } }
+    ],
+    checkpoints:[
+      { id:'w2cp0', text:'2 minutes of clean, even eighth notes at 70 bpm' },
+      { id:'w2cp1', text:'E minor pentatonic memorized, up AND down, without looking' },
+      { id:'w2cp2', text:'Over 90% on my last 20 E-string answers in the trainer (see "Your stats")' }
+    ],
+    theory:['rootsJob','octave'] },
+  { n:3, title:'First song: T.N.T.',
+    goal:'Everything so far becomes a real AC/DC song.',
+    items:[
+      { id:'w3a', cat:'Warm-up', min:5,
+        text:'Chromatic warmup at 70 bpm, or E minor pentatonic up and down twice.', met:70 },
+      { id:'w3b', cat:'Scales', min:5,
+        text:'The MOVEABLE pentatonic box. On your 5-string, the root E sits on the B string at fret 5 — the box anchors there. Same note recipe as the open position, packed into one closed shape with no open strings, so you can slide it anywhere.',
+        note4:'On a 4-string, E\'s box anchors at fret 12 — or practice the identical shape as A minor pentatonic at fret 5.',
+        link:{ label:'Open the moveable box', spec:{ tab:'scales', scales:{ root:'E', type:'minPent', view:'box', labels:'names' } } },
+        link2:{ label:'Then check it in Drills', live:'drill' } },
+      { id:'w3c', diagram:'tntRoots', cat:'Technique', min:10,
+        text:'TNT chorus moves: roots E → A → G as eighth notes, 4 beats each. All three live in E minor pentatonic.', met:70 },
+      { id:'w3d', cat:'Music', min:10,
+        text:'T.N.T.: verse = steady eighth notes on E (palm-relaxed, locked to click). Chorus = the E→A→G shifts. Loop verse → chorus. Full speed is ~126 bpm — start at 70 and work up.',
+        link:{ label:'TNT tab — mute the bass track, slow it down ↗', href:'https://www.songsterr.com/a/wsa/acdc-tnt-bass-tab-s407' },
+        link2:{ label:'Then let the app listen while you play it', live:'songs' } },
+      { id:'w3e', cat:'Bonus', min:5,
+        text:'Note trainer: "Find the note" focused on the A string only. Get your last 20 answers above 90%.',
+        link:{ label:'Find the note (A string)', spec:{ tab:'trainer', trainer:{ tier:1, mode:'find', focus:['A'] } } } }
+    ],
+    checkpoints:[
+      { id:'w3cp0', text:'TNT verse + chorus at full speed, locked to the beat' },
+      { id:'w3cp1', text:'Moveable box shape playable from fret 5 without looking at a diagram' },
+      { id:'w3cp2', text:'Over 90% on my last 20 A-string answers in the trainer (see "Your stats")' }
+    ],
+    theory:['relative'] }
+];
+
+/* ================= THIS WEEK — the three stores, joined =================
+   This page owns bassTheoryTrainer.v1. Drills and Songs each keep their own
+   key, and nothing ever read all three, so a week of real playing showed up
+   here as a self-reported streak. This is the one place they are joined — and
+   they are read DEFENSIVELY, because they are written by another page and can
+   be absent, half-written, or not even the right shape. */
+const DRILL_KEY = 'bassTrainer.drills.v1';
+const SONG_KEY = 'bassTrainer.songs.v1';
+function readStore(key){
+  try{
+    const raw = localStorage.getItem(key);
+    if (!raw) return {};
+    const v = JSON.parse(raw);
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
+    return v;
+  }catch(e){ return {}; }
+}
+function storeItems(key){
+  const all = readStore(key);
+  return Object.keys(all).map(k => all[k]).filter(x => x && typeof x === 'object' && !Array.isArray(x));
+}
+/** A local-date key `days` before today, in the same format as todayKey(). */
+function isoBack(days){
+  const d = new Date(todayKey() + 'T12:00:00');
+  d.setDate(d.getDate() - days);
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+/** Would this drill attempt bank a mastery day? Asked of the engine, not re-derived. */
+function banksMasteryDay(a){
+  return !!(a && a.cold && a.direction !== 'down' && window.BassDrill &&
+            BassDrill.masteryOf([a]) !== 'new');
+}
+function drillRollup(){
+  const today = todayKey(), wk = isoBack(6), prevFrom = isoBack(13), prevTo = isoBack(7);
+  const out = { total:0, due:0, mastered:0, runs:0, runsPrev:0, banked:0, bankedPrev:0, nextDue:null };
+  for (const it of storeItems(DRILL_KEY)){
+    out.total++;
+    const due = typeof it.due === 'string' ? it.due : null;
+    if (!due || due <= today) out.due++;
+    else if (!out.nextDue || due < out.nextDue) out.nextDue = due;
+    const attempts = Array.isArray(it.attempts) ? it.attempts.filter(a => a && typeof a === 'object') : [];
+    const ascending = attempts.filter(a => a.direction !== 'down');
+    if (window.BassDrill && BassDrill.masteryOf(ascending) === 'mastered') out.mastered++;
+    const bankedNow = {}, bankedThen = {};
+    for (const a of attempts){
+      const d = typeof a.date === 'string' ? a.date : null;
+      if (!d) continue;
+      const inWeek = d >= wk && d <= today, inPrev = d >= prevFrom && d <= prevTo;
+      if (inWeek) out.runs++; else if (inPrev) out.runsPrev++;
+      if (!banksMasteryDay(a)) continue;
+      if (inWeek) bankedNow[d] = 1; else if (inPrev) bankedThen[d] = 1;
+    }
+    out.banked += Object.keys(bankedNow).length;
+    out.bankedPrev += Object.keys(bankedThen).length;
+  }
+  return out;
+}
+function songRollup(){
+  const today = todayKey(), wk = isoBack(6);
+  const out = { songs:0, plays:0, best:0, bestId:null, bestFull:true, bestSections:0, bestOf:0, thisWeek:0 };
+  for (const rec of storeItems(SONG_KEY)){
+    const plays = Number(rec.plays) || 0;
+    if (plays > 0){ out.songs++; out.plays += plays; }
+    const acc = Number(rec.bestAccuracy) || 0;
+    if (acc > out.best){
+      out.best = Math.min(1, acc); out.bestId = rec.id;
+      out.bestFull = rec.bestFull !== false;
+      out.bestSections = Number(rec.bestSections) || 0;
+      out.bestOf = Number(rec.bestOf) || 0;
+    }
+    if (typeof rec.lastPlayed === 'string' && rec.lastPlayed >= wk && rec.lastPlayed <= today) out.thisWeek++;
+  }
+  return out;
+}
+function songTitle(id){
+  const list = (window.BassSongs && BassSongs.SONGS) || [];
+  const hit = list.filter(s => s.id === id)[0];
+  return hit ? hit.title : String(id || 'a song');
+}
+/** Answers inside a date window, from the day-stamped roll-up both apps write. */
+function quizWindow(fromISO, toISO){
+  const daily = (S.stats && S.stats.daily && typeof S.stats.daily === 'object') ? S.stats.daily : {};
+  let a = 0, c = 0;
+  for (const d in daily){
+    if (d < fromISO || d > toISO) continue;
+    const v = daily[d] || {};
+    a += Number(v.a) || 0; c += Number(v.c) || 0;
+  }
+  return { a, c, pct: a ? Math.round(100 * c / a) : null };
+}
+function practiceDaysBetween(fromISO, toISO){
+  const log = (S.practice && S.practice.log) || {};
+  return Object.keys(log).filter(d =>
+    d >= fromISO && d <= toISO && ((log[d] && log[d].items || []).length > 0)).length;
+}
+const trendWord = (now, before) => now > before ? 'up from' : now < before ? 'down from' : 'level with';
+function thisWeekHtml(){
+  const today = todayKey(), wk = isoBack(6), prevFrom = isoBack(13), prevTo = isoBack(7);
+  const dr = drillRollup(), sg = songRollup();
+  const q = quizWindow(wk, today), qPrev = quizWindow(prevFrom, prevTo);
+  const days = practiceDaysBetween(wk, today), daysPrev = practiceDaysBetween(prevFrom, prevTo);
+  const answered = Number(S.stats.answered) || 0;
+  const lifetime = answered ? Math.round(100 * (Number(S.stats.correct) || 0) / answered) : null;
+  // Drills and Songs are tabs of this page now: switch to them, don't reload.
+  const links = '<div class="row" style="margin-top:var(--sp3)">' +
+    '<button class="btn small" data-live="drill">↪ Open Drills</button>' +
+    '<button class="btn small" data-live="songs">↪ Open Songs</button>' +
+    '</div>';
+
+  // Nothing anywhere: a wall of zeros reads as failure on day one.
+  if (!dr.total && !sg.plays && !answered && !days){
+    return '<div class="card tight"><div class="t-eyebrow">This week</div>' +
+      '<div class="muted small" style="margin-top:2px">Nothing recorded yet in any of the three places that keep ' +
+      'records — the note quiz here, <b>Drills</b> and <b>Songs</b> in the Live Trainer. Play anything in any of them ' +
+      'and this card fills in, with last week beside this week as soon as there is a last week.</div>' + links + '</div>';
+  }
+
+  const tiles =
+    '<div class="stat"><b>' + dr.due + '</b><span>drills due now</span></div>' +
+    '<div class="stat"><b>' + dr.mastered + '</b><span>drills mastered</span></div>' +
+    '<div class="stat"><b>' + sg.plays + '</b><span>song play' + (sg.plays === 1 ? '' : 's') + '</span></div>' +
+    '<div class="stat"><b>' + days + '</b><span>days this week</span></div>';
+
+  const lines = [];
+  lines.push('<div class="muted small" style="margin-top:var(--sp3)"><b>Drills:</b> ' + (dr.total
+    ? dr.due + ' of ' + dr.total + ' due now, ' + dr.mastered + ' mastered, ' + dr.runs + ' run' +
+      (dr.runs === 1 ? '' : 's') + ' in the last 7 days' +
+      (!dr.due && dr.nextDue ? ' — next review ' + dr.nextDue : '')
+    : 'none yet — a drill checks the order you play a shape in, which the note quiz cannot.') + '</div>');
+  lines.push('<div class="muted small"><b>Songs:</b> ' + (sg.plays
+    ? sg.plays + ' play' + (sg.plays === 1 ? '' : 's') + ' across ' + sg.songs + ' song' + (sg.songs === 1 ? '' : 's') +
+      (sg.best
+        ? ' · best on the root <b>' + Math.round(sg.best * 100) + '%</b> (' + songTitle(sg.bestId) + ', ' +
+          (sg.bestFull ? 'full play' : sg.bestSections + ' of ' + sg.bestOf + ' sections') + ')'
+        : ' · no graded play yet — the app’s own click is the mode that can score you')
+    : 'none yet — play along with a record and it counts how often you were on the section’s root.') + '</div>');
+  lines.push('<div class="muted small"><b>Note quiz:</b> ' + (q.a
+    ? q.pct + '% of ' + q.a + ' answers in the last 7 days'
+    : (lifetime != null ? 'nothing this week · ' + lifetime + '% lifetime over ' + answered + ' answers'
+                        : 'nothing answered yet')) + '</div>');
+
+  // Am I better than last week? Only claims with data behind them get made.
+  const cmp = [];
+  if (q.pct != null && qPrev.pct != null)
+    cmp.push('Note-quiz accuracy <b>' + q.pct + '%</b>, ' + trendWord(q.pct, qPrev.pct) + ' <b>' + qPrev.pct + '%</b> the 7 days before');
+  if (dr.banked || dr.bankedPrev)
+    cmp.push('Mastery days banked <b>' + dr.banked + '</b>, ' + trendWord(dr.banked, dr.bankedPrev) + ' <b>' + dr.bankedPrev + '</b>');
+  if (dr.runs || dr.runsPrev)
+    cmp.push('Drill runs <b>' + dr.runs + '</b>, ' + trendWord(dr.runs, dr.runsPrev) + ' <b>' + dr.runsPrev + '</b>');
+  if (days || daysPrev)
+    cmp.push('Days practised <b>' + days + '</b>, ' + trendWord(days, daysPrev) + ' <b>' + daysPrev + '</b>');
+
+  const cmpHtml = cmp.length
+    ? '<div class="muted small" style="margin-top:var(--sp3)"><b>vs the week before</b>' +
+      cmp.map(c => '<div>' + c + '</div>').join('') + '</div>'
+    : '<div class="muted small" style="margin-top:var(--sp3)">This is the first week with anything in it, so there is ' +
+      'nothing to compare against yet — next week this line puts the two side by side.</div>';
+
+  return '<div class="card tight"><div class="t-eyebrow">This week</div>' +
+    '<div class="statgrid">' + tiles + '</div>' + lines.join('') + cmpHtml + links + '</div>';
+}
+
+function weekOf(n){ return WEEKS.find(w => w.n === n); }
+function dayLog(){
+  const k = todayKey();
+  const e = S.practice.log[k];
+  // A day whose record is missing OR the wrong shape both mean "nothing yet".
+  if (!e || typeof e !== 'object' || !Array.isArray(e.items))
+    S.practice.log[k] = { items:[], week:S.practice.week };
+  return S.practice.log[k];
+}
+function practiceStats(){
+  const dates = Object.keys(S.practice.log).filter(d =>
+    (((S.practice.log[d] || {}).items) || []).length > 0).sort();
+  const total = dates.length;
+  // streak: consecutive days ending today or yesterday
+  let streak = 0;
+  const oneDay = 86400000;
+  let cur = new Date(todayKey() + 'T12:00:00');
+  const set = new Set(dates);
+  const tk = todayKey();
+  if (!set.has(tk)) cur = new Date(cur.getTime() - oneDay);
+  while (true){
+    const key = cur.getFullYear() + '-' + String(cur.getMonth()+1).padStart(2,'0') + '-' + String(cur.getDate()).padStart(2,'0');
+    if (set.has(key)){ streak++; cur = new Date(cur.getTime() - oneDay); }
+    else break;
+  }
+  return { total, streak };
+}
+
+function renderPractice(){
+  const el = document.getElementById('tab-practice');
+  const wk = weekOf(S.practice.week);
+  const log = dayLog();
+  const ps = practiceStats();
+  const doneCount = wk.items.filter(i => log.items.includes(i.id)).length;
+  const pct = Math.round(100 * doneCount / wk.items.length);
+  const totalMin = wk.items.reduce((a, i) => a + i.min, 0);
+
+  let h = '<h2>Practice</h2>';
+  // Everything that keeps a record, in one place, at the top.
+  h += thisWeekHtml();
+  // streak/overview
+  if (ps.total === 0 && doneCount === 0){
+    h += '<div class="card tight"><b class="t-title3">Day 1 — welcome.</b>' +
+      '<div class="muted small" style="margin-top:2px">Work through the ' + wk.items.length + ' items below and you\'ve started. ' +
+      'Your streak begins today.</div></div>';
+  } else {
+    h += '<div class="card tight"><div class="statgrid">' +
+      '<div class="stat"><b>' + ps.streak + '</b><span>day streak</span></div>' +
+      '<div class="stat"><b>' + ps.total + '</b><span>days practiced</span></div>' +
+      '<div class="stat"><b>' + doneCount + '/' + wk.items.length + '</b><span>today</span></div>' +
+      '</div></div>';
+  }
+
+  // week picker
+  h += '<div class="weekpick">' + WEEKS.map(w => {
+    const cpsDone = w.checkpoints.every(c => S.practice.checkpoints[c.id]);
+    return '<button class="btn ' + (w.n === S.practice.week ? 'primary' : '') + '" data-wk="' + w.n + '">Week ' + w.n + (cpsDone ? ' ✓' : '') + '</button>';
+  }).join('') + '</div>';
+
+  // today's session
+  h += '<div class="card">';
+  h += '<div class="row between"><b>Week ' + wk.n + ': ' + wk.title + '</b><span class="ptime">' + totalMin + ' min</span></div>';
+  h += '<p class="muted small" style="margin:4px 0 4px">' + wk.goal + '</p>';
+  h += '<p class="muted small" style="margin:0">Daily shape: 5\' warm-up → 5\' fretboard/scales → 10\' technique → 10\' music. Check things off as you go — it resets each day.</p>';
+  h += '<div class="progressbar"><i style="width:' + pct + '%"></i></div>';
+  for (const it of wk.items){
+    const done = log.items.includes(it.id);
+    h += '<div class="pitem ' + (done ? 'done' : '') + '">';
+    h += '<input type="checkbox" data-item="' + it.id + '" ' + (done ? 'checked' : '') + ' aria-label="done">';
+    h += '<div class="ptext"><span class="pmain" data-toggle="' + it.id + '"><span class="pcat">' + it.cat + ' · ' + it.min + ' min</span><br>' + it.text +
+      (it.note4 && S.tuning === 4 ? '<br><span class="muted small">' + it.note4 + '</span>' : '') + '</span>';
+    if (it.diagram) h += '<div class="drill-host" data-diagram="' + it.diagram + '"></div>';
+    h += '<div class="plink row">';
+    if (it.met) h += '<button class="btn small" data-met="' + it.met + '"><svg viewBox="0 0 24 24" class="btn-ic"><path d="M5 19V7l12-3v12"/><circle cx="4" cy="19" r="2.4"/><circle cx="16" cy="16" r="2.4"/></svg>Metronome ' + it.met + '</button>';
+    // Both link slots render the same way. link2 was defined on two week items
+    // and rendered by nothing, so the plan's only routes into Drills and Songs
+    // existed in the data and never on the screen.
+    for (const key of ['link', 'link2']){
+      const ln = it[key];
+      if (!ln) continue;
+      if (ln.spec) h += '<button class="btn small" data-dl="' + encodeURIComponent(JSON.stringify(ln.spec)) + '">↪ ' + ln.label + '</button>';
+      // A Live mode is a tab of this same page now: switch, don't navigate.
+      else if (ln.live) h += '<button class="btn small" data-live="' + ln.live + '">↪ ' + ln.label + '</button>';
+      else if (ln.href) h += '<a class="btn small" style="text-decoration:none; display:inline-flex; align-items:center" href="' +
+        ln.href + '" target="_blank" rel="noopener">↗ ' + ln.label + '</a>';
+    }
+    h += '</div></div></div>';
+  }
+  if (doneCount === wk.items.length) h += '<p class="okmark" style="text-align:center; margin:10px 0 2px">Session complete — see you tomorrow.</p>';
+  h += '</div>';
+
+  // metronome
+  h += metronomeHtml();
+
+  // checkpoints
+  h += '<div class="card"><b>Week ' + wk.n + ' checkpoints</b>';
+  h += '<p class="muted small" style="margin:4px 0 6px">Check these honestly — they gate when you\'re ready for the next week. They stay checked (unlike the daily list).</p>';
+  for (const cp of wk.checkpoints){
+    const done = !!S.practice.checkpoints[cp.id];
+    h += '<div class="checkpoint' + (done ? ' is-done' : '') + '"><label class="chk"><input type="checkbox" data-cp="' + cp.id + '" ' + (done ? 'checked' : '') + '> <span>' + cp.text + '</span></label></div>';
+  }
+  h += '</div>';
+
+  // theory dose
+  const cards = wk.theory.filter(id => !S.practice.dismissed.includes(id));
+  if (cards.length){
+    h += '<h3>This week\'s theory dose</h3>';
+    for (const id of cards) h += theoryCard(id);
+  }
+
+  // report card
+  const w3 = weekOf(3);
+  if (w3.checkpoints.every(c => S.practice.checkpoints[c.id])){
+    h += '<div class="card" style="border-color:var(--good)"><b class="t-title3">3 weeks done — report to Claude</b>';
+    h += '<p class="muted small" style="margin:4px 0 6px">Copy this summary and paste it into a chat with Claude to get a personalized weeks 4–5 program.</p>';
+    h += '<div class="copybox" id="reportBox">' + reportText() + '</div>';
+    h += '<button class="btn primary" id="copyReport">Copy report</button>';
+    h += '</div>';
+  }
+
+  // restore dismissed tips
+  if (S.practice.dismissed.length){
+    h += '<div class="row" style="margin:8px 2px"><button class="btn small ghost" id="restoreTips">💡 Restore ' + S.practice.dismissed.length + ' dismissed theory tip' + (S.practice.dismissed.length > 1 ? 's' : '') + '</button></div>';
+  }
+
+  // resources
+  h += '<div class="card resource"><b>Resources</b><ul style="margin:8px 0 0; padding-left:18px">' +
+    '<li><a href="https://www.studybass.com/study-guide/" target="_blank" rel="noopener">StudyBass study guide</a> — structured free lessons, great theory grounding</li>' +
+    '<li><a href="https://www.talkingbass.net/lessonmap/" target="_blank" rel="noopener">TalkingBass lesson map</a> — huge free lesson index by topic</li>' +
+    '<li><a href="https://www.youtube.com/@BassBuzz" target="_blank" rel="noopener">BassBuzz (YouTube)</a> — start with “5 Beginner Bass Mistakes”</li>' +
+    '<li><a href="https://www.songsterr.com/a/wsa/acdc-tnt-bass-tab-s407" target="_blank" rel="noopener">Songsterr: T.N.T. bass tab</a> — scrolling tab with playback; the Plus tier mutes the bass track, slows the tempo and loops a section, which is the setup Songs mode assumes</li>' +
+    '<li><a href="https://bigbasstabs.com/" target="_blank" rel="noopener">BigBassTabs</a> — free bass tab library for your next songs</li>' +
+    '</ul></div>';
+
+  el.innerHTML = h;
+
+  // wire up
+  el.querySelectorAll('[data-wk]').forEach(b => b.addEventListener('click', () => {
+    S.practice.week = +b.dataset.wk; save(); renderPractice();
+  }));
+  function toggleItem(id, force){
+    const log2 = dayLog();
+    const on = force != null ? force : !log2.items.includes(id);
+    if (on){ if (!log2.items.includes(id)) log2.items.push(id); }
+    else log2.items = log2.items.filter(x => x !== id);
+    save(); renderPractice();
+  }
+  el.querySelectorAll('[data-item]').forEach(c => c.addEventListener('change', () => toggleItem(c.dataset.item, c.checked)));
+  el.querySelectorAll('.pmain').forEach(p => p.addEventListener('click', () => toggleItem(p.dataset.toggle)));
+  el.querySelectorAll('[data-cp]').forEach(c => c.addEventListener('change', () => {
+    S.practice.checkpoints[c.dataset.cp] = c.checked; save(); renderPractice();
+  }));
+  el.querySelectorAll('[data-met]').forEach(b => b.addEventListener('click', () => {
+    Metro.setBpm(+b.dataset.met); Metro.start();
+    const mc = document.getElementById('metCard');
+    if (mc) mc.scrollIntoView({ behavior:'smooth', block:'center' });
+  }));
+  el.querySelectorAll('[data-dl]').forEach(b => b.addEventListener('click', () => {
+    deepLink(JSON.parse(decodeURIComponent(b.dataset.dl)));
+  }));
+  el.querySelectorAll('.drill-host').forEach(hostEl => {
+    if (window.BassDiagrams) BassDiagrams.draw(hostEl.dataset.diagram, hostEl, TUNINGS[S.tuning].names);
+  });
+  const rt = document.getElementById('restoreTips');
+  if (rt) rt.addEventListener('click', () => { S.practice.dismissed = []; save(); renderPractice(); });
+  const cpBtn = document.getElementById('copyReport');
+  if (cpBtn) cpBtn.addEventListener('click', () => {
+    const txt = document.getElementById('reportBox').textContent;
+    (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(
+      () => { cpBtn.textContent = 'Copied'; setTimeout(() => cpBtn.textContent = 'Copy report', 1500); },
+      () => { /* fallback: select text */ const r = document.createRange(); r.selectNodeContents(document.getElementById('reportBox')); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); }
+    );
+  });
+  mountMetronome();
+}
+
+function reportText(){
+  const ps = practiceStats();
+  const st = S.stats;
+  const acc = st.answered ? Math.round(100 * st.correct / st.answered) : 0;
+  const perStr = Object.keys(st.byString).map(n => {
+    const s = st.byString[n];
+    return '  - ' + n + ' string: ' + Math.round(100 * s.c / s.a) + '% (' + s.c + '/' + s.a + ')';
+  }).join('\n');
+  const cps = WEEKS.map(w =>
+    'Week ' + w.n + ': ' + w.checkpoints.map(c => (S.practice.checkpoints[c.id] ? '✓' : '✗')).join(' ')
+  ).join('; ');
+  // The report used to state a 5-string bass whatever the toggle said.
+  const strings = TUNINGS[S.tuning].names.join('');
+  const rig = TUNINGS[S.tuning].names.length + '-string bass (' + strings + ')';
+  // Drills and Songs keep their own records; a report that omits them describes
+  // a third of the practice that actually happened.
+  const dr = drillRollup(), sg = songRollup();
+  const drLine = dr.total
+    ? 'Drills: ' + dr.total + ' shapes drilled, ' + dr.mastered + ' mastered (cold first run, in time with the click, two ' +
+      'separate days), ' + dr.due + ' due for review now, ' + dr.runs + ' run' + (dr.runs === 1 ? '' : 's') +
+      ' in the last 7 days\n'
+    : 'Drills: none run yet\n';
+  const sgLine = sg.plays
+    ? 'Songs (root roadmaps over a muted-bass tab): ' + sg.plays + ' plays across ' + sg.songs + ' songs' +
+      (sg.best ? ', best ' + Math.round(sg.best * 100) + '% on the section root (' + songTitle(sg.bestId) + ', ' +
+        (sg.bestFull ? 'whole roadmap' : sg.bestSections + ' of ' + sg.bestOf + ' sections') + ')' : ', none graded yet') + '\n'
+    : 'Songs (root roadmaps over a muted-bass tab): none played yet\n';
+  return 'Hi Claude! I just finished the 3-week beginner program in my Bass Theory Trainer app. Please design weeks 4-5 for me.\n\n' +
+    'My setup: ' + rig + ', goal = rock/metal, 20-30 min/day.\n' +
+    'Program completed: ' + cps + '\n' +
+    'Days practiced: ' + ps.total + ' (current streak ' + ps.streak + ')\n' +
+    'Note trainer: ' + acc + '% lifetime accuracy over ' + st.answered + ' questions, best streak ' + st.bestStreak + '\n' +
+    (perStr ? 'Per string:\n' + perStr + '\n' : '') +
+    drLine + sgLine +
+    'What I can do now: chromatic warmup @70bpm, clean eighth notes @70bpm, E minor pentatonic open + moveable box, TNT verse & chorus.\n' +
+    'Please give me: a weeks 4-5 plan (same 25-30 min daily shape), 1-2 next songs slightly harder than TNT, and the next theory concepts to learn.';
+}
+
+/* ================= BOOT ================= */
+function syncTuneToggle(){
+  document.querySelectorAll('#tuneToggle button').forEach(x =>
+    x.classList.toggle('on', +x.dataset.t === S.tuning));
+}
+
+let rzTimer = null, lastWide = window.matchMedia('(min-width:1000px)').matches;
+
+/** Wire this app up. The shell owns the nav and the hash, so it passes in the
+    router; nothing here decides which tab opens first. */
+function mount(opts){
+  if (opts && opts.navigate) navigate = opts.navigate;
+
+  document.getElementById('tuneToggle').addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    S.tuning = +b.dataset.t;
+    syncTuneToggle();
+    save();
+    stopPlayback();
+    render(currentTab);
+    /* One header for two apps: the Live tabs keep their own tuning control and
+       their own copy of the value, so tell them the neck changed or the two
+       will disagree the moment you switch. */
+    window.dispatchEvent(new CustomEvent('bass:tuning', { detail:{ from:'theory' } }));
+  });
+  syncTuneToggle();
+
+  // Deep links into a Live mode, wherever they are rendered.
+  document.querySelector('main').addEventListener('click', e => {
+    const b = e.target.closest('[data-live]');
+    if (b) navigate(b.dataset.live);
+  });
+
+  window.addEventListener('bass:tuning', e => {
+    if (e.detail && e.detail.from === 'theory') return;
+    S = loadState();
+    syncTuneToggle();
+    if (currentTab) render(currentTab);
+  });
+
+  /* Unlock audio on first touch (mobile requirement). Scoped to this app's own
+     tabs now that a Live mode's clicks land on the same body: only the
+     metronome and the scale player use this context, and spinning a second
+     AudioContext up alongside the Live half's analyser buys nothing but
+     contention. Hence no {once:true} — the listener waits for a touch that
+     actually belongs to a Learn tab. */
+  const unlockAudio = () => {
+    if (!currentTab) return;
+    Audio_.ensure();
+    document.body.removeEventListener('pointerdown', unlockAudio);
+  };
+  document.body.addEventListener('pointerdown', unlockAudio);
+
+  window.addEventListener('resize', () => {
+    clearTimeout(rzTimer);
+    rzTimer = setTimeout(() => {
+      const nowWide = window.matchMedia('(min-width:1000px)').matches;
+      if (nowWide !== lastWide){ lastWide = nowWide; if (currentTab) render(currentTab); }
+    }, 200);
+  });
+}
+
+window.BassTheory = { mount, showTab: show };
+
+/* ---- test seam ----
+   trainer/test/*.js and the scratchpad smoke script drive this app from page
+   scope: they read the live question (T.q), plant checkpoints in S and force a
+   re-render. Those were globals when this file was a <script> in the page.
+   Now that both apps share one document they cannot be, so the handful the
+   suites actually hold on to is published here deliberately. Accessors, not
+   copies: S is REASSIGNED on every tab switch (it is re-read from the store),
+   and a snapshot would hand the suite a state object that save() no longer
+   writes. */
+Object.defineProperty(window, 'S', { configurable:true, get:() => S, set:v => { S = v; } });
+Object.defineProperty(window, 'T', { configurable:true, get:() => T, set:v => { T = v; } });
+window.save = save;
+window.renderPractice = renderPractice;
+})();
