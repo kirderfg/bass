@@ -4,8 +4,8 @@
   "private": true,
   "description": "Bass Theory Trainer + Bass Live Trainer — self-contained web apps, no build step",
   "scripts": {
-    "test": "node --test 'trainer/test/core.test.js' 'trainer/test/neck.test.js'",
-    "test:watch": "node --test --watch 'trainer/test/core.test.js' 'trainer/test/neck.test.js'",
+    "test": "node --test 'trainer/test/core.test.js' 'trainer/test/neck.test.js' 'trainer/test/drill.test.js'",
+    "test:watch": "node --test --watch 'trainer/test/core.test.js' 'trainer/test/neck.test.js' 'trainer/test/drill.test.js'",
     "test:e2e": "node --test --test-concurrency=1 'trainer/test/integration.test.js'",
     "test:all": "npm test && npm run test:e2e"
   }
