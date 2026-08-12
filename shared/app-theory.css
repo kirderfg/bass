@@ -11,9 +11,9 @@
    here — see the reconciliation note at the top of that file.
    ============================================================ */
 
-/* Looking for the 5-str / 4-str toggle, the section fade, the nav or the
-   metronome-clearing body padding? index.html renders those, so they are in
-   theme.css under "app shell". */
+/* Looking for the section fade, the nav or the metronome-clearing body
+   padding? index.html renders those, so they are in theme.css under
+   "app shell". */
 
 /* ---------- legend under a fretboard ----------
    .chips / .chip themselves are theme.css's. */

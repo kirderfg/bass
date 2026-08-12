@@ -128,34 +128,33 @@ test('an answer banked in a Live mode is not clobbered by the Learn half', async
   } finally { await app.close(); }
 });
 
-test('the one tuning toggle in the header and the one in Live agree', async () => {
+test('the app is 5-string only: no tuning control, no 4-string copy anywhere', async () => {
+  // The 4-string mode is gone, and with it the header toggle and every piece
+  // of copy that existed to explain the other neck. The tuner simply names the
+  // one tuning there is.
   const app = await openApp(SILENT, '/index.html#tuner');
   const { page } = app;
   try {
     await page.click('#startBtn');
     await page.waitForSelector('#secTuner:not(.hidden)', { timeout: 5000 });
-    // The header toggle is visible from inside a Live mode, so the Live half
-    // has to follow it immediately, not on the next entry.
-    await page.click('#tuneToggle button[data-t="4"]');
-    await page.waitForTimeout(150);
-    assert.equal(await page.textContent('#tStrings'), 'E A D G',
-      'the tuner kept naming a 5-string neck');
-    // There is now exactly ONE tuning control — the header's. The Live half used
-    // to carry a second 5-str/4-str segment on the same screen, which is what
-    // this test was originally about; the Live card states the neck in words.
-    assert.match(await page.textContent('#tuningWords'), /4-string, E A D G/,
-      'the Live card is not naming the neck it is listening for');
     assert.equal(await page.evaluate(() =>
-      document.querySelectorAll('[data-t]').length), 2,
-      'there should be one two-button tuning control on the page, not two');
+      document.querySelectorAll('[data-t]').length), 0,
+      'a tuning control is still on the page');
+    assert.equal(await page.textContent('#tStrings'), 'B E A D G',
+      'the tuner should list the five strings, low B first');
 
-    await page.click('#tuneToggle button[data-t="5"]');
-    await page.waitForTimeout(150);
-    assert.equal(await page.evaluate(() =>
-      document.querySelector('#tuneToggle button.on').dataset.t), '5',
-      'the header toggle kept showing 4-str');
-    assert.match(await page.textContent('#tuningWords'), /5-string, B E A D G/,
-      'the Live card did not follow the header back to 5-string');
+    // All nine destinations, and not a word about 4-string on any of them.
+    const tabs = [['practice', '#tab-practice.on'], ['scales', '#tab-scales.on'],
+                  ['chords', '#tab-chords.on'], ['trainer', '#tab-trainer.on'],
+                  ['tuner', '#secTuner:not(.hidden)'], ['find', '#secFind:not(.hidden)'],
+                  ['echo', '#secEcho:not(.hidden)'], ['drill', '#secDrill:not(.hidden)'],
+                  ['songs', '#secSongs:not(.hidden)']];
+    for (const [dest, sel] of tabs) {
+      await page.click(`#tabbar button[data-tab="${dest}"]`);
+      await page.waitForSelector(sel, { timeout: 3000 });
+      const text = await page.evaluate(() => document.body.innerText);
+      assert.doesNotMatch(text, /4-str/i, dest + ' still mentions a 4-string mode');
+    }
     assert.deepEqual(app.errors, [], 'page errors');
   } finally { await app.close(); }
 });

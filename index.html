@@ -21,17 +21,13 @@
      Two apps used to live here as two pages: the Theory Trainer (this
      file) and the Live Trainer (trainer/index.html, now a redirect).
      They are two <script>s and two stylesheets now, each sealed in its
-     own scope, because both declare TUNINGS, SCALES, NAMES and more.
+     own scope, because both declare TUNING, SCALES, NAMES and more.
      This file is the shell: the chrome they share, the markup they
      render into, and the router at the bottom that decides which of
      the nine destinations has the screen.
      ================================================================== -->
 <header>
   <h1 class="t-title2">Bass <span>Trainer</span></h1>
-  <div class="tune-toggle" id="tuneToggle">
-    <button data-t="5" class="on">5-str</button>
-    <button data-t="4">4-str</button>
-  </div>
 </header>
 <main>
   <!-- ---------- Learn: no microphone, ever ---------- -->
@@ -390,12 +386,9 @@
     </section>
 
     <div class="card" style="padding:10px 12px">
-      <!-- This used to be a SECOND 5-str/4-str control, on the same screen as the
-           one in the header. One control, and here the strings it means. -->
       <div class="row" style="justify-content:space-between">
         <span class="small muted">Bass</span>
-        <span class="small muted">Listening for a <b id="tuningWords">5-string, B E A D G</b>
-          — change it with the toggle at the top of the page.</span>
+        <span class="small muted">Listening for a <b>5-string, B E A D G</b></span>
       </div>
       <p class="small muted" style="margin:8px 0 0" id="feedNote">Answers here feed the same progress stats as the Theory Trainer's practice checkpoints.</p>
     </div>

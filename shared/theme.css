@@ -199,23 +199,12 @@ header{
   position:sticky; top:0; z-index:30;
   background:linear-gradient(180deg,var(--s1) 80%,rgba(14,13,12,0));
   padding:10px 14px 8px;
-  display:flex; align-items:center; justify-content:space-between; gap:8px;
 }
 /* app1 wins: nowrap plus the 700px step up, against a flat 17px. The size
    itself comes from .t-title2 on the element. */
 header h1{margin:0; white-space:nowrap;}
 header h1 span{color:var(--root);}
 @media (min-width:700px){ header h1{font-size:21px;} }
-
-/* the 5-str / 4-str toggle, which lives in the header */
-.tune-toggle{
-  display:flex; border:1px solid var(--line); border-radius:var(--r-pill); overflow:hidden; flex:0 0 auto;
-}
-.tune-toggle button{
-  background:transparent; color:var(--t3); border:0; padding:8px 12px;
-  font-size:13px; font-weight:650; min-height:44px; cursor:pointer;
-}
-.tune-toggle button.on{background:var(--panel2); color:var(--text);}
 
 /* app1 wins: an 860px measure against 1080px. Below 1000px neither one is
    reached on any real viewport, and at 1000px and up the desktop block
@@ -480,13 +469,13 @@ nav.tabbar button.on{color:var(--root);}
   }
   nav.tabbar .rail-title span{ color:var(--root); }
   /* The rail carries the app's name at this width, so the header saying it again
-     is two titles on one screen. The header keeps the tuning toggle, which is
-     the one control both halves read, and it stays in the accessibility tree. */
+     is two titles on one screen. The h1 stays in the accessibility tree, and the
+     header collapses to its padding — a thin sticky gradient that fades the
+     content out at the top edge, not a visible bar. */
   body header h1{
     position:absolute; width:1px; height:1px; overflow:hidden;
     clip-path:inset(50%); white-space:nowrap;
   }
-  body header{ justify-content:flex-end; }
 
   /* prose stops running to 1000px; the instrument is free to */
   .card p, .card .muted, .t-body, .ptext{ max-width:66ch; }

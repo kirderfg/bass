@@ -6,8 +6,8 @@
 
    Lifted verbatim out of trainer/index.html when the two apps became
    one page. It is wrapped in an IIFE because both apps now share one
-   global scope and both declare TUNINGS, SCALES, NAMES, tuning and
-   pcOf — textual concatenation would have made one of them win at
+   global scope and both declare TUNING, SCALES, NAMES and pcOf —
+   textual concatenation would have made one of them win at
    random. The only thing published is window.BassLive, at the bottom.
    ================================================================== */
 (function(){
@@ -26,10 +26,7 @@ function saveStats(mutate){
   try { localStorage.setItem(LS_KEY, JSON.stringify(st)); } catch(e){}
 }
 
-const TUNINGS = {
-  5:{ midi:[23,28,33,38,43], names:['B','E','A','D','G'] },
-  4:{ midi:[28,33,38,43],    names:['E','A','D','G'] }
-};
+const TUNING = { midi:[23,28,33,38,43], names:['B','E','A','D','G'] };
 const NATURALS = new Set(['C','D','E','F','G','A','B']);
 const TIERS = [
   { label:'1 · E + A strings, frets 0–5', strings:['E','A'], maxFret:5, accidentals:false },
@@ -38,7 +35,6 @@ const TIERS = [
   { label:'4 · add the low B string', strings:['B','E','A','D','G'], maxFret:12, accidentals:false },
   { label:'5 · everything + sharps/flats', strings:['B','E','A','D','G'], maxFret:12, accidentals:true }
 ];
-let tuning = (loadShared().tuning === 4) ? 4 : 5;
 // Difficulty is shared with the Theory Trainer, so reaching tier 3 there
 // means starting at tier 3 here (and live answers land in that tier's stats).
 let tier = Math.min(TIERS.length - 1, Math.max(0, ((loadShared().trainer || {}).tier) | 0));
@@ -182,7 +178,7 @@ function tick(){
   // open E, and the E2 octave dot Songs draws sits +200 from the open D — and
   // feeding those to the drift test told a correctly-tuned bass it was 100 cents
   // sharp. So only readings close enough to BE an open string are counted.
-  const openMatch = pitch ? C.nearestOpenString(pitch.hz, TUNINGS[tuning].midi) : null;
+  const openMatch = pitch ? C.nearestOpenString(pitch.hz, TUNING.midi) : null;
   if (openMatch && Math.abs(openMatch.cents) <= DRIFT_MAX_CENTS){
     centsHistory.push({ cents:openMatch.cents, name:openMatch.name });
     if (centsHistory.length > 24) centsHistory.shift();
@@ -212,7 +208,7 @@ const tunedStrings = {};
 function renderTuneList(activeName){
   const host = document.getElementById('tuneList');
   if (!host) return;
-  const names = TUNINGS[tuning].names;
+  const names = TUNING.names;
   const html = names.map(n => {
     const done = tunedStrings[n];
     const cls = done ? 'is-done' : (n === activeName ? 'is-active' : '');
@@ -223,7 +219,7 @@ function renderTuneList(activeName){
 /* Every string green means tonight's "Tune up" is genuinely done, so say so and
    tick it off. The Learn half owns the item; this only reports the fact. */
 function reportTuned(){
-  const names = TUNINGS[tuning].names;
+  const names = TUNING.names;
   const all = names.every(n => tunedStrings[n]);
   const done = document.getElementById('tuneDone');
   if (done) done.classList.toggle('hidden', !all);
@@ -250,7 +246,7 @@ function renderTuner(pitch, reading){
   // Aim at the open string being tuned, not the nearest chromatic note: a
   // string 70 cents flat is closer to D#, and "tune DOWN to D#" is exactly
   // the wrong advice for someone tuning up to E.
-  const target = C.nearestOpenString(pitch.hz, TUNINGS[tuning].midi);
+  const target = C.nearestOpenString(pitch.hz, TUNING.midi);
   const n = target ? { name: target.name, octave: C.hzToNote(C.midiToHz(target.midi)).octave, cents: target.cents }
                    : chromatic;
   const inTune = Math.abs(Math.round(n.cents)) <= 15;  // match the number we display
@@ -279,19 +275,16 @@ let q = null, hintLevel = 0, qStart = 0, wrongThisQ = 0, lastProgressAt = 0, out
    which is the one the stored accuracy is built from. */
 const sess = { find:{ score:0, clean:0, streak:0, asked:0 }, echo:{ score:0, streak:0 } };
 
-function tierNow(){
-  const t = TIERS[tier];
-  return Object.assign({}, t, { strings: t.strings.filter(s => TUNINGS[tuning].names.includes(s)) });
-}
+function tierNow(){ return TIERS[tier]; }
 function pool(){
   const t = tierNow();
   let strs = t.strings;
   if (focus) strs = strs.filter(s => s === focus);
   const out = [];
   for (const sn of strs){
-    const si = TUNINGS[tuning].names.indexOf(sn);
+    const si = TUNING.names.indexOf(sn);
     for (let f = 0; f <= t.maxFret; f++){
-      const midi = TUNINGS[tuning].midi[si] + f;
+      const midi = TUNING.midi[si] + f;
       const name = C.NAMES[((midi % 12) + 12) % 12];
       if (!t.accidentals && !NATURALS.has(name)) continue;
       out.push({ si, f, midi, sn, name });
@@ -340,7 +333,7 @@ function showHint(){
 function drawBoard(opts){
   const t = tierNow(), host = document.getElementById('fBoard');
   if (!q){ host.innerHTML = ''; return; }
-  const names = TUNINGS[tuning].names;
+  const names = TUNING.names;
   const dimStrings = [];
   for (let si = 0; si < names.length; si++) if (!t.strings.includes(names[si])) dimStrings.push(si);
 
@@ -590,11 +583,8 @@ function setMode(m){
 }
 function renderTierUI(){
   const sel = document.getElementById('tierSel');
-  sel.innerHTML = TIERS.map((t,i) => {
-    const locked = t.strings.includes('B') && tuning === 4 && !t.accidentals;
-    return '<option value="' + i + '"' + (i===tier?' selected':'') + (locked?' disabled':'') + '>Tier ' +
-      t.label + (locked ? ' — needs 5-string' : '') + '</option>';
-  }).join('');
+  sel.innerHTML = TIERS.map((t,i) =>
+    '<option value="' + i + '"' + (i===tier?' selected':'') + '>Tier ' + t.label + '</option>').join('');
   const fs = document.getElementById('focusSeg');
   const strs = tierNow().strings;
   fs.innerHTML = '<button data-f="">All strings</button>' +
@@ -603,9 +593,9 @@ function renderTierUI(){
     b.classList.toggle('on', (b.dataset.f || null) === focus);
     b.addEventListener('click', () => { focus = b.dataset.f || null; renderTierUI(); newQuestion(); });
   });
-  document.getElementById('tStrings').textContent = TUNINGS[tuning].names.join(' ');
+  document.getElementById('tStrings').textContent = TUNING.names.join(' ');
   const t2 = document.getElementById('tStrings2');
-  if (t2) t2.textContent = TUNINGS[tuning].names.join(' ');
+  if (t2) t2.textContent = TUNING.names.join(' ');
 }
 
 /* One button, one click: it grants the mic AND starts what you came for. The
@@ -620,34 +610,6 @@ document.getElementById('startBtn').addEventListener('click', async () => {
 });
 document.getElementById('deviceSel').addEventListener('change', e => startListening(e.target.value));
 
-/** Everything that follows from a change of neck. Called from the toggle in
-    this app, from the header toggle in the other one, and on the way into a
-    Live mode when the two have got out of step. */
-function applyTuning(t){
-  tuning = t;
-  showTuningWords();
-  if (tuning === 4 && TIERS[tier].strings.includes('B') && !TIERS[tier].accidentals){ tier = 2; persistTier(); }
-  focus = null;
-  renderTierUI(); newQuestion();
-  // A drill is a fingering on a specific neck: changing necks ends the run.
-  if (typeof drillReset === 'function') drillReset();
-  // A song roadmap survives the change, but the board it drew does not.
-  SG.rootShown = null;
-  if (mode === 'songs') songTick();
-}
-/** Name the neck being listened to, since this card no longer sets it. */
-function showTuningWords(){
-  const el = document.getElementById('tuningWords');
-  if (el) el.textContent = tuning + '-string, ' + TUNINGS[tuning].names.join(' ');
-}
-/* The header's own toggle is visible from inside a Live mode, so this side has
-   to follow it immediately — not on the next entry, by which time the tuner
-   would have been naming the wrong strings for as long as you were looking. */
-window.addEventListener('bass:tuning', e => {
-  if (e.detail && e.detail.from === 'live') return;
-  const t = (loadShared().tuning === 4) ? 4 : 5;
-  if (t !== tuning) applyTuning(t);
-});
 document.getElementById('tierSel').addEventListener('change', e => {
   tier = +e.target.value; focus = null; persistTier(); renderTierUI(); newQuestion();
 });
@@ -663,7 +625,6 @@ document.getElementById('eShow').addEventListener('click', () => {
   v.className = 'verdict warn';
   playNote(echoTarget);
 });
-showTuningWords();
 renderTierUI();
 
 // Offer help when the player stops making progress — whether that is silence,
@@ -830,7 +791,7 @@ function metClick(at, accent){
 
 /* ---------------- building the targets ---------------- */
 function boxOptions(rootPc){
-  const T = TUNINGS[tuning], out = [];
+  const T = TUNING, out = [];
   out.push({ key:'open', from:0, to:5, label:'Open position · frets 0–5' });
   for (let si = 0; si < T.midi.length - 2; si++){
     let f = ((rootPc - pcOf(T.midi[si])) % 12 + 12) % 12;
@@ -843,7 +804,7 @@ function boxOptions(rootPc){
 }
 /** Stack the +2 strings / +2 frets shape as far as this neck allows. */
 function octaveStart(rootPc){
-  const T = TUNINGS[tuning];
+  const T = TUNING;
   let best = null;
   for (let si = 0; si < T.midi.length; si++){
     const base = ((rootPc - pcOf(T.midi[si])) % 12 + 12) % 12;
@@ -858,7 +819,7 @@ function octaveStart(rootPc){
   return best;
 }
 function buildTargets(cfg){
-  const T = TUNINGS[cfg.tuning];
+  const T = TUNING;
   let out;
   if (cfg.type === 'chromatic'){
     out = [];
@@ -880,13 +841,13 @@ function buildTargets(cfg){
   return cfg.direction === 'down' ? out.slice().reverse() : out;
 }
 function drillId(cfg){
-  const names = TUNINGS[cfg.tuning].names;
+  const names = TUNING.names;
   if (cfg.type === 'chromatic') return [cfg.tuning,'chromatic',names[cfg.si],cfg.from].join('|');
   if (cfg.type === 'octave')    return [cfg.tuning,'octave',C.NAMES[cfg.rootPc],names[cfg.si] + cfg.fret].join('|');
   return [cfg.tuning,'scale',cfg.scaleKey,C.NAMES[cfg.rootPc],cfg.from + '-' + cfg.to].join('|');
 }
 function drillLabel(cfg){
-  const names = TUNINGS[cfg.tuning].names;
+  const names = TUNING.names;
   if (cfg.type === 'chromatic')
     return 'Chromatic 1-2-3-4 · ' + names[cfg.si] + ' string, frets ' + cfg.from + '–' + (cfg.from + 3);
   if (cfg.type === 'octave')
@@ -945,24 +906,27 @@ function masteryLine(attempt){
 }
 
 /* ---------------- the picker ---------------- */
+/* cfg still carries `tuning: 5`, and drillId still embeds it: stored drill ids
+   were minted with it when the app had a 4-string mode, and dropping it now
+   would orphan every stored review date and mastery history. */
 function cfgFromPicker(){
-  const T = TUNINGS[tuning];
+  const T = TUNING;
   if (DP.type === 'chromatic'){
     const from = CHROM_STARTS.indexOf(+DP.winKey) >= 0 ? +DP.winKey : 1;
-    return { tuning, type:'chromatic', si:Math.min(DP.si, T.midi.length - 1), from, to:from + 3 };
+    return { tuning:5, type:'chromatic', si:Math.min(DP.si, T.midi.length - 1), from, to:from + 3 };
   }
   if (DP.type === 'octave'){
     const st = octaveStart(DP.rootPc);
     if (!st) return null;
-    return { tuning, type:'octave', rootPc:DP.rootPc, si:st.si, fret:st.fret, from:st.fret, to:Math.min(12, st.fret + 4) };
+    return { tuning:5, type:'octave', rootPc:DP.rootPc, si:st.si, fret:st.fret, from:st.fret, to:Math.min(12, st.fret + 4) };
   }
   const win = DP.wins.find(w => w.key === DP.winKey) || DP.wins[0];
   if (!win) return null;
-  return { tuning, type:'scale', scaleKey:DP.scaleKey, rootPc:DP.rootPc,
+  return { tuning:5, type:'scale', scaleKey:DP.scaleKey, rootPc:DP.rootPc,
     from:win.from, to:win.to, winLabel:win.label };
 }
 function renderDrillPicker(){
-  const T = TUNINGS[tuning];
+  const T = TUNING;
   document.querySelectorAll('#drTypeSeg button').forEach(b => b.classList.toggle('on', b.dataset.k === DP.type));
   document.querySelectorAll('#drVarSeg button').forEach(b => b.classList.toggle('on', b.dataset.v === DP.variant));
 
@@ -1019,7 +983,7 @@ function renderDrillPicker(){
   document.getElementById('drStartPicked').disabled = false;
   prev.innerHTML = '<b>' + drillLabel(cfg) + '</b><br>' + shown.length +
     ' notes, ascending — then the same shape coming down as a second rep:<br>' +
-    shown.map(x => targetLabel(x) + ' <span class="t-data">' + TUNINGS[tuning].names[x.si] + '/' + x.fret + '</span>').join(' → ') +
+    shown.map(x => targetLabel(x) + ' <span class="t-data">' + TUNING.names[x.si] + '/' + x.fret + '</span>').join(' → ') +
     '<br><span class="t-data">string/fret</span>' +
     // Three onsets is the minimum that says anything about timing, so a shorter
     // shape is told up front that it cannot bank a mastery day.
@@ -1154,7 +1118,7 @@ function showExpectedNote(){
   if (DR.phase !== 'running' || !DR.run) return;
   const want = DR.run.expected();
   if (!want) return;
-  const T = TUNINGS[tuning];
+  const T = TUNING;
   showStall('It is the <b>' + T.names[want.si] + '</b> string, <b>fret ' + want.fret + '</b> — ' +
     noteName(want.midi) + ' (the violet dot, flashing). Mute everything else and pluck just that.', true);
   DR.flash = true;
@@ -1371,7 +1335,7 @@ function drawPlan(){
   return { direction:'up', variant:DR.variant, repair:false, label:'Ascending again' + slice + ' →' };
 }
 function findPosition(midi, near){
-  const T = TUNINGS[tuning];
+  const T = TUNING;
   let best = null;
   for (let si = 0; si < T.midi.length; si++){
     const f = midi - T.midi[si];
@@ -1385,7 +1349,7 @@ function findPosition(midi, near){
 /* ---------------- drawing ---------------- */
 function drillBoard(){
   const host = document.getElementById('drBoard');
-  const T = TUNINGS[tuning], t = DR.targets;
+  const T = TUNING, t = DR.targets;
   if (!t.length){ host.innerHTML = ''; return; }
   const idx = DR.run ? DR.run.index() : 0;
   const RANK = { ghost:1, correct:2, highlight:3, wrong:4 };
@@ -1500,7 +1464,7 @@ function renderRun(){
 }
 function renderPanel(res, timingOk, attempt){
   const p = document.getElementById('drPanel');
-  const T = TUNINGS[tuning];
+  const T = TUNING;
   const t = DR.errTargets || DR.targets;
   if (!attempt.passed && DR.err){
     const e = DR.err, want = e.expected, diff = e.played - want.midi;
@@ -1579,29 +1543,14 @@ function drillRow(item, cta){
 }
 function allDrills(){
   const all = loadDrills();
-  // A drill is a fingering, so a 4-string one is not the same item as a 5-string one.
-  return Object.keys(all).map(k => all[k]).filter(x => x && x.cfg && x.cfg.tuning === tuning);
+  // Stored cfgs carry tuning:5 (see cfgFromPicker); anything else is a
+  // hand-edited store and is not something this app can run.
+  return Object.keys(all).map(k => all[k]).filter(x => x && x.cfg && x.cfg.tuning === 5);
 }
-/** Everything on this neck that review says is due today. */
+/** Everything that review says is due today. */
 function dueDrills(){
   const today = todayISO();
   return allDrills().filter(it => DE.isDue(it, today));
-}
-/** Drills that exist but belong to the OTHER neck, so a switch is not a wipe. */
-function otherNeckCount(){
-  const all = loadDrills();
-  return Object.keys(all).filter(k => {
-    const x = all[k];
-    return x && x.cfg && x.cfg.tuning !== tuning;
-  }).length;
-}
-function otherNeckLine(){
-  const n = otherNeckCount();
-  if (!n) return '';
-  const other = tuning === 4 ? '5-string' : '4-string';
-  return '<p class="t-caption">' + n + ' drill' + (n === 1 ? '' : 's') + ' belong' + (n === 1 ? 's' : '') +
-    ' to your <b>' + other + '</b> neck — a drill is a fingering, so it is kept per neck. Switch the bass back at the ' +
-    'bottom of the page to see ' + (n === 1 ? 'it' : 'them') + ' again.</p>';
 }
 /* The primary action must point at TODAY'S WORK: a review that is due beats
    whatever the picker happens to be showing. The picker stays reachable through
@@ -1629,20 +1578,17 @@ function renderDue(){
   const due = dueDrills();
   host.innerHTML = due.length
     ? due.map(it => drillRow(it, 'Run it')).join('')
-    : '<p class="t-caption">Nothing is due. Anything you drill today comes back tomorrow — that overnight gap is the one with evidence behind it.</p>' +
-      otherNeckLine();
+    : '<p class="t-caption">Nothing is due. Anything you drill today comes back tomorrow — that overnight gap is the one with evidence behind it.</p>';
 }
 function renderShelf(){
   const host = document.getElementById('drShelfBody');
   const all = allDrills().sort((a,b) => String(a.due).localeCompare(String(b.due)));
   host.innerHTML = all.length
-    ? all.map(it => drillRow(it, 'Open')).join('') + otherNeckLine() +
+    ? all.map(it => drillRow(it, 'Open')).join('') +
       '<p class="t-caption" style="margin-top:var(--sp3)">new → acquired → mastered. Mastered means the <b>ascending</b> shape, ' +
       'whole, played as the day’s <b>first</b> run, clean and in time <b>with the click on</b>, on two separate days — ' +
       'in-session fluency does not count, and neither do repair windows or skipped notes.</p>'
-    : otherNeckLine() +
-      '<p class="t-caption">' + (otherNeckCount() ? 'Nothing on this neck yet — pick' : 'No drills yet. Pick') +
-      ' a scale, a root and a place on the neck, then play the shape in order. ' +
+    : '<p class="t-caption">No drills yet. Pick a scale, a root and a place on the neck, then play the shape in order. ' +
       'Every finished run is scheduled for review, and what you keep missing gets its own short repair drill.</p>';
 }
 function openStored(id){
@@ -1754,7 +1700,6 @@ function drillReset(){
   DR.phase = 'idle'; DR.run = null; DR.item = null; DR.err = null;
   DR.repair = false; DR.repairTargets = null; DR.needFullRep = false; DR.targets = [];
   DR.plan = null; DR.skips = 0; DR.cfg = null;
-  DP.si = Math.min(DP.si, TUNINGS[tuning].names.length - 1);
   document.getElementById('drRun').classList.add('hidden');
   document.getElementById('drPick').classList.remove('hidden');
   renderDrillPicker(); renderDue(); renderShelf();
@@ -1862,7 +1807,7 @@ function renderSongList(){
    root lands where he has been taught to look for it. The octave is the
    +2 strings / +2 frets shape, which is why the same finger pattern works. */
 function songRootSpots(rootName){
-  const T = TUNINGS[tuning];
+  const T = TUNING;
   let rpc = C.NAMES.indexOf(rootName);
   if (rpc < 0) rpc = C.NAMES.indexOf(String(rootName).replace('b', '#'));
   if (rpc < 0) return null;
@@ -1883,7 +1828,7 @@ function songBoard(rootName){
   const host = document.getElementById('sgBoard');
   const spots = songRootSpots(rootName);
   if (!spots){ host.innerHTML = ''; return; }
-  const T = TUNINGS[tuning];
+  const T = TUNING;
   const markers = [{ si:spots.root.si, fret:spots.root.fret, kind:'root', label:rootName }];
   if (spots.octave) markers.push({ si:spots.octave.si, fret:spots.octave.fret, kind:'tone', label:rootName });
   const used = markers.map(m => m.si);
@@ -2315,10 +2260,6 @@ function showMode(m){
   if (!MODES[m]) return;
   if (!armed){ gateFor(m); return; }
   resume();
-  /* The other half's header carries a tuning toggle that is visible from here,
-     so the neck may have changed while this half was off-screen. */
-  const stored = (loadShared().tuning === 4) ? 4 : 5;
-  if (stored !== tuning) applyTuning(stored);
   setMode(m);
 }
 

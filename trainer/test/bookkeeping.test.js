@@ -123,11 +123,11 @@ test('the speed the week-1 checkpoint asks about is actually shown', async () =>
   } finally { await app.close(); }
 });
 
-test('switching neck does not leave the plan promising a review Drills cannot run', async () => {
-  /* A drill is a fingering, so the Drills tab only shows the ones for the neck
-     you are on — but the practice plan counted both. On 4-str it said "1 drill
-     due now" and put that review first on the night's list, and pressing it
-     landed on a Drills tab with nothing due. */
+test('a stored drill with cfg.tuning: 5 is still due on tonight\'s list', async () => {
+  /* Drill ids embed cfg.tuning, and every store written before the 4-string
+     mode was removed carries cfg.tuning: 5. Those records — review dates and
+     mastery history — must keep loading byte-for-byte, so the plan still puts
+     the stored review first on tonight's list. */
   const app = await openApp(SILENT, '/index.html', DESK);
   try {
     const { page } = app;
@@ -143,25 +143,13 @@ test('switching neck does not leave the plan promising a review Drills cannot ru
     }, DRILL_KEY);
     await page.reload();
     await page.waitForSelector('#tab-practice.on .pitem', { timeout: 4000 });
-    assert.equal(await page.evaluate(() =>
-      document.querySelector('#tab-practice .pitem [data-item]').dataset.item), 'rev',
-      'the 5-string drill should be due on the 5-string neck');
-
-    // Now the other neck. The 5-string drill is not runnable here.
-    await page.click('#tuneToggle button[data-t="4"]');
-    await page.waitForTimeout(300);
-    await page.click('#tabbar button[data-tab="practice"]');
-    await page.waitForSelector('#tab-practice.on .pitem', { timeout: 3000 });
     const text = await page.evaluate(() => document.getElementById('tab-practice').innerText);
     assert.equal(await page.evaluate(() =>
-      document.querySelector('#tab-practice .pitem [data-item]').dataset.item !== 'rev'), true,
-      'the plan still puts an unrunnable review first on the list');
-    assert.doesNotMatch(text, /1 drill due now/, 'the plan still claims a drill is due');
-    // And it says where they went, rather than looking like a deletion.
-    assert.match(text, /belong.? to the 5-string neck/,
-      'the drills simply vanished with no explanation');
-    assert.doesNotMatch(text, /Nothing recorded yet in any of the three places/,
-      '"nothing recorded" is untrue when a drill exists on the other neck');
+      document.querySelector('#tab-practice .pitem [data-item]').dataset.item), 'rev',
+      'the stored drill should still be recognised and due');
+    assert.match(text, /1\s+drill due now/, 'the plan should count the stored drill');
+    assert.match(text, /E minor pentatonic · Open position/,
+      'the review should be named, not just counted');
     assert.deepEqual(app.errors, [], 'page errors');
   } finally { await app.close(); }
 });

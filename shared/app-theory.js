@@ -6,7 +6,7 @@
 
    Lifted verbatim out of index.html when the two apps became one
    page. It is wrapped in an IIFE because both apps now share one
-   global scope and both declare TUNINGS, SCALES, NAMES, S and pcOf —
+   global scope and both declare TUNING, SCALES, NAMES, S and pcOf —
    textual concatenation would have made one of them win at random.
    The only thing published is window.BassTheory, at the bottom.
    ================================================================== */
@@ -23,11 +23,8 @@ const NATURALS = new Set(['C','D','E','F','G','A','B']);
    otherwise it reads as two different sets of twelve. */
 const ALL_ROOTS = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
 
-// open-string MIDI numbers, low to high
-const TUNINGS = {
-  5:{ midi:[23,28,33,38,43], names:['B','E','A','D','G'] },   // B0 E1 A1 D2 G2
-  4:{ midi:[28,33,38,43],    names:['E','A','D','G'] }
-};
+// open-string MIDI numbers, low to high — B0 E1 A1 D2 G2
+const TUNING = { midi:[23,28,33,38,43], names:['B','E','A','D','G'] };
 function pc(midi){ return ((midi % 12) + 12) % 12; }
 function noteName(midi, useFlats){ return (useFlats ? NAMES_F : NAMES_S)[pc(midi)]; }
 function bothNames(midi){
@@ -45,7 +42,6 @@ function freq(midi){ return 440 * Math.pow(2, (midi - 69) / 12); }
 const LS_KEY = 'bassTheoryTrainer.v1';
 function defaultState(){
   return {
-    tuning:5,
     scales:{ root:'E', type:'minPent', view:'open', labels:'names' },
     chords:{ root:'E', type:'power', labels:'names' },
     trainer:{
@@ -89,7 +85,6 @@ function loadState(){
 function normalizeState(st){
   const D = defaultState();
   const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
-  st.tuning = +st.tuning === 4 ? 4 : 5;
   st.trainer = isObj(st.trainer) ? st.trainer : D.trainer;
   st.trainer.study = isObj(st.trainer.study) ? st.trainer.study : D.trainer.study;
   st.scales = isObj(st.scales) ? st.scales : D.scales;
@@ -179,7 +174,7 @@ const Audio_ = (() => {
      disable(stringIdx, fret) -> bool,
      boxWindow: [lo, hi] or null  (frets outside get dimmed)
    }
-   stringIdx is index into TUNINGS[S.tuning].midi (0 = lowest string).
+   stringIdx is index into TUNING.midi (0 = lowest string).
    Rendered top row = HIGHEST string (like reading tab).
 ------------------------------------------------------- */
 /* Adapter onto the shared SVG neck renderer (shared/neck.js).
@@ -189,7 +184,7 @@ const KIND = { root:'root', tone:'tone', hl:'highlight', ghost:'ghost', asked:'a
                good:'correct', bad:'wrong', playing:'highlight' };
 
 function drawFretboard(el, cfg){
-  const tun = TUNINGS[S.tuning];
+  const tun = TUNING;
   const frets = cfg.frets != null ? cfg.frets : 12;
   const fromFret = cfg.fromFret || 0;
   const nStr = tun.midi.length;
@@ -265,9 +260,8 @@ function drawFretboard(el, cfg){
  * "Tap any fret to hear it" — an invitation to cheat the quiz being taken.
  */
 function fbCaption(tappable){
-  const low = S.tuning === 5 ? 'B' : 'E';
   return '<div class="muted small" style="margin:2px 4px 6px">Reads like tab: thin G string on top, thick low ' +
-    low + ' at the bottom.' + (tappable === false ? '' : ' Tap any fret to hear it.') + '</div>';
+    'B at the bottom.' + (tappable === false ? '' : ' Tap any fret to hear it.') + '</div>';
 }
 
 /* ---------------- theory cards ---------------- */
@@ -332,7 +326,6 @@ function show(tab){
      the store on the way in — otherwise the next save() here would write back
      a copy of the state from before those answers and quietly lose them. */
   S = loadState();
-  syncTuneToggle();
   currentTab = tab;
   TABS.forEach(t => {
     document.getElementById('tab-' + t).classList.toggle('on', t === tab);
@@ -390,7 +383,7 @@ function scaleNotes(rootName, iv){
 }
 function lowestStringRootFret(rootName){
   const rp = rootPc(rootName);
-  const open = TUNINGS[S.tuning].midi[0];
+  const open = TUNING.midi[0];
   for (let f = 1; f <= 12; f++) if (pc(open + f) === rp) return f;
   return 12; // pc(open) === rp -> octave at 12
 }
@@ -466,7 +459,7 @@ function renderScales(){
     ? 'Open position = frets 0–5, using open strings where you can. Home base for beginners.'
     : view === 'box'
     ? 'The moveable box, anchored where the root (' + S.scales.root + ') sits on your lowest string — fret ' + anchor + '. Slide the whole box to a new root and it\'s the same scale in a new key. Numbers on the dots = suggested finger (1=index, 2=middle, 3=ring, 4=pinky).' +
-      (anchor >= 10 ? ' Cramped this high up? Slide the identical shape lower — anchored at fret 5 it becomes ' + noteName(TUNINGS[S.tuning].midi[0] + 5, false) + ' ' + sc.name.toLowerCase() + '.' : '')
+      (anchor >= 10 ? ' Cramped this high up? Slide the identical shape lower — anchored at fret 5 it becomes ' + noteName(TUNING.midi[0] + 5, false) + ' ' + sc.name.toLowerCase() + '.' : '')
     : 'Every ' + S.scales.root + ' ' + sc.name.toLowerCase() + ' note, frets 0–12. Notice the patterns repeating.';
 
   /* Open position draws six fret columns, so on a desktop it was a ~450px picture
@@ -509,7 +502,7 @@ function renderScales(){
     boxWindow: boxWin,
     onTap(si, f, midi){ Audio_.note(midi); },
     mark(si, f){
-      const midi = TUNINGS[S.tuning].midi[si] + f;
+      const midi = TUNING.midi[si] + f;
       const p = pc(midi);
       if (!scalePcs.has(p)) return null;
       const isRoot = p === rp;
@@ -525,7 +518,7 @@ function renderScales(){
 
   // sequence for playback: in-view scale tones, one octave up from lowest root, then back
   function buildSeq(){
-    const tun = TUNINGS[S.tuning];
+    const tun = TUNING;
     const pos = [];
     const lo = boxWin ? boxWin[0] : 0, hi = boxWin ? boxWin[1] : frets;
     for (let si = 0; si < tun.midi.length; si++)
@@ -614,8 +607,8 @@ function renderChords(){
   if (S.chords.type === 'm7' || S.chords.type === 'dom7') h += theoryCard('flat7');
 
   // fretboard: chord tones everywhere, shape window anchored at root
-  const eIdx = S.tuning === 5 ? 1 : 0; // E string index
-  const eOpen = TUNINGS[S.tuning].midi[eIdx];
+  const eIdx = 1; // E string index (B is 0)
+  const eOpen = TUNING.midi[eIdx];
   let anchorE = null;
   for (let f = 0; f <= 12; f++) if (pc(eOpen + f) === rp){ anchorE = f; break; }
   h += '<div class="card">';
@@ -637,7 +630,7 @@ function renderChords(){
     frets:12,
     onTap(si, f, midi){ Audio_.note(midi); },
     mark(si, f){
-      const midi = TUNINGS[S.tuning].midi[si] + f;
+      const midi = TUNING.midi[si] + f;
       const p = pc(midi);
       if (!chordPcs.has(p)) return null;
       const isRoot = p === rp;
@@ -648,7 +641,7 @@ function renderChords(){
   if (anchorE > 4) chordFbHandle.scrollToFret(anchorE);
 
   document.getElementById('chPlay').addEventListener('click', () => {
-    const tun = TUNINGS[S.tuning];
+    const tun = TUNING;
     const pos = [];
     for (let si = 0; si < tun.midi.length; si++)
       for (let f = 0; f <= 12; f++){
@@ -727,12 +720,8 @@ const MODES = [
 ];
 let T = { q:null, session:{ score:0, streak:0, asked:0 }, lock:false, lastQ:'', timer:null };
 
-function tierFor(idx){
-  const t = TIERS[idx];
-  const avail = TUNINGS[S.tuning].names;
-  return Object.assign({}, t, { strings: t.strings.filter(s => avail.includes(s)) });
-}
-function stringIdxByName(name){ return TUNINGS[S.tuning].names.indexOf(name); }
+function tierFor(idx){ return TIERS[idx]; }
+function stringIdxByName(name){ return TUNING.names.indexOf(name); }
 
 function trainerPool(tier){
   const pool = [];
@@ -745,7 +734,7 @@ function trainerPool(tier){
     const si = stringIdxByName(sn);
     if (si < 0) continue;
     for (let f = 0; f <= tier.maxFret; f++){
-      const midi = TUNINGS[S.tuning].midi[si] + f;
+      const midi = TUNING.midi[si] + f;
       if (!tier.accidentals && !NATURALS.has(NAMES_S[pc(midi)])) continue;
       pool.push({ si, f, midi, sn });
     }
@@ -757,12 +746,12 @@ function newQuestion(){
   const mode = S.trainer.mode;
   let pool = trainerPool(tier);
   if (mode === 'octave'){
-    const nStr = TUNINGS[S.tuning].midi.length;
+    const nStr = TUNING.midi.length;
     pool = pool.filter(p => p.si + 2 < nStr && p.f + 2 <= 12);
   }
   if (!pool.length){ T.q = null; return; }
   // draw from a shuffled bag so every position comes up before repeats
-  const bagKey = mode + '|' + S.trainer.tier + '|' + S.tuning + '|' + (S.trainer.focus || []).join(',');
+  const bagKey = mode + '|' + S.trainer.tier + '|' + (S.trainer.focus || []).join(',');
   if (T.bagKey !== bagKey || !T.bag || !T.bag.length){
     T.bagKey = bagKey;
     T.bag = shuffle(pool.slice());
@@ -848,12 +837,9 @@ function renderTrainer(){
   h += '<div class="seg" id="trMode">' + MODES.map(m =>
     '<button data-k="' + m.k + '" class="' + (m.k === mode ? 'on' : '') + '">' + m.label + '</button>').join('') + '</div>';
   if (mode !== 'study'){
-    h += '<h3>Difficulty</h3><select id="trTier" style="width:100%">' + TIERS.map((t, i) => {
-      const locked = t.strings.includes('B') && S.tuning === 4;
-      const dis = locked && !t.accidentals; // tier 5 still works on 4-string (accidentals), tier 4 is pure B-string
-      return '<option value="' + i + '" ' + (i === S.trainer.tier ? 'selected' : '') + (dis ? ' disabled' : '') + '>' +
-        'Tier ' + t.label + (dis ? ' — needs the 5-string toggle' : '') + '</option>';
-    }).join('') + '</select>';
+    h += '<h3>Difficulty</h3><select id="trTier" style="width:100%">' + TIERS.map((t, i) =>
+      '<option value="' + i + '" ' + (i === S.trainer.tier ? 'selected' : '') + '>Tier ' + t.label + '</option>'
+    ).join('') + '</select>';
     h += '<p class="muted small" style="margin:6px 2px 2px">' + tier.tip + '</p>';
   }
   h += '</div>';
@@ -879,7 +865,7 @@ function renderTrainer(){
   // theory cards in context
   h += theoryCard('bcef');
   if (mode === 'octave') h += theoryCard('octave');
-  if (S.trainer.tier >= 3 && S.tuning === 5) h += theoryCard('bstring');
+  if (S.trainer.tier >= 3) h += theoryCard('bstring');
   if (S.trainer.tier >= 4) h += theoryCard('enharm');
 
   el.innerHTML = h;
@@ -905,7 +891,7 @@ function trainerResetStats(){
 /* ---------- study mode ---------- */
 function studyHtml(){
   const st = S.trainer.study;
-  const names = TUNINGS[S.tuning].names;
+  const names = TUNING.names;
   let h = '<div class="card">';
   h += '<p class="muted small" style="margin:0 0 6px">Look around, tap frets to hear them. When you feel ready, switch to a test mode above.</p>';
   h += '<div class="row" style="margin-bottom:6px">';
@@ -925,14 +911,14 @@ function studyHtml(){
 }
 function mountStudy(){
   const st = S.trainer.study;
-  const names = TUNINGS[S.tuning].names;
+  const names = TUNING.names;
   const active = st.strings ? st.strings.filter(n => names.includes(n)) : names.slice();
   trainerFb = drawFretboard(document.getElementById('studyFb'), {
     frets: st.maxFret || 12,
     disable(si, f){ return !active.includes(names[si]); },
     mark(si, f){
       if (!active.includes(names[si])) return null;
-      const midi = TUNINGS[S.tuning].midi[si] + f;
+      const midi = TUNING.midi[si] + f;
       const isNat = NATURALS.has(NAMES_S[pc(midi)]);
       if (st.naturalsOnly && !isNat) return null;
       if (!st.show) return null;
@@ -1002,11 +988,11 @@ function drawQuiz(){
   qChoices.innerHTML = '';
   T.lock = false;
   if (!q){
-    qText.innerHTML = 'No notes available at this tier — check your tuning toggle.';
+    qText.innerHTML = 'No notes available at this tier.';
     document.getElementById('quizFb').innerHTML = '';
     return;
   }
-  const names = TUNINGS[S.tuning].names;
+  const names = TUNING.names;
   const frets = q.mode === 'find' ? tier.maxFret : (q.mode === 'octave' ? 12 : tier.maxFret);
 
   if (q.mode === 'find'){
@@ -1083,7 +1069,7 @@ function answerFind(si, f, midi){
     feed.textContent = 'That was ' + bothNames(midi) + '. ' + q.name + ' is marked in green.';
     // reveal every correct spot on that string
     for (let fr = 0; fr <= tierFor(S.trainer.tier).maxFret; fr++){
-      if (pc(TUNINGS[S.tuning].midi[q.si] + fr) === pc(q.midi)) trainerFb.setNote(q.si, fr, 'good', q.name);
+      if (pc(TUNING.midi[q.si] + fr) === pc(q.midi)) trainerFb.setNote(q.si, fr, 'good', q.name);
     }
   });
 }
@@ -1123,7 +1109,7 @@ function statsHtml(){
       '<div class="muted small" style="margin-top:2px">Pick a test mode above. Your accuracy, streak and a map of the frets you miss will build up here.</div></div>';
   }
   const acc = Math.round(100 * st.correct / st.answered);
-  const names = TUNINGS[S.tuning].names;
+  const names = TUNING.names;
 
   let h = '<div class="card"><b class="t-title3">Your progress</b> <span class="muted small">saved on this device</span>';
   h += '<div class="statgrid">';
@@ -1191,7 +1177,7 @@ function statsHtml(){
 function mountHeatNeck(){
   const host = document.getElementById('heatNeck');
   if (!host || !window.BassNeck) return;
-  const names = TUNINGS[S.tuning].names;
+  const names = TUNING.names;
   const worst = Math.max.apply(null, Object.keys(S.stats.heat).map(k => S.stats.heat[k]).concat([1]));
   const markers = [];
   for (const key in S.stats.heat){
@@ -1342,7 +1328,6 @@ const WEEKS = [
         text:'Chromatic warmup at 70 bpm, or E minor pentatonic up and down twice.', met:70 },
       { id:'w3b', cat:'Scales', min:5,
         text:'The MOVEABLE pentatonic box. On your 5-string, the root E sits on the B string at fret 5 — the box anchors there. Same note recipe as the open position, packed into one closed shape with no open strings, so you can slide it anywhere.',
-        note4:'On a 4-string, E\'s box anchors at fret 12 — or practice the identical shape as A minor pentatonic at fret 5.',
         link:{ label:'Open the moveable box', spec:{ tab:'scales', scales:{ root:'E', type:'minPent', view:'box', labels:'names' } } },
         link2:{ label:'Then check it in Drills', live:'drill' } },
       { id:'w3c', diagram:'tntRoots', cat:'Technique', min:10,
@@ -1398,13 +1383,11 @@ function banksMasteryDay(a){
 function drillRollup(){
   const today = todayKey(), wk = isoBack(6), prevFrom = isoBack(13), prevTo = isoBack(7);
   const out = { total:0, due:0, mastered:0, runs:0, runsPrev:0, banked:0, bankedPrev:0,
-                nextDue:null, dueLabel:null, otherNeck:0 };
+                nextDue:null, dueLabel:null };
   for (const it of storeItems(DRILL_KEY)){
-    /* A drill is a FINGERING, so the Drills tab only ever shows the ones for the
-       neck you are on. This used to count both, so switching to 4-str left the
-       plan saying "1 drill due now" and putting a review first on tonight's list
-       that the Drills tab could no longer find. */
-    if (it.cfg && it.cfg.tuning && it.cfg.tuning !== S.tuning){ out.otherNeck++; continue; }
+    // Stored drills carry cfg.tuning:5 (the id embeds it). Anything else can
+    // only be a hand-edited store; Drills would not show it, so nor does this.
+    if (it.cfg && it.cfg.tuning && it.cfg.tuning !== 5) continue;
     out.total++;
     const due = typeof it.due === 'string' ? it.due : null;
     if (!due || due <= today){
@@ -1487,16 +1470,9 @@ function thisWeekHtml(){
   if (!dr.total && !sg.plays && !answered && !days){
     return '<div class="card tight"><div class="t-eyebrow">This week</div>' +
       '<div class="muted small" style="margin-top:2px">' +
-      // Not "nothing recorded" when drills exist on the other neck — that reads
-      // as a wipe. dr.total counts only the neck you are on, by design.
-      (dr.otherNeck
-        ? 'Nothing recorded yet <b>on this neck</b>. Your ' + dr.otherNeck + ' drill' +
-          (dr.otherNeck === 1 ? '' : 's') + ' belong' + (dr.otherNeck === 1 ? 's' : '') +
-          ' to the ' + (S.tuning === 4 ? '5-string' : '4-string') + ' neck — a drill is a fingering, so ' +
-          'switch the toggle back and they return.'
-        : 'Nothing recorded yet in any of the three places that keep records — the <b>Note quiz</b>, ' +
-          '<b>Drills</b> and <b>Songs</b>. Play anything in any of them and this card fills in, with ' +
-          'last week beside this week as soon as there is a last week.') +
+      'Nothing recorded yet in any of the three places that keep records — the <b>Note quiz</b>, ' +
+      '<b>Drills</b> and <b>Songs</b>. Play anything in any of them and this card fills in, with ' +
+      'last week beside this week as soon as there is a last week.' +
       '</div>' + links + '</div>';
   }
 
@@ -1513,11 +1489,7 @@ function thisWeekHtml(){
     ? dr.due + ' of ' + dr.total + ' due now, ' + dr.mastered + ' mastered, ' + dr.runs + ' run' +
       (dr.runs === 1 ? '' : 's') + ' in the last 7 days' +
       (!dr.due && dr.nextDue ? ' — next review ' + dr.nextDue : '')
-    : 'none on this neck yet — a drill checks the order you play a shape in, which the note quiz cannot.') +
-    // Otherwise switching neck looks like the drills were deleted.
-    (dr.otherNeck ? ' <span style="opacity:.85">(' + dr.otherNeck + ' more belong to the ' +
-      (S.tuning === 4 ? '5-string' : '4-string') + ' neck — a drill is a fingering, so it comes back when you ' +
-      'switch the toggle back.)</span>' : '') + '</div>');
+    : 'none yet — a drill checks the order you play a shape in, which the note quiz cannot.') + '</div>');
   lines.push('<div class="muted small"><b>Songs:</b> ' + (sg.plays
     ? sg.plays + ' play' + (sg.plays === 1 ? '' : 's') + ' across ' + sg.songs + ' song' + (sg.songs === 1 ? '' : 's') +
       (sg.best
@@ -1673,8 +1645,7 @@ function renderPractice(){
     const done = log.items.includes(it.id);
     h += '<div class="pitem ' + (done ? 'done' : '') + '">';
     h += '<input type="checkbox" data-item="' + it.id + '" ' + (done ? 'checked' : '') + ' aria-label="done">';
-    h += '<div class="ptext"><span class="pmain" data-toggle="' + it.id + '"><span class="pcat">' + it.cat + ' · ' + it.min + ' min</span><br>' + it.text +
-      (it.note4 && S.tuning === 4 ? '<br><span class="muted small">' + it.note4 + '</span>' : '') + '</span>';
+    h += '<div class="ptext"><span class="pmain" data-toggle="' + it.id + '"><span class="pcat">' + it.cat + ' · ' + it.min + ' min</span><br>' + it.text + '</span>';
     if (it.diagram) h += '<div class="drill-host" data-diagram="' + it.diagram + '"></div>';
     h += '<div class="plink row">';
     if (it.met) h += '<button class="btn small" data-met="' + it.met + '"><svg viewBox="0 0 24 24" class="btn-ic"><path d="M5 19V7l12-3v12"/><circle cx="4" cy="19" r="2.4"/><circle cx="16" cy="16" r="2.4"/></svg>Metronome ' + it.met + '</button>';
@@ -1769,7 +1740,7 @@ function renderPractice(){
     deepLink(JSON.parse(decodeURIComponent(b.dataset.dl)));
   }));
   el.querySelectorAll('.drill-host').forEach(hostEl => {
-    if (window.BassDiagrams) BassDiagrams.draw(hostEl.dataset.diagram, hostEl, TUNINGS[S.tuning].names);
+    if (window.BassDiagrams) BassDiagrams.draw(hostEl.dataset.diagram, hostEl, TUNING.names);
   });
   const rt = document.getElementById('restoreTips');
   if (rt) rt.addEventListener('click', () => { S.practice.dismissed = []; save(); renderPractice(); });
@@ -1795,9 +1766,7 @@ function reportText(){
   const cps = WEEKS.map(w =>
     'Week ' + w.n + ': ' + w.checkpoints.map(c => (S.practice.checkpoints[c.id] ? '✓' : '✗')).join(' ')
   ).join('; ');
-  // The report used to state a 5-string bass whatever the toggle said.
-  const strings = TUNINGS[S.tuning].names.join('');
-  const rig = TUNINGS[S.tuning].names.length + '-string bass (' + strings + ')';
+  const rig = '5-string bass (BEADG)';
   // Drills and Songs keep their own records; a report that omits them describes
   // a third of the practice that actually happened.
   const dr = drillRollup(), sg = songRollup();
@@ -1823,11 +1792,6 @@ function reportText(){
 }
 
 /* ================= BOOT ================= */
-function syncTuneToggle(){
-  document.querySelectorAll('#tuneToggle button').forEach(x =>
-    x.classList.toggle('on', +x.dataset.t === S.tuning));
-}
-
 let rzTimer = null, lastWide = window.matchMedia('(min-width:1000px)').matches;
 
 /** Wire this app up. The shell owns the nav and the hash, so it passes in the
@@ -1835,32 +1799,10 @@ let rzTimer = null, lastWide = window.matchMedia('(min-width:1000px)').matches;
 function mount(opts){
   if (opts && opts.navigate) navigate = opts.navigate;
 
-  document.getElementById('tuneToggle').addEventListener('click', e => {
-    const b = e.target.closest('button');
-    if (!b) return;
-    S.tuning = +b.dataset.t;
-    syncTuneToggle();
-    save();
-    stopPlayback();
-    render(currentTab);
-    /* One header for two apps: the Live tabs keep their own tuning control and
-       their own copy of the value, so tell them the neck changed or the two
-       will disagree the moment you switch. */
-    window.dispatchEvent(new CustomEvent('bass:tuning', { detail:{ from:'theory' } }));
-  });
-  syncTuneToggle();
-
   // Deep links into a Live mode, wherever they are rendered.
   document.querySelector('main').addEventListener('click', e => {
     const b = e.target.closest('[data-live]');
     if (b) navigate(b.dataset.live);
-  });
-
-  window.addEventListener('bass:tuning', e => {
-    if (e.detail && e.detail.from === 'theory') return;
-    S = loadState();
-    syncTuneToggle();
-    if (currentTab) render(currentTab);
   });
 
   /* Unlock audio on first touch (mobile requirement). Scoped to this app's own
