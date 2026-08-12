@@ -309,6 +309,7 @@ select{
           <button class="btn primary hidden" id="drGo">Again</button>
           <button class="btn hidden" id="drFix">Fix that bit</button>
           <button class="btn hidden" id="drTempoBtn">+8%</button>
+          <button class="btn hidden" id="drTempoDownBtn">−8%</button>
           <button class="btn ghost" id="drRestart">Restart this run</button>
           <button class="btn ghost" id="drBack">Change drill</button>
         </div>
@@ -326,12 +327,14 @@ select{
         <!-- the primary action stays above the fold: it is the whole point of this card -->
         <div class="row" style="margin-top:var(--sp3)">
           <button class="btn primary" id="drStart">Start the drill</button>
+          <button class="btn hidden" id="drStartPicked">Play what I picked instead</button>
           <span class="t-caption" style="margin-left:var(--sp3)">Dots say</span>
           <div class="seg compact" id="drLabelSeg" aria-label="What the dots say">
             <button data-k="names">Names</button>
             <button data-k="degrees">Degrees</button>
           </div>
         </div>
+        <p class="t-caption hidden" id="drDueCta" style="margin:var(--sp2) 0 0"></p>
         <p class="t-caption" id="drPreview" style="margin:var(--sp3) 0 0"></p>
         <p class="t-caption hidden" id="drLegendPick" style="margin:var(--sp1) 0 0"></p>
         <p class="t-caption hidden" id="drTargetNote" style="margin:var(--sp2) 0 0"></p>
@@ -533,7 +536,13 @@ function persistTier(){
 const A = { ctx:null, analyser:null, stream:null, buf:null, timer:null, rate:44100, level:0, muteUntil:0 };
 const DECIMATE = 4;
 let tracker = C.createTracker({ stableMs:150 });
+/* Readings used to decide whether the INSTRUMENT is out of tune: {cents, name}
+   per reading, so the warning can tell one flat string from a flat bass. */
 let centsHistory = [];
+/* How far a reading may sit from an open string and still be taken AS that open
+   string being tuned. A fret's worth is 100 cents, so 60 keeps genuinely slack
+   open strings in and keeps fretted notes (>=100 cents away) out. */
+const DRIFT_MAX_CENTS = 60;
 
 async function startListening(deviceId){
   const err = document.getElementById('gateErr');
@@ -626,17 +635,34 @@ function tick(){
   // Only measure drift against a note we KNOW was intended — the open string
   // being tuned. Chromatic cents wrap at ±50, so a badly flat string would
   // otherwise be reported as sharp of its neighbour.
+  //
+  // nearestOpenString matches within ±250 cents, which it has to: a badly slack
+  // string must still find ITSELF rather than its neighbour. But that window
+  // also swallows FRETTED notes — F at E-string fret 1 sits +100 cents from the
+  // open E, and the E2 octave dot Songs draws sits +200 from the open D — and
+  // feeding those to the drift test told a correctly-tuned bass it was 100 cents
+  // sharp. So only readings close enough to BE an open string are counted.
   const openMatch = pitch ? C.nearestOpenString(pitch.hz, TUNINGS[tuning].midi) : null;
-  if (openMatch){
-    centsHistory.push(openMatch.cents);
+  if (openMatch && Math.abs(openMatch.cents) <= DRIFT_MAX_CENTS){
+    centsHistory.push({ cents:openMatch.cents, name:openMatch.name });
     if (centsHistory.length > 24) centsHistory.shift();
-    const drift = C.tuningDrift(centsHistory.slice(-12));
+    const recent = centsHistory.slice(-12);
+    const drift = C.tuningDrift(recent.map(r => r.cents));
+    const strings = recent.map(r => r.name).filter((n,i,a) => a.indexOf(n) === i);
     const warn = document.getElementById('tuneWarn');
-    if (drift.drifting){
-      warn.textContent = 'Every note is landing ' + Math.abs(Math.round(drift.meanCents)) +
-        ' cents ' + (drift.meanCents < 0 ? 'flat (too low)' : 'sharp (too high)') +
-        ' — your bass itself may be out of tune. ' + (mode === 'tuner' ? 'Tune each open string to the green zone below.' : 'Open the Tuner tab.');
+    const dirWords = drift.meanCents < 0 ? 'flat (too low)' : 'sharp (too high)';
+    const off = Math.abs(Math.round(drift.meanCents));
+    const where = mode === 'tuner' ? 'Tune each open string to the green zone below.' : 'Open the Tuner tab.';
+    // Two different open strings agreeing is what makes it the INSTRUMENT. One
+    // string only ever gets to be a claim about that one string.
+    if (drift.drifting && strings.length >= 2){
+      warn.textContent = 'Every open string is landing ' + off + ' cents ' + dirWords +
+        ' (' + strings.join(', ') + ') — your bass itself may be out of tune. ' + where;
       warn.classList.toggle('hidden', mode === 'tuner');   // redundant on this screen
+    } else if (drift.drifting && recent.length >= 8){
+      warn.textContent = 'Your open ' + strings[0] + ' string is landing ' + off + ' cents ' + dirWords +
+        ' — that one string needs tuning. ' + where;
+      warn.classList.toggle('hidden', mode === 'tuner');
     } else warn.classList.add('hidden');
   }
 }
@@ -860,9 +886,21 @@ function countWrong(){
   if (wrongThisQ >= 2 && hintLevel < 2) showHint();
   updateFindStats();
 }
+/* Day-stamped answers, in the shared store, so the practice plan's "This week"
+   card can compare this week with last week instead of counting a streak.
+   Bounded to 60 days — two comparisons' worth. */
+function bumpDaily(st, ok){
+  const daily = st.daily || (st.daily = {});
+  const k = todayISO();
+  const day = daily[k] || (daily[k] = { a:0, c:0 });
+  day.a++; if (ok) day.c++;
+  const keys = Object.keys(daily).sort();
+  while (keys.length > 60) delete daily[keys.shift()];
+}
 function recordAnswer(ok, question, elapsedMs){
   saveStats(st => {
     st.answered++; if (ok) st.correct++;
+    bumpDaily(st, ok);
     const bs = st.byString[question.sn] || (st.byString[question.sn] = { a:0, c:0, recent:[] });
     bs.a++; if (ok) bs.c++;
     bs.recent = bs.recent || [];
@@ -892,6 +930,7 @@ function recordEcho(ok){
   }
   saveStats(st => {
     st.answered++; if (ok) st.correct++;
+    bumpDaily(st, ok);
     st.ear = st.ear || { a:0, c:0 };
     st.ear.a++; if (ok) st.ear.c++;
     st.speed = st.speed || [];
@@ -1076,12 +1115,16 @@ function saveDrillItem(item){
 
 /* picker state (what the selects say) and run state (what is being played) */
 const DP = { type:'scale', scaleKey:'minPent', rootPc:4, winKey:null, si:1, variant:'full',
-             bpm:60, bpmTouched:false, met:false, labels:'names', wins:[] };
+             bpm:60, bpmTouched:false, met:false, labels:'names', wins:[], dueId:null };
 const DR = {
   cfg:null, item:null, targets:[], full:[], repairTargets:null, run:null,
   phase:'idle', direction:'up', variant:'full', repair:false,
   repairClean:0, needFullRep:false, err:null, errTargets:null,
-  history:[], tempoOffer:null, bpm:60, met:false, timing:null,
+  history:[], tempoOffer:null, tempoDownOffer:null, bpm:60, met:false, timing:null,
+  // Absolute performance.now() of every accepted onset, plus the absolute time
+  // of the FIRST CLICK: the grid has to be phase-locked to the click, so both
+  // sides of the comparison must survive as absolute times.
+  onsets:[], metOrigin:null,
   // plan is DRAWN ONCE when a rep ends, so the button's label and the button's
   // click can never disagree; skips/stall drive the escape hatches.
   plan:null, skips:0, lastAdvanceAt:0, stallLevel:0, boardApi:null, flash:false
@@ -1133,6 +1176,18 @@ function renderLabelSegs(){
 }
 
 /* ---------------- metronome (Web Audio, no assets) ---------------- */
+/* Everything between the string moving and this code SEEING a note: the
+   analyser window fills over ~190ms (8192 samples at 44.1kHz), the tracker only
+   calls a note stable once it has held for 150ms, and the poll runs every 55ms.
+   So a detected onset always sits LATER than the pluck, and that lag is the
+   app's, not the player's — one estimate of it comes off every onset before the
+   onset is compared with the click.
+   220ms is what this pipeline measured here: feeding it a note every 2s through
+   the fake microphone put detection 204–244ms behind each onset (mean 224).
+   It stays an ESTIMATE — one number for one machine, not a measurement of
+   yours — so read the figures as good to tens of milliseconds, not single ones,
+   and read the verdict as a verdict about a sixth of a beat, not about 5ms. */
+const DETECT_LATENCY_MS = 220;
 const MET = { timer:null, next:0, beat:0, bpm:null, firstPerf:0, accentEvery:4 };
 function metStop(){ if (MET.timer){ clearInterval(MET.timer); MET.timer = null; } MET.bpm = null; }
 /**
@@ -1269,13 +1324,17 @@ function masteryLine(attempt){
   if (bankedDay(attempt))
     return 'That was today’s first run — the one that counts — and it banked a mastery day (' + days + ' of 2). ' +
       (days >= 2 ? 'That is mastered.' : 'One more, on another day, and this shape is mastered.');
+  const clicked = !!(DR.timing && DR.timing.kind === 'click');
   const why =
     attempt.skipped              ? 'You skipped a note, so the run was not all yours'
   : !attempt.passed              ? 'It stopped on a wrong note'
   : attempt.direction === 'down' ? 'Mastery is measured on the ascending shape and this was the descending one'
   : attempt.window               ? 'It was part of the shape, not the whole shape'
-  : !attempt.timingOk            ? 'Right notes, but the timing wandered'
-  : !attempt.atTargetTempo       ? 'Right notes and even, but the click was off, so “in time” could not be checked'
+  : !attempt.timingOk            ? (clicked ? 'Right notes, but they sat off the click' : 'Right notes, but the spacing wandered')
+  : (attempt.notes || 0) < 3     ? 'A ' + (attempt.notes || 0) + '-note shape is too short to measure timing against the click — ' +
+                                   'mastery needs at least three notes'
+  : !attempt.timingMeasured      ? 'Right notes and evenly spaced, but the click was off, so “on the click” could not be checked'
+  : !attempt.atTargetTempo       ? 'Right notes in time, but below this drill’s target tempo'
   :                                'It did not clear the bar';
   return 'That was today’s first run — the one that counts. ' + why +
     ', so today does not bank a mastery day; tomorrow’s first run is the next chance.';
@@ -1341,9 +1400,11 @@ function renderDrillPicker(){
   const prev = document.getElementById('drPreview');
   const start = document.getElementById('drStart');
   const targetNote = document.getElementById('drTargetNote');
+  const hasDue = applyPrimaryCta();
   if (!cfg || !buildTargets(cfg).length){
     prev.textContent = 'That root does not give a full octave here — pick another place on the neck.';
-    start.disabled = true;
+    start.disabled = !hasDue;
+    document.getElementById('drStartPicked').disabled = true;
     setLegend('drLegendPick', DP.type);
     targetNote.classList.add('hidden');
     return;
@@ -1351,10 +1412,17 @@ function renderDrillPicker(){
   const t = buildTargets(cfg);
   const shown = DP.variant === 'middle' ? DE.middleWindow(t, WINDOW_SIZE) : t;
   start.disabled = false;
+  document.getElementById('drStartPicked').disabled = false;
   prev.innerHTML = '<b>' + drillLabel(cfg) + '</b><br>' + shown.length +
     ' notes, ascending — then the same shape coming down as a second rep:<br>' +
     shown.map(x => targetLabel(x) + ' <span class="t-data">' + TUNINGS[tuning].names[x.si] + '/' + x.fret + '</span>').join(' → ') +
-    '<br><span class="t-data">string/fret</span>';
+    '<br><span class="t-data">string/fret</span>' +
+    // Three onsets is the minimum that says anything about timing, so a shorter
+    // shape is told up front that it cannot bank a mastery day.
+    (shown.length < 3
+      ? '<br><b>Only ' + shown.length + ' notes</b> — too few to measure against the click, so this shape is practice: ' +
+        'it schedules review but it cannot bank a mastery day.'
+      : '');
   setLegend('drLegendPick', cfg.type);
 
   // Tempo is not a ratchet: the picker's bpm is what will play. The stored
@@ -1397,6 +1465,7 @@ function beginRep(){
   DR.run = DE.createRun(DR.targets);
   DR.phase = 'running'; DR.err = null; DR.errTargets = null;
   DR.plan = null; DR.skips = 0; DR.flash = false;
+  DR.onsets = []; DR.metOrigin = null; DR.timing = null; DR.tempoDownTaken = false;
   DR.lastAdvanceAt = performance.now();
   hideStall();
   document.getElementById('drPanel').innerHTML = '';
@@ -1404,7 +1473,9 @@ function beginRep(){
   // clears the settle clock, which left a still-consumed note unable to answer
   // the rep's first target — a drill whose first note you just played froze.
   tracker = C.createTracker({ stableMs:150 });
-  if (DR.met) metStart();
+  // metStart returns the performance.now() of the first click: that is the
+  // origin of the timing grid, and without it there is no click to measure.
+  if (DR.met) DR.metOrigin = metStart();
   renderRun();
 }
 function restartRun(){
@@ -1417,7 +1488,12 @@ function restartRun(){
 /** The one place a played note enters a run. Returns the engine's status. */
 function drillPush(midi, atMs){
   if (DR.phase !== 'running' || !DR.run) return null;
-  const r = DR.run.push(midi, atMs == null ? performance.now() : atMs);
+  const at = atMs == null ? performance.now() : atMs;
+  const r = DR.run.push(midi, at);
+  // Keep the ABSOLUTE onset time: the engine stores each note relative to note
+  // one, which cancels any constant offset from the click — including a whole
+  // half-beat of it.
+  if (r.status === 'advanced' || r.status === 'done') DR.onsets.push(at);
   if (r.status === 'error'){
     DR.phase = 'error'; DR.err = r; DR.errTargets = DR.targets;
     endRep(false);
@@ -1488,61 +1564,84 @@ setInterval(() => {
   }
 }, 700);
 /**
- * Score the onsets against the click, in milliseconds.
+ * Score the onsets against the CLICK, in milliseconds.
  *
- * res.notes[].at is measured from the FIRST note, so the grid is phase-locked
- * to note 1: a constant detection latency cancels out and what is left is the
- * player's own error. Each onset is compared with the NEAREST point on that
- * grid — the beat, or the half-beat if the gaps say two notes per click.
+ * `onsets` are ABSOLUTE performance.now() times and `clickOrigin` is the
+ * performance.now() of the first click, so the grid is phase-locked to the
+ * click itself. (It used to be phase-locked to note one — res.notes[].at is
+ * measured from the first note — which cancels ANY constant offset: six notes
+ * played squarely on the off-beat scored a perfect 0ms.)
+ * Each onset is compared with the NEAREST point on that grid — the beat, or
+ * the half-beat if the gaps say two notes per click — and the deviation is
+ * SIGNED, so early and late are visible instead of averaged into "off".
  * Tolerance is ±15% of that unit, tightened to ±10% once the drill is
  * mastered, because "mastered" should not keep getting easier.
+ *
+ * With no clickOrigin there is no click to be on, and the report says so: it
+ * measures EVEN SPACING and is labelled that way everywhere it is shown.
  */
-function timingReport(res, bpm, tight){
-  const n = res.notes;
-  if (!n || n.length < 3) return null;
+function timingReport(onsets, bpm, tight, clickOrigin){
+  if (!onsets || onsets.length < 3) return null;
   const beat = 60000 / bpm;
   if (!(beat > 0)) return null;
   const gaps = [];
-  for (let i = 1; i < n.length; i++) gaps.push(n[i].at - n[i-1].at);
+  for (let i = 1; i < onsets.length; i++) gaps.push(onsets[i] - onsets[i-1]);
   const meanGap = gaps.reduce((a,b) => a+b, 0) / gaps.length;
   const sub = meanGap > 0 && meanGap < beat * 0.75;
   const unit = sub ? beat / 2 : beat;
-  let sum = 0, worst = 0;
-  for (const x of n){
-    const dev = Math.abs(x.at - Math.round(x.at / unit) * unit);
-    sum += dev;
-    if (dev > worst) worst = dev;
-  }
   const pct = tight ? 10 : 15;
   const tol = unit * pct / 100;
-  return { mean:sum / n.length, worst, tol, pct, unit, sub, bpm, inside: worst <= tol };
+  const sd = Math.sqrt(gaps.reduce((a,g) => a + (g-meanGap)*(g-meanGap), 0) / gaps.length);
+  if (clickOrigin == null){
+    return { kind:'spacing', spread:sd, meanGap, unit, sub, pct, tol, bpm,
+             inside: meanGap > 0 && sd / meanGap <= 0.35 };
+  }
+  let sum = 0, signed = 0, worst = 0, worstSigned = 0;
+  for (const at of onsets){
+    const t = at - clickOrigin - DETECT_LATENCY_MS;
+    const dev = t - Math.round(t / unit) * unit;      // signed: − early, + late
+    sum += Math.abs(dev); signed += dev;
+    if (Math.abs(dev) > worst){ worst = Math.abs(dev); worstSigned = dev; }
+  }
+  return { kind:'click', mean:sum / onsets.length, meanSigned:signed / onsets.length,
+           worst, worstSigned, spread:sd, tol, pct, unit, sub, bpm, inside: worst <= tol };
 }
 function timingOkOf(res){
   DR.timing = null;
-  const n = res.notes;
-  if (n.length < 3) return true;
-  if (DR.met){
-    // The click is the only thing that makes "in time" checkable, so with it
-    // running the ms figures ARE the verdict — the same numbers the panel shows.
-    DR.timing = timingReport(res, DR.bpm, masteryFor(DR.item) === 'mastered');
-    if (DR.timing) return DR.timing.inside;
-  }
-  const gaps = [];
-  for (let i = 1; i < n.length; i++) gaps.push(n[i].at - n[i-1].at);
-  const mean = gaps.reduce((a,b) => a+b, 0) / gaps.length;
-  if (!(mean > 0)) return true;
-  // No click: "in time" can only mean evenly spaced.
-  const sd = Math.sqrt(gaps.reduce((a,g) => a + (g-mean)*(g-mean), 0) / gaps.length);
-  return sd / mean <= 0.35;
+  // Two notes give one gap, and one gap is "even" by definition: fewer than
+  // three onsets is not evidence about timing at all.
+  if (!DR.onsets || DR.onsets.length < 3) return true;
+  DR.timing = timingReport(DR.onsets, DR.bpm, masteryFor(DR.item) === 'mastered',
+                           DR.met ? DR.metOrigin : null);
+  return DR.timing ? DR.timing.inside : true;
 }
+/** A tolerance a beginner owns: 15% of a beat is "about a sixth of a beat". */
+const BEAT_FRACTIONS = { 2:'half a beat', 3:'a third of a beat', 4:'a quarter of a beat',
+  5:'a fifth of a beat', 6:'a sixth of a beat', 7:'a seventh of a beat', 8:'an eighth of a beat',
+  9:'a ninth of a beat', 10:'a tenth of a beat', 11:'an eleventh of a beat', 12:'a twelfth of a beat' };
+function toleranceWords(t){
+  const beat = 60000 / t.bpm;
+  const denom = Math.max(2, Math.min(12, Math.floor(beat / t.tol)));
+  return BEAT_FRACTIONS[denom];
+}
+const earlyLate = (ms) => (ms < 0 ? 'early' : 'late');
 /** The one visible timing line, built from the same report as the verdict. */
 function timingLine(){
   const t = DR.timing;
   if (!t) return '';
-  return '<p class="t-caption">Timing: within <b>' + Math.round(t.mean) + 'ms</b> on average, worst <b>' +
-    Math.round(t.worst) + 'ms</b> — ' + (t.inside ? 'inside' : 'outside') + ' the ±' + Math.round(t.tol) +
-    'ms window (' + t.pct + '% of ' + (t.sub ? 'the half-beat' : 'the beat') + ' at ' + t.bpm + ' bpm' +
-    (t.sub ? ', two notes per click' : '') + ').</p>';
+  if (t.kind === 'spacing'){
+    return '<p class="t-caption"><b>Even spacing</b> (no click was running, so being “on the beat” could not be ' +
+      'checked): the gaps between notes varied by <b>' + Math.round(t.spread) + 'ms</b> around ' +
+      Math.round(t.meanGap) + 'ms — ' + (t.inside ? 'even enough' : 'uneven') + '. ' +
+      'Switch the click on and the same run gets measured against the beat itself.</p>';
+  }
+  return '<p class="t-caption">Against the click: <b>' + Math.abs(Math.round(t.meanSigned)) + 'ms ' +
+    earlyLate(t.meanSigned) + '</b> on average, worst <b>' + Math.abs(Math.round(t.worstSigned)) + 'ms ' +
+    earlyLate(t.worstSigned) + '</b> — ' + (t.inside ? 'inside' : 'outside') + ' the ±' +
+    Math.round(t.tol) + 'ms window, which is ' + toleranceWords(t) + ' (' + t.pct + '% of ' +
+    (t.sub ? 'the half-beat' : 'the beat') + ' at ' + t.bpm + ' bpm' + (t.sub ? ', two notes per click' : '') +
+    ').<br><span class="t-data">measured from the click itself, less a fixed ' + DETECT_LATENCY_MS +
+    'ms estimate of the app’s own detection lag</span></p>';
 }
 function endRep(passed){
   metStop();
@@ -1552,6 +1651,10 @@ function endRep(passed){
   // A skipped note is not a played note: it counts for nothing.
   const clean = passed && !skipped;
   const timingOk = !skipped && timingOkOf(res);
+  // Timing is only EVIDENCE when there was a click to measure against and at
+  // least three onsets to measure. A two-note drill (a short octave shape) used
+  // to sail past the timing gate with nothing measured and reach "mastered".
+  const timingMeasured = !skipped && !!(DR.timing && DR.timing.kind === 'click');
   const played = Math.max(0, res.notes.length - DR.skips);
   const accuracy = res.total ? (clean ? 1 : played / res.total) : 0;
   const today = todayISO();
@@ -1583,10 +1686,10 @@ function endRep(passed){
   DR.item.bpm = targetBpm;
   DR.item.coldDate = today;
   const attempt = {
-    date:today, cold, passed: clean, accuracy, timingOk,
-    // "In time" is only a claim you can check against a click, so mastery
-    // requires the click to be running. The wording says exactly this.
-    atTargetTempo: !!DR.met && DR.bpm >= targetBpm,
+    date:today, cold, passed: clean, accuracy, timingOk, timingMeasured,
+    // "In time" is only a claim you can check against a click, and only with
+    // enough notes to check: mastery requires both. The wording says so too.
+    atTargetTempo: timingMeasured && DR.bpm >= targetBpm,
     direction:DR.direction, bpm:DR.bpm, notes:res.total,
     window: windowRep, skipped
   };
@@ -1731,6 +1834,13 @@ function renderRun(){
   const tb = document.getElementById('drTempoBtn');
   tb.classList.toggle('hidden', !DR.tempoOffer);
   if (DR.tempoOffer) tb.textContent = '+8% → ' + DR.tempoOffer + ' bpm';
+  // Speeding up is offered when timing is earned; slowing down must be offered
+  // when it is missed, or "too fast" is a problem with no button attached.
+  const td = document.getElementById('drTempoDownBtn');
+  DR.tempoDownOffer = (DR.phase !== 'running' && DR.timing && !DR.timing.inside && DR.bpm > 40 && !DR.tempoDownTaken)
+    ? Math.max(40, Math.round(DR.bpm * 0.92)) : null;
+  td.classList.toggle('hidden', !DR.tempoDownOffer);
+  if (DR.tempoDownOffer) td.textContent = '−8% → ' + DR.tempoDownOffer + ' bpm';
 
   const mastery = masteryFor(DR.item);
   const ci = DR.item.ci || 'blocked';
@@ -1775,15 +1885,21 @@ function renderPanel(res, timingOk, attempt){
   const bits = [];
   // A rep that failed on timing is not "clean", and is not painted as success.
   const kind = attempt.skipped ? 'warn' : timingOk ? 'good' : 'warn';
+  const clicked = !!(DR.timing && DR.timing.kind === 'click');
+  // "On the click" is only said when the onsets were actually compared with the
+  // click. Without one, the honest claim is even SPACING, and that is what it says.
+  const okWords = clicked ? 'On the click' : 'Evenly spaced';
+  const offWords = clicked
+    ? 'The onsets sat ' + Math.abs(Math.round(DR.timing.meanSigned)) + 'ms ' +
+      earlyLate(DR.timing.meanSigned) + ' of the click'
+    : 'The gaps between notes wandered';
   bits.push('<div class="t-eyebrow">' +
     (attempt.skipped ? 'Finished with a skipped note'
      : timingOk ? 'Clean · ' + t.length + ' notes ' + dir
-     : (DR.timing ? 'Right notes, off the click · ' : 'Right notes, uneven timing · ') + t.length + ' notes ' + dir) + '</div>');
+     : (clicked ? 'Right notes, off the click · ' : 'Right notes, uneven spacing · ') + t.length + ' notes ' + dir) + '</div>');
   bits.push('<p>' + (attempt.skipped
       ? 'One note was skipped for you, so this run is not a measurement of anything.'
-      : (timingOk ? (DR.timing ? 'On the click' : 'Even timing')
-                  : (DR.timing ? 'The onsets drifted off the click' : 'The gaps between notes wandered')) +
-        (DR.met ? ' at ' + DR.bpm + ' bpm.' : '.')) +
+      : (timingOk ? okWords : offWords) + (DR.met ? ' at ' + DR.bpm + ' bpm.' : '.')) +
     '</p>');
   bits.push(timingLine());
   bits.push('<p class="t-caption">' + (attempt.skipped
@@ -1796,6 +1912,10 @@ function renderPanel(res, timingOk, attempt){
   if (DR.tempoOffer)
     bits.push('<p class="t-caption">Two clean reps of the whole shape, in time. Take the tempo up if you want it — nothing moves unless you tap' +
       (DR.met ? '.' : ', and taking it up switches the click on so the number means something.') + '</p>');
+  if (!timingOk && DR.tempoDownOffer)
+    bits.push('<p class="t-caption">Right notes at the wrong speed is a tempo problem, not a you problem: <b>take it down to ' +
+      DR.tempoDownOffer + ' bpm</b> and land inside the window there first. That becomes this drill’s target, and it can go back up ' +
+      'the moment two reps are clean.</p>');
   p.innerHTML = '<div class="note-box ' + kind + '">' + bits.join('') + '</div>';
 }
 
@@ -1815,23 +1935,67 @@ function allDrills(){
   // A drill is a fingering, so a 4-string one is not the same item as a 5-string one.
   return Object.keys(all).map(k => all[k]).filter(x => x && x.cfg && x.cfg.tuning === tuning);
 }
+/** Everything on this neck that review says is due today. */
+function dueDrills(){
+  const today = todayISO();
+  return allDrills().filter(it => DE.isDue(it, today));
+}
+/** Drills that exist but belong to the OTHER neck, so a switch is not a wipe. */
+function otherNeckCount(){
+  const all = loadDrills();
+  return Object.keys(all).filter(k => {
+    const x = all[k];
+    return x && x.cfg && x.cfg.tuning !== tuning;
+  }).length;
+}
+function otherNeckLine(){
+  const n = otherNeckCount();
+  if (!n) return '';
+  const other = tuning === 4 ? '5-string' : '4-string';
+  return '<p class="t-caption">' + n + ' drill' + (n === 1 ? '' : 's') + ' belong' + (n === 1 ? 's' : '') +
+    ' to your <b>' + other + '</b> neck — a drill is a fingering, so it is kept per neck. Switch the bass back at the ' +
+    'bottom of the page to see ' + (n === 1 ? 'it' : 'them') + ' again.</p>';
+}
+/* The primary action must point at TODAY'S WORK: a review that is due beats
+   whatever the picker happens to be showing. The picker stays reachable through
+   its own button, so nothing is taken away. */
+function applyPrimaryCta(){
+  const start = document.getElementById('drStart');
+  const picked = document.getElementById('drStartPicked');
+  const cta = document.getElementById('drDueCta');
+  const due = dueDrills();
+  DP.dueId = due.length ? due[0].id : null;
+  picked.classList.toggle('hidden', !DP.dueId);
+  cta.classList.toggle('hidden', !DP.dueId);
+  if (DP.dueId){
+    start.textContent = 'Run today’s review · ' + due.length + ' due';
+    cta.innerHTML = 'That runs <b>' + (due[0].label || due[0].id) + '</b> — the review that is due today' +
+      (due.length > 1 ? ', first of ' + due.length : '') + '. Reviews come first because a shape you last played ' +
+      'days ago is the one with something to prove.';
+  } else {
+    start.textContent = 'Start the drill';
+  }
+  return !!DP.dueId;
+}
 function renderDue(){
   const host = document.getElementById('drDue');
-  const today = todayISO();
-  const due = allDrills().filter(it => DE.isDue(it, today));
+  const due = dueDrills();
   host.innerHTML = due.length
     ? due.map(it => drillRow(it, 'Run it')).join('')
-    : '<p class="t-caption">Nothing is due. Anything you drill today comes back tomorrow — that overnight gap is the one with evidence behind it.</p>';
+    : '<p class="t-caption">Nothing is due. Anything you drill today comes back tomorrow — that overnight gap is the one with evidence behind it.</p>' +
+      otherNeckLine();
 }
 function renderShelf(){
   const host = document.getElementById('drShelfBody');
   const all = allDrills().sort((a,b) => String(a.due).localeCompare(String(b.due)));
   host.innerHTML = all.length
-    ? all.map(it => drillRow(it, 'Open')).join('') +
+    ? all.map(it => drillRow(it, 'Open')).join('') + otherNeckLine() +
       '<p class="t-caption" style="margin-top:var(--sp3)">new → acquired → mastered. Mastered means the <b>ascending</b> shape, ' +
       'whole, played as the day’s <b>first</b> run, clean and in time <b>with the click on</b>, on two separate days — ' +
       'in-session fluency does not count, and neither do repair windows or skipped notes.</p>'
-    : '<p class="t-caption">No drills yet. Pick a scale, a root and a place on the neck, then play the shape in order. ' +
+    : otherNeckLine() +
+      '<p class="t-caption">' + (otherNeckCount() ? 'Nothing on this neck yet — pick' : 'No drills yet. Pick') +
+      ' a scale, a root and a place on the neck, then play the shape in order. ' +
       'Every finished run is scheduled for review, and what you keep missing gets its own short repair drill.</p>';
 }
 function openStored(id){
@@ -1879,7 +2043,12 @@ document.getElementById('drBpmUp').addEventListener('click', () => {
   DP.bpm = Math.min(200, DP.bpm + 4); DP.bpmTouched = true;
   DR.bpm = DP.bpm; renderDrillPicker(); if (DR.item) renderRun();
 });
-document.getElementById('drStart').addEventListener('click', () => startDrill(cfgFromPicker()));
+document.getElementById('drStart').addEventListener('click', () => {
+  // Whatever the label says is what runs: due review first, picker otherwise.
+  if (DP.dueId){ openStored(DP.dueId); return; }
+  startDrill(cfgFromPicker());
+});
+document.getElementById('drStartPicked').addEventListener('click', () => startDrill(cfgFromPicker()));
 document.querySelectorAll('#drLabelSeg button, #drLabelSegRun button').forEach(b => {
   b.addEventListener('click', () => {
     DP.labels = b.dataset.k;
@@ -1922,6 +2091,16 @@ document.getElementById('drTempoBtn').addEventListener('click', () => {
   DR.history = []; DR.tempoOffer = null;      // the new tempo has to earn its own two reps
   renderDrillPicker(); renderRun();
 });
+document.getElementById('drTempoDownBtn').addEventListener('click', () => {
+  if (!DR.tempoDownOffer) return;
+  DR.bpm = DR.tempoDownOffer; DP.bpm = DR.bpm; DP.bpmTouched = true;
+  DP.met = true; DR.met = true;
+  document.getElementById('drMet').checked = true;
+  // A target you cannot play in time is not a target: coming down moves it too.
+  if (DR.item && (DR.item.bpm || 0) > DR.bpm){ DR.item.bpm = DR.bpm; saveDrillItem(DR.item); }
+  DR.history = []; DR.tempoOffer = null; DR.tempoDownTaken = true;
+  renderDrillPicker(); renderRun(); renderDue(); renderShelf();
+});
 function drillReset(){
   metStop();
   hideStall();
@@ -1952,6 +2131,10 @@ const SONG_KEY = 'bassTrainer.songs.v1';
 const SG = {
   song:null, play:null,            // play: 'record' | 'click'
   t0:null, run:null, timer:null, boardApi:null,
+  // startAt: when the SONG starts (after the count-in). t0: the virtual origin
+  // of song time, which is startAt minus however much of the roadmap is being
+  // skipped when a play begins part-way in.
+  startAt:null, startSection:0, seen:null,
   rootShown:null, resyncs:0, finished:false,
   tally:{ correct:0, wrong:0 }, last:null
 };
@@ -1959,7 +2142,7 @@ const SG = {
 function loadSongStore(){
   try { return JSON.parse(localStorage.getItem(SONG_KEY)) || {}; } catch(e){ return {}; }
 }
-function saveSongPlay(song, accuracy, graded){
+function saveSongPlay(song, accuracy, bankable, cov){
   const all = loadSongStore();
   const rec = all[song.id] || { id:song.id, plays:0, bestAccuracy:0, lastPlayed:null };
   rec.id = song.id;
@@ -1967,7 +2150,15 @@ function saveSongPlay(song, accuracy, graded){
   rec.lastPlayed = todayISO();
   // Only the click can grade: with a record playing, the app cannot know the
   // record was where you tapped, and a phone mic may be hearing the record.
-  if (graded && accuracy > (rec.bestAccuracy || 0)) rec.bestAccuracy = accuracy;
+  // And a "best" is a claim about the WHOLE roadmap, so only a play that
+  // actually covered the roadmap may bank one — two of five sections used to.
+  if (bankable && accuracy > (rec.bestAccuracy || 0)){
+    rec.bestAccuracy = accuracy;
+    rec.bestSections = (cov && cov.sections) || 0;
+    rec.bestOf = (cov && cov.of) || song.sections.length;
+    rec.bestFull = !!(cov && cov.full);
+    rec.bestDate = todayISO();
+  }
   all[song.id] = rec;
   try { localStorage.setItem(SONG_KEY, JSON.stringify(all)); } catch(e){}
 }
@@ -1989,8 +2180,13 @@ function renderSongList(){
   const store = loadSongStore();
   document.getElementById('sgList').innerHTML = SGE.SONGS.map(song => {
     const rec = store[song.id];
+    // The coverage travels with the best, so "best 100%" can never again mean
+    // "100% of the twelve seconds I played".
     const best = rec && rec.bestAccuracy
-      ? '<span class="pill good">best ' + Math.round(rec.bestAccuracy * 100) + '% on the root</span>' : '';
+      ? '<span class="pill good">best ' + Math.round(rec.bestAccuracy * 100) + '% on the root · ' +
+        (rec.bestFull === false && rec.bestOf
+          ? rec.bestSections + ' of ' + rec.bestOf + ' sections'
+          : 'full play') + '</span>' : '';
     const plays = rec && rec.plays
       ? '<span class="pill num">' + rec.plays + ' play' + (rec.plays === 1 ? '' : 's') + '</span>' : '';
     return '<div class="sg-item">' +
@@ -2068,14 +2264,18 @@ function renderBeats(bpb, active, counting){
   }
   host.innerHTML = h;
 }
-function renderSongNext(change, bpb){
+function renderSongNext(change, bpb, currentRoot){
   const el = document.getElementById('sgNext');
   if (!change){ el.classList.add('hidden'); el.dataset.sig = ''; return; }
   const bars = Math.floor(change.beatsToGo / bpb);
   const when = (change.beatsToGo % bpb === 0 && bars >= 1)
     ? bars + ' bar' + (bars === 1 ? '' : 's')
     : change.beatsToGo + ' beat' + (change.beatsToGo === 1 ? '' : 's');
-  const html = 'Next: <b>' + change.name + ' · ' + change.root + '</b> — in ' + when + '. Move when the count comes round.';
+  // A new section is not always a new note: telling someone to "move" to the
+  // note they are already on is the fastest way to make them play a wrong one.
+  const same = currentRoot != null && change.root === currentRoot;
+  const html = 'Next: <b>' + change.name + ' · ' + change.root + '</b> — in ' + when + '. ' +
+    (same ? '<b>Same root — keep going.</b>' : 'Move when the count comes round.');
   if (el.dataset.sig !== html){ el.innerHTML = html; el.dataset.sig = html; }
   el.classList.remove('hidden');
 }
@@ -2098,29 +2298,36 @@ function songTick(){
   const song = SG.song;
   if (!song || SG.t0 == null || SG.finished) return;
   const bpb = song.beatsPerBar || 4, beatMs = 60000 / song.bpm;
-  const elapsed = performance.now() - SG.t0;
+  const now = performance.now();
+  const prog = document.getElementById('sgProg');
 
-  if (elapsed < 0){                                  // the count-in bar
-    const left = Math.max(1, Math.ceil(-elapsed / beatMs));
-    const first = song.sections[0];
+  if (SG.startAt != null && now < SG.startAt){        // the count-in bar
+    // A 4-beat count-in has 4 beats in it: the click is scheduled a fraction of
+    // a beat ahead, and ceil() of that used to announce "5 beats to go".
+    const left = Math.min(bpb, Math.max(1, Math.ceil((SG.startAt - now) / beatMs)));
+    const first = song.sections[SG.startSection] || song.sections[0];
     setTxt('sgSection', 'Count in');
     setTxt('sgRoot', first.root);
     setTxt('sgBar', first.name + ' starts on the next 1 — ' + left + ' beat' + (left === 1 ? '' : 's') + ' to go');
     renderBeats(bpb, bpb - left + 1, true);
     songBoard(first.root);
     renderSongNext(null, bpb);
+    // Nothing is running yet, so any "section N of M" is last run's number.
+    prog.classList.add('hidden');
     return;
   }
+  const elapsed = now - SG.t0;
   const p = SGE.positionAt(song, elapsed);
   if (p.finished){ songFinish('finished'); return; }
   setTxt('sgSection', p.section.name);
   setTxt('sgRoot', p.section.root);
   setTxt('sgBar', 'bar ' + p.barInSection + ' of ' + p.barsInSection + ' · beat ' + p.beatInBar);
   setTxt('sgProg', 'section ' + (p.section.index + 1) + ' of ' + song.sections.length);
+  prog.classList.remove('hidden');
   renderBeats(bpb, p.beatInBar, false);
   songBoard(p.section.root);
   // Two bars of notice, so the warning is never later than one full bar out.
-  renderSongNext(SGE.upcomingChange(song, elapsed, 2), bpb);
+  renderSongNext(SGE.upcomingChange(song, elapsed, 2), bpb, p.section.root);
 }
 
 /* ---------------- starting, re-syncing, stopping ---------------- */
@@ -2133,7 +2340,8 @@ function songOpen(id, play){
   if (!song) return;
   songTeardown();
   SG.song = song; SG.play = play === 'click' ? 'click' : 'record';
-  SG.t0 = null; SG.run = null; SG.finished = false; SG.rootShown = null;
+  SG.t0 = null; SG.startAt = null; SG.startSection = 0; SG.seen = null;
+  SG.run = null; SG.finished = false; SG.rootShown = null;
   SG.tally = { correct:0, wrong:0 }; SG.last = null; SG.resyncs = 0;
   document.getElementById('sgListCard').classList.add('hidden');
   document.getElementById('sgPlay').classList.remove('hidden');
@@ -2147,30 +2355,40 @@ function songOpen(id, play){
     SG.play === 'click' ? 'Play with the app’s click' : 'Play with the record';
   document.getElementById('sgTap').textContent =
     SG.play === 'click' ? 'Start the click' : 'Tap on beat 1';
-  document.getElementById('sgArmWhy').innerHTML = SG.play === 'click'
+  document.getElementById('sgArmWhy').innerHTML = (SG.play === 'click'
     ? 'The app’s own click at <b>' + song.bpm + ' bpm</b> drives the roadmap, starting after one bar of count-in — ' +
-      'no record and no tapping. This is the mode that can actually grade you, so a best score is only kept from here.'
+      'no record and no tapping. This is the mode that can actually grade you, so a best score is only kept from here, ' +
+      'and only from a play that covers the whole roadmap.'
     : 'Start the record yourself, then tap on <b>beat 1</b>. A streaming playhead cannot be read accurately — its ' +
-      'reported position jitters by up to a second against a beat of about half that — so the app runs its own clock from your tap.';
+      'reported position jitters by up to a second against a beat of about half that — so the app runs its own clock from your tap.') +
+    // Both hands are on the bass: a key you can hit with a thumb beats a button.
+    '<br>Use the button <b>or press Space</b> — and once it is running, Space re-syncs.';
   document.getElementById('sgBoardNote').innerHTML =
     'The amber dot is this section’s root; the teal dot is the same note an octave up — two strings across, two frets along. ' +
     'Both move when the section does.';
 }
-function songArm(){
+/** @param fromSection optional section index to start from (3b: "run that bit again"). */
+function songArm(fromSection){
   const song = SG.song;
   if (!song) return;
   songTeardown();
   SG.run = SGE.createSongRun(song);
   SG.tally = { correct:0, wrong:0 }; SG.last = null;
   SG.rootShown = null; SG.finished = false; SG.resyncs = 0;
-  const bpb = song.beatsPerBar || 4;
+  SG.seen = [];
+  const bpb = song.beatsPerBar || 4, beatMs = 60000 / song.bpm;
+  const tl = SGE.timeline(song);
+  const from = (fromSection != null && tl[fromSection]) ? fromSection : 0;
+  SG.startSection = from;
+  const skipMs = tl[from].startBeat * beatMs;   // how much roadmap is being skipped
   if (SG.play === 'click'){
     const firstClick = metStart(song.bpm, bpb);
     // Beat 1 of the song is the click AFTER a whole bar of count-in.
-    SG.t0 = (firstClick == null ? performance.now() + 200 : firstClick) + bpb * 60000 / song.bpm;
+    SG.startAt = (firstClick == null ? performance.now() + 200 : firstClick) + bpb * beatMs;
   } else {
-    SG.t0 = performance.now();          // the tap IS beat 1
+    SG.startAt = performance.now();     // the tap IS beat 1
   }
+  SG.t0 = SG.startAt - skipMs;
   // A play-along is a new intent, so detection is re-armed: a note still
   // ringing from before must not be counted as the song's first note.
   tracker = C.createTracker({ stableMs:150 });
@@ -2180,7 +2398,8 @@ function songArm(){
   document.getElementById('sgSummary').innerHTML = '';
   document.getElementById('sgResync').classList.toggle('hidden', SG.play !== 'record');
   document.getElementById('sgResyncNote').innerHTML = SG.play === 'record'
-    ? 'Drifting? <b>Re-sync</b> on any beat 1 — it snaps the roadmap to the bar line nearest your tap, so you keep your place in the song.'
+    ? 'Drifting? <b>Re-sync</b> on any beat 1 — or press <b>Space</b>, which is the one you can hit without letting go of the bass. ' +
+      'It snaps the roadmap to the bar line nearest your tap, so you keep your place in the song.'
     : 'The click is the clock here, so there is nothing to re-sync.';
   renderSongJudge();
   songTick();
@@ -2201,12 +2420,21 @@ function songResync(){
 }
 function songPush(midi){
   if (!SG.song || !SG.run || SG.t0 == null || SG.finished) return null;
-  const elapsed = performance.now() - SG.t0;
-  if (elapsed < 0) return null;                 // still counting in: nothing to judge
+  const now = performance.now();
+  if (SG.startAt != null && now < SG.startAt) return null;   // still counting in
+  const elapsed = now - SG.t0;
+  if (elapsed < 0) return null;
   const r = SG.run.push(midi, elapsed);
   if (!r || r.verdict === 'finished') return r;
   if (r.verdict === 'correct') SG.tally.correct++; else SG.tally.wrong++;
   SG.last = r;
+  // Which SECTIONS were actually judged — the engine merges its buckets by
+  // section name, and coverage of the roadmap has to be counted per section.
+  const p = SGE.positionAt(SG.song, elapsed);
+  if (p.section){
+    if (!SG.seen) SG.seen = [];
+    if (SG.seen.indexOf(p.section.index) < 0) SG.seen.push(p.section.index);
+  }
   renderSongJudge();
   return r;
 }
@@ -2218,7 +2446,15 @@ function songFinish(reason){
   const res = SG.run ? SG.run.result() : { correct:0, wrong:0, bySection:{}, accuracy:0 };
   const total = res.correct + res.wrong;
   const graded = SG.play === 'click';
-  saveSongPlay(song, res.accuracy, graded && total > 0);
+  // COVERAGE is what makes a best mean anything. A run stopped after two of
+  // five sections banked "best 100% on the root" permanently; now a best needs
+  // either every section judged, or the roadmap played to its end from the top.
+  const of = song.sections.length;
+  const covered = (SG.seen || []).length;
+  const fromTop = (SG.startSection || 0) === 0;
+  const fullPlay = covered >= of || (reason === 'finished' && fromTop);
+  const bankable = graded && total > 0 && fullPlay;
+  saveSongPlay(song, res.accuracy, bankable, { sections:covered, of, full:fullPlay });
   renderSongList();
 
   document.getElementById('sgRoad').classList.add('hidden');
@@ -2260,15 +2496,32 @@ function songFinish(reason){
     bits.push('<p>On the root <b>' + Math.round(res.accuracy * 100) + '%</b> — ' + res.correct + ' of ' + total +
       ' notes matched the root of the section you were in.</p>');
     bits.push(rows);
-    if (weakest){
+    // Naming a "weakest section" on a 100% run tells someone their best bit is
+    // their worst bit. Above 90% there is nothing to single out.
+    if (weakest && weakest.acc < 0.9){
+      const from = song.sections.map(s => s.name).indexOf(weakest.name);
       bits.push('<p>Weakest section: <b>' + weakest.name + ' (' + rootsOf(weakest.name) + ')</b> — ' +
-        (weakest.total - weakest.wrong) + ' of ' + weakest.total + '. That is the one to run again.</p>');
+        (weakest.total - weakest.wrong) + ' of ' + weakest.total + '. That is the one to run again' +
+        (from >= 0 ? ', and this starts there instead of at the top:' : '.') + '</p>' +
+        (from >= 0 ? '<div class="row" style="margin-top:var(--sp2)"><button class="btn primary" data-sgfrom="' + from +
+          '">Play again from ' + weakest.name + '</button></div>' : ''));
+    } else if (weakest){
+      bits.push('<p class="t-caption">Nothing stands out as the weak section — every section you played was at 90% or ' +
+        'better on the root.</p>');
     }
     bits.push('<p class="t-caption">Roots per section, untimed: this counts whether you were on the right note for ' +
       'where the song was, not whether you were in the pocket.</p>');
     if (!graded){
       bits.push('<p class="t-caption">Played with the record, so this is not kept as a best score — the app cannot ' +
         'know the record was where you tapped. Run it with the app’s click for a score that means something.</p>');
+    } else if (!fullPlay){
+      bits.push('<p class="t-caption">' + (covered ? 'Only <b>' + covered + ' of ' + of + ' sections</b> were played' :
+        'The roadmap was not played through') + (fromTop ? '' : ' (this run started at section ' + (SG.startSection + 1) + ')') +
+        ', so this is <b>not</b> kept as a best: a best is a claim about the whole roadmap, and stopping early would make ' +
+        'twelve seconds of intro look like a whole song. Play it to the end and it counts.</p>');
+    } else {
+      bits.push('<p class="t-caption">Whole roadmap played (' + of + ' section' + (of === 1 ? '' : 's') +
+        '), so this run could bank a best.</p>');
     }
   }
   document.getElementById('sgSummary').innerHTML =
@@ -2276,7 +2529,8 @@ function songFinish(reason){
 }
 function songBack(){
   songTeardown();
-  SG.song = null; SG.run = null; SG.t0 = null; SG.finished = false; SG.rootShown = null;
+  SG.song = null; SG.run = null; SG.t0 = null; SG.startAt = null; SG.startSection = 0;
+  SG.seen = null; SG.finished = false; SG.rootShown = null;
   document.getElementById('sgPlay').classList.add('hidden');
   document.getElementById('sgRoad').classList.add('hidden');
   document.getElementById('sgSummary').innerHTML = '';
@@ -2294,10 +2548,30 @@ function enterSongs(){
 /* ---------------- wiring ---------------- */
 document.getElementById('secSongs').addEventListener('click', e => {
   const b = e.target.closest('button[data-song]');
-  if (b) songOpen(b.dataset.song, b.dataset.play);
+  if (b){ songOpen(b.dataset.song, b.dataset.play); return; }
+  // "That is the one to run again" with a button that actually runs it.
+  const again = e.target.closest('button[data-sgfrom]');
+  if (again) songArm(+again.dataset.sgfrom);
 });
-document.getElementById('sgTap').addEventListener('click', songArm);
+document.getElementById('sgTap').addEventListener('click', () => songArm());
 document.getElementById('sgResync').addEventListener('click', songResync);
+/* Both hands are on the bass and the tap button vanishes once the roadmap is
+   running, so the arm tap and the re-sync get the one key you can hit blind. */
+document.addEventListener('keydown', e => {
+  if (e.code !== 'Space' && e.key !== ' ' && e.key !== 'Spacebar') return;
+  if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+  const t = e.target;
+  if (t && (/^(INPUT|SELECT|TEXTAREA|BUTTON|A)$/.test(t.tagName) || t.isContentEditable)) {
+    // Let a focused control keep its own space bar — except the tap button,
+    // where space means exactly what the button means.
+    if (!(t.id === 'sgTap' || t.id === 'sgResync')) return;
+  }
+  if (mode !== 'songs' || !SG.song) return;
+  const armed = !document.getElementById('sgArm').classList.contains('hidden');
+  const running = !document.getElementById('sgRoad').classList.contains('hidden');
+  if (armed){ e.preventDefault(); songArm(); }
+  else if (running && SG.play === 'record'){ e.preventDefault(); songResync(); }
+});
 document.getElementById('sgStop').addEventListener('click', () => songFinish('stopped'));
 document.getElementById('sgBack').addEventListener('click', songBack);
 renderSongList();

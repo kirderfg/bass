@@ -943,9 +943,21 @@ function shuffle(a){
   }
   return a;
 }
+/* A day-stamped roll-up of answers, so "am I better than last week" can be
+   answered with numbers instead of with a streak. Bounded to 60 days: that is
+   two week-on-week comparisons' worth and it keeps the store small. */
+function bumpDaily(stats, ok){
+  const daily = stats.daily || (stats.daily = {});
+  const k = todayKey();
+  const day = daily[k] || (daily[k] = { a:0, c:0 });
+  day.a++; if (ok) day.c++;
+  const keys = Object.keys(daily).sort();
+  while (keys.length > 60) delete daily[keys.shift()];
+}
 function recordAnswer(ok, q){
   S.stats.answered++;
   if (ok) S.stats.correct++;
+  bumpDaily(S.stats, ok);
   const bs = S.stats.byString[q.sn] || (S.stats.byString[q.sn] = { a:0, c:0 });
   bs.a++; if (ok) bs.c++;
   if (!bs.recent) bs.recent = [];
@@ -997,7 +1009,7 @@ function renderTrainer(){
 
   h += '<a class="card tight" href="trainer/index.html" style="display:block; text-decoration:none; color:inherit; border-color:var(--line-hi)">' +
     '<b style="color:var(--hl)">Live Trainer — play it, don\'t tap it</b>' +
-    '<div class="muted small" style="margin-top:2px">Plug your bass in (or use your phone\'s mic) and the app checks what you actually play: a <b>tuner</b>, single-note tests that feed the stats below, <b>ear training</b>, and <b>Drills</b> that check you play a whole scale in the right order.</div></a>';
+    '<div class="muted small" style="margin-top:2px">Plug your bass in (or use your phone\'s mic) and the app checks what you actually play: a <b>tuner</b>, single-note tests that feed the stats below, <b>ear training</b>, <b>Drills</b> that check you play a whole scale in the right order, and <b>Songs</b> — play along with the record while it follows the section roadmap and counts how often you were on the root.</div></a>';
 
   if (mode === 'study') h += studyHtml();
   else h += quizShellHtml(mode, tier);
@@ -1458,7 +1470,8 @@ const WEEKS = [
         text:'TNT chorus moves: roots E → A → G as eighth notes, 4 beats each. All three live in E minor pentatonic.', met:70 },
       { id:'w3d', cat:'Music', min:10,
         text:'T.N.T.: verse = steady eighth notes on E (palm-relaxed, locked to click). Chorus = the E→A→G shifts. Loop verse → chorus. Full speed is ~126 bpm — start at 70 and work up.',
-        link:{ label:'TNT bass tab (Songsterr)', href:'https://www.songsterr.com/a/wsa/acdc-tnt-bass-tab-s407' } },
+        link:{ label:'TNT bass tab (Songsterr)', href:'https://www.songsterr.com/a/wsa/acdc-tnt-bass-tab-s407' },
+        link2:{ label:'Play it with the record', href:'trainer/index.html#songs' } },
       { id:'w3e', cat:'Bonus', min:5,
         text:'Note trainer: "Find the note" focused on the A string only. Get your last 20 answers above 90%.',
         link:{ label:'Find the note (A string)', spec:{ tab:'trainer', trainer:{ tier:1, mode:'find', focus:['A'] } } } }
@@ -1539,8 +1552,16 @@ function renderPractice(){
     if (it.diagram) h += '<div class="drill-host" data-diagram="' + it.diagram + '"></div>';
     h += '<div class="plink row">';
     if (it.met) h += '<button class="btn small" data-met="' + it.met + '"><svg viewBox="0 0 24 24" class="btn-ic"><path d="M5 19V7l12-3v12"/><circle cx="4" cy="19" r="2.4"/><circle cx="16" cy="16" r="2.4"/></svg>Metronome ' + it.met + '</button>';
-    if (it.link && it.link.spec) h += '<button class="btn small" data-dl="' + encodeURIComponent(JSON.stringify(it.link.spec)) + '">↪ ' + it.link.label + '</button>';
-    if (it.link && it.link.href) h += '<a class="btn small" style="text-decoration:none; display:inline-flex; align-items:center" href="' + it.link.href + '" target="_blank" rel="noopener">↗ ' + it.link.label + '</a>';
+    // Both link slots render the same way. link2 was defined on two week items
+    // and rendered by nothing, so the plan's only routes into Drills and Songs
+    // existed in the data and never on the screen.
+    for (const key of ['link', 'link2']){
+      const ln = it[key];
+      if (!ln) continue;
+      if (ln.spec) h += '<button class="btn small" data-dl="' + encodeURIComponent(JSON.stringify(ln.spec)) + '">↪ ' + ln.label + '</button>';
+      else if (ln.href) h += '<a class="btn small" style="text-decoration:none; display:inline-flex; align-items:center" href="' +
+        ln.href + '" target="_blank" rel="noopener">↗ ' + ln.label + '</a>';
+    }
     h += '</div></div></div>';
   }
   if (doneCount === wk.items.length) h += '<p class="okmark" style="text-align:center; margin:10px 0 2px">Session complete — see you tomorrow.</p>';
