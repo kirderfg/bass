@@ -156,7 +156,8 @@
      The CI effect is much smaller in applied settings than in the lab, so
      treat the rung thresholds as tunable rather than settled. */
   const CI_RUNGS = ['blocked', 'serial', 'random'];
-  function nextCI(state, passed) {
+  function nextCI(state, passed, opts) {
+    if (opts && opts.window) return state;   // a repair window is not the drill
     const i = Math.max(0, CI_RUNGS.indexOf(state));
     const j = passed ? Math.min(CI_RUNGS.length - 1, i + 1) : Math.max(0, i - 1);
     return CI_RUNGS[j];
@@ -212,7 +213,7 @@
   function masteryOf(attempts, opts) {
     const bar = (opts && opts.accuracy) || ACCURACY_BAR;
     if (!attempts || !attempts.length) return 'new';
-    const clean = (a) => a.atTargetTempo && a.timingOk && a.accuracy >= bar;
+    const clean = (a) => !a.window && a.atTargetTempo && a.timingOk && a.accuracy >= bar;
     // Only a COLD first-attempt pass counts toward mastery: in-session
     // fluency is what massed practice and live feedback inflate.
     const days = new Set(attempts.filter(a => a.cold && clean(a)).map(a => a.date));

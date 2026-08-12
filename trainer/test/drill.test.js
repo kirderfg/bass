@@ -231,3 +231,31 @@ test('a drill that has only been failed is not reported as acquired', () => {
     { date: '2026-08-12', cold: false, accuracy: 1, timingOk: true, atTargetTempo: true },
   ]), 'acquired');
 });
+
+test('repair-window reps never count toward mastery', () => {
+  // A window rep only exists because the full run failed, and it is a
+  // different, easier task. Counting it would let a learner reach mastery
+  // while still failing the drill itself.
+  const windowReps = [
+    { date: '2026-08-12', cold: true, accuracy: 1, timingOk: true, atTargetTempo: true, window: true },
+    { date: '2026-08-14', cold: true, accuracy: 1, timingOk: true, atTargetTempo: true, window: true },
+  ];
+  assert.equal(D.masteryOf(windowReps), 'new', 'two clean repair windows are not mastery');
+
+  const mixed = [
+    { date: '2026-08-12', cold: true, accuracy: 1, timingOk: true, atTargetTempo: true, window: true },
+    { date: '2026-08-12', cold: true, accuracy: 1, timingOk: true, atTargetTempo: true },
+    { date: '2026-08-14', cold: true, accuracy: 1, timingOk: true, atTargetTempo: true },
+  ];
+  assert.equal(D.masteryOf(mixed), 'mastered', 'the two full runs still count');
+});
+
+test('the practice-order ramp needs a clean rep of the whole thing to advance', () => {
+  // Promoting off the back of a 4-note repair window would burn the entire
+  // blocked -> serial -> random ramp out in seconds, which defeats it.
+  assert.equal(D.nextCI('blocked', true, { window: true }), 'blocked');
+  assert.equal(D.nextCI('blocked', true), 'serial');
+  // A failed window rep should not demote either — it is not the drill.
+  assert.equal(D.nextCI('serial', false, { window: true }), 'serial');
+  assert.equal(D.nextCI('serial', false), 'blocked');
+});
