@@ -347,3 +347,17 @@ input[type=range]{width:100%; accent-color:var(--root); min-height:44px;}
 @media (min-width:1000px) and (max-width:1199px){
   .two-col{ grid-template-columns:1fr; }
 }
+
+/* The native checkbox is brighter than the primary button and reads as
+   unfinished. Defined here with the specificity to reach both apps. */
+body input[type=checkbox]{
+  appearance:none; -webkit-appearance:none;
+  width:24px; height:24px; flex:0 0 auto; cursor:pointer;
+  border:2px solid var(--line-hi); border-radius:var(--r-xs); background:var(--s2);
+  position:relative; transition:background var(--fast), border-color var(--fast);
+}
+body input[type=checkbox]:checked{background:var(--root); border-color:var(--root);}
+body input[type=checkbox]:checked::after{
+  content:''; position:absolute; left:6px; top:2px; width:8px; height:13px;
+  border:solid var(--on-root); border-width:0 2.5px 2.5px 0; transform:rotate(45deg);
+}

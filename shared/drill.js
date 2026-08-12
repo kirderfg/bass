@@ -212,10 +212,14 @@
   function masteryOf(attempts, opts) {
     const bar = (opts && opts.accuracy) || ACCURACY_BAR;
     if (!attempts || !attempts.length) return 'new';
-    const good = attempts.filter(a =>
-      a.cold && a.atTargetTempo && a.timingOk && a.accuracy >= bar);
-    const days = new Set(good.map(a => a.date));
-    return days.size >= 2 ? 'mastered' : 'acquired';
+    const clean = (a) => a.atTargetTempo && a.timingOk && a.accuracy >= bar;
+    // Only a COLD first-attempt pass counts toward mastery: in-session
+    // fluency is what massed practice and live feedback inflate.
+    const days = new Set(attempts.filter(a => a.cold && clean(a)).map(a => a.date));
+    if (days.size >= 2) return 'mastered';
+    // "Acquired" has to mean something was achieved — an item with nothing
+    // but failed reps behind it is still new.
+    return attempts.some(clean) ? 'acquired' : 'new';
   }
 
   return {

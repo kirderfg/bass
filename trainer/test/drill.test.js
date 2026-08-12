@@ -207,5 +207,27 @@ test('mastery needs a cold pass on two separate days, not fluency inside one ses
     { date: '2026-08-12', cold: true, accuracy: 0.8, timingOk: true, atTargetTempo: true },
     { date: '2026-08-14', cold: true, accuracy: 0.8, timingOk: true, atTargetTempo: true },
   ];
-  assert.equal(D.masteryOf(belowBar), 'acquired', '80% is under the 90% bar');
+  // 80% is under the bar, so both reps are failures — nothing was achieved,
+  // and the item has not progressed past new.
+  assert.equal(D.masteryOf(belowBar), 'new', '80% is under the 90% bar');
+});
+
+test('a drill that has only been failed is not reported as acquired', () => {
+  // "Acquired" must mean something was achieved. An item with nothing but
+  // failed reps behind it is still new, not part-learned.
+  const onlyFailures = [
+    { date: '2026-08-12', cold: true, accuracy: 0.4, timingOk: false, atTargetTempo: true },
+    { date: '2026-08-12', cold: false, accuracy: 0.6, timingOk: false, atTargetTempo: true },
+  ];
+  assert.equal(D.masteryOf(onlyFailures), 'new');
+
+  // One good cold day IS progress.
+  assert.equal(D.masteryOf([
+    { date: '2026-08-12', cold: true, accuracy: 1, timingOk: true, atTargetTempo: true },
+  ]), 'acquired');
+
+  // So is a clean rep that was not cold — you can do it, just not from cold.
+  assert.equal(D.masteryOf([
+    { date: '2026-08-12', cold: false, accuracy: 1, timingOk: true, atTargetTempo: true },
+  ]), 'acquired');
 });
