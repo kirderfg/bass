@@ -64,6 +64,8 @@
       <p><button class="btn primary" id="startBtn">Start listening</button></p>
       <p class="small muted">Nothing is recorded or uploaded — audio is analysed on your device and thrown away.</p>
       <p class="err hidden" id="gateErr"></p>
+      <!-- Read-only facts about tonight that do not need the microphone. -->
+      <div class="card tight hidden" id="gateExtra" style="margin-top:var(--sp3); text-align:left"></div>
     </div>
 
     <div id="app" class="hidden">
@@ -98,6 +100,10 @@
         </div>
         <div class="cents" id="tCents">&nbsp;</div>
         <div class="tune-list" id="tuneList"></div>
+        <!-- The end of tuning was previously unmarked: five ✓ chips and no
+             statement that the job was finished. -->
+        <p class="note-box good hidden" id="tuneDone" style="margin:10px 0 0">All five strings are in tune.
+        <b>“Tune up” is ticked off tonight's practice</b> — go and play.</p>
         <p class="muted small" style="margin:10px 0 0">Play each <b>open</b> string in turn (no fingers on the neck): <b id="tStrings">B E A D G</b>. Line the needle up in the green zone.<br>
         <span style="opacity:.8">A <b>cent</b> is a hundredth of a fret's worth of pitch — 100 cents = 1 fret. Under 15 cents is close enough for rock.</span></p>
       </div><div class="card" id="tunerAside">
@@ -219,6 +225,9 @@
         </div>
         <p class="t-caption hidden" id="drDueCta" style="margin:var(--sp2) 0 0"></p>
         <p class="t-caption" id="drPreview" style="margin:var(--sp3) 0 0"></p>
+        <!-- Whether this run can bank a mastery day, stated next to the button
+             that starts it. The rule used to be discoverable only afterwards. -->
+        <p class="note-box hidden" id="drBankNote" style="margin:var(--sp2) 0 0"></p>
         <p class="t-caption hidden" id="drLegendPick" style="margin:var(--sp1) 0 0"></p>
         <p class="t-caption hidden" id="drTargetNote" style="margin:var(--sp2) 0 0"></p>
         <div class="two-col" style="margin-top:var(--sp4)">

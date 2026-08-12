@@ -291,6 +291,13 @@ nav.tabbar button.on{color:var(--root);}
 .neck-hit:focus-visible{fill:rgba(242,169,59,.16); outline:none;}
 
 /* markers: colour is never the only cue */
+/* Markers are drawn ON TOP of the .neck-hit rects, so anything in them that can
+   take a click steals it from the fret. The label already opted out; the circle
+   did not, which meant that on a board captioned "tap any fret to hear it" the
+   LABELLED notes were the silent ones and the bare frets between them played.
+   Nothing listens on a marker — the hit rect is the target — so the whole group
+   goes click-through, not just the parts that happened to be noticed. */
+.neck-marker{pointer-events:none;}
 .neck-dot{stroke:rgba(0,0,0,.35); stroke-width:1;}
 .neck-dot-label{
   text-anchor:middle; dominant-baseline:central;
@@ -489,6 +496,13 @@ nav.tabbar button.on{color:var(--root);}
   /* content beside its controls, instead of stacked half-empty */
   .two-col{ display:grid; grid-template-columns:minmax(0,1fr) 320px; gap:var(--sp5); align-items:start; }
   .two-col > * { min-width:0; }
+  /* A board narrower than the card, with its words beside it rather than a third
+     of a screen of empty black. max-content, not 1fr: the neck keeps its own
+     size — stretching a fretboard to fill a column would misdraw the frets. */
+  .board-split{ display:grid; grid-template-columns:max-content minmax(260px,1fr);
+                gap:var(--sp5); align-items:start; margin-top:var(--sp3); }
+  .board-split > *{ min-width:0; }
+  .board-split .bs-aside{ padding-top:var(--sp2); }
 }
 @media (min-width:1000px) and (max-width:1199px){
   .two-col{ grid-template-columns:1fr; }

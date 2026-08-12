@@ -217,6 +217,19 @@ function renderTuneList(activeName){
   }).join('');
   if (host.dataset.sig !== html){ host.innerHTML = html; host.dataset.sig = html; }
 }
+/* Every string green means tonight's "Tune up" is genuinely done, so say so and
+   tick it off. The Learn half owns the item; this only reports the fact. */
+function reportTuned(){
+  const names = TUNINGS[tuning].names;
+  const all = names.every(n => tunedStrings[n]);
+  const done = document.getElementById('tuneDone');
+  if (done) done.classList.toggle('hidden', !all);
+  if (all && !reportTuned.sent && window.BassTheory && BassTheory.markTuned){
+    reportTuned.sent = true;      // once per page: markTuned is once per day
+    BassTheory.markTuned();
+  }
+}
+
 function renderTuner(pitch, reading){
   const noteEl = document.getElementById('tNote'), hzEl = document.getElementById('tHz');
   const bar = document.getElementById('tBar'), centsEl = document.getElementById('tCents');
@@ -251,6 +264,7 @@ function renderTuner(pitch, reading){
   bar.parentElement.classList.toggle('is-intune', inTune);
   if (target && inTune) tunedStrings[target.name] = true;
   renderTuneList(target && target.name);
+  reportTuned();
   centsEl.textContent = inTune ? '✓ in tune'
     : Math.abs(Math.round(n.cents)) + ' cents ' + (n.cents > 0 ? 'sharp — tune DOWN' : 'flat — tune UP');
   centsEl.style.color = inTune ? 'var(--good)' : 'var(--root)';
@@ -537,14 +551,19 @@ function setMode(m){
   // keep it below whichever exercise is showing, so it never jumps
   const sec = document.getElementById(m === 'echo' ? 'secEcho' : 'secFind');
   if ((m === 'find' || m === 'echo') && sec && sec.nextSibling !== dc) sec.parentNode.insertBefore(dc, sec.nextSibling);
-  // Say what this mode actually writes to. Drills keep their own record, so
-  // claiming they feed the Theory Trainer's checkpoints would be false.
+  // Say what this mode actually writes to, naming tabs the player can actually
+  // click: the two apps were merged, so "the Theory Trainer" named nothing.
+  // Drills keep their own record, so claiming they feed the quiz would be false.
   const feed = document.getElementById('feedNote');
-  if (feed) feed.textContent = m === 'drill'
-    ? 'Drills keep their own record — review dates, tempo and mastery live with the drill itself, and do not feed the Theory Trainer’s practice checkpoints.'
+  // The tuner has no answers — you turn pegs — and it sits in the always-visible
+  // card, so the quiz sentence was shown on a screen it did not describe.
+  if (feed) feed.textContent = m === 'tuner'
+    ? 'Getting all five strings into the green ticks “Tune up” off tonight’s practice list.'
+    : m === 'drill'
+    ? 'Drills keep their own record — review dates, tempo and mastery live with the drill itself, and do not feed the Note quiz stats or the Practice checkpoints.'
     : m === 'songs'
-    ? 'Songs keep their own record too — plays and best root accuracy live with the song, and do not feed the Theory Trainer’s practice checkpoints.'
-    : 'Answers here feed the same progress stats as the Theory Trainer\'s practice checkpoints.';
+    ? 'Songs keep their own record too — plays and best root accuracy live with the song, and do not feed the Note quiz stats or the Practice checkpoints.'
+    : 'Answers here feed the same progress stats as the Note quiz on the Practice tab.';
   tracker.reset();
   if (m === 'find' && !q) newQuestion();
   if (m === 'echo') newEcho();
@@ -683,8 +702,13 @@ function saveDrillItem(item){
 }
 
 /* picker state (what the selects say) and run state (what is being played) */
+/* The click ships ON. Mastery requires a run that is clean AND in time, only the
+   day's FIRST run can bank one, and "in time" can only be measured against a
+   click — so with the click off by default, a beginner's first-ever run was
+   spent before the rule was ever stated, and the tempo checkbox that decided it
+   sat below the fold at the far end of the card. Off is still one click away. */
 const DP = { type:'scale', scaleKey:'minPent', rootPc:4, winKey:null, si:1, variant:'full',
-             bpm:60, bpmTouched:false, met:false, labels:'names', wins:[], dueId:null };
+             bpm:60, bpmTouched:false, met:true, labels:'names', wins:[], dueId:null };
 const DR = {
   cfg:null, item:null, targets:[], full:[], repairTargets:null, run:null,
   phase:'idle', direction:'up', variant:'full', repair:false,
@@ -992,6 +1016,25 @@ function renderDrillPicker(){
       ? '<br><b>Only ' + shown.length + ' notes</b> — too few to measure against the click, so this shape is practice: ' +
         'it schedules review but it cannot bank a mastery day.'
       : '');
+  /* Said BEFORE the run, next to the button, because only the day's first run can
+     bank a mastery day and it needs the click: learning that afterwards means
+     learning it by losing the day. */
+  const bank = document.getElementById('drBankNote');
+  if (bank){
+    // Same test endRep uses for `cold`: today's first run of THIS shape.
+    const rec = loadDrills()[drillId(cfg)];
+    const first = !rec || rec.coldDate !== todayISO();
+    bank.innerHTML = shown.length < 3 ? ''
+      : !first ? 'You have already had today’s first run of this shape — the one that can bank a mastery day. ' +
+          'Anything now is practice, and still worth doing.'
+      : DP.met ? '<b>The click is on</b>, so this run can bank a mastery day: play it clean and in time and ' +
+          'today counts toward mastery. It is the day’s first run of this shape that counts.'
+      : '<b>The click is off</b>, so this run cannot bank a mastery day — “in time” is only a claim you can ' +
+          'check against a click. <button class="btn small" id="drMetOn">Turn the click on</button>';
+    bank.classList.toggle('hidden', shown.length < 3);
+    const on = document.getElementById('drMetOn');
+    if (on) on.addEventListener('click', () => { DP.met = true; renderDrillPicker(); });
+  }
   setLegend('drLegendPick', cfg.type);
 
   // Tempo is not a ratchet: the picker's bpm is what will play. The stored
@@ -1429,8 +1472,10 @@ function renderRun(){
     '<span class="pill">Next review: ' + dueWords(DR.item.due) + '</span>' +
     (DR.met ? '<span class="pill warn">' + DR.bpm + ' bpm</span>' : '');
   document.getElementById('drPillNote').innerHTML = CI_NOTE[ci] +
-    ' <b>Mastered</b> means the <b>ascending</b> shape, whole, played cold as the day’s first run, ' +
-    'clean and in time with the click, on two separate days.';
+    // "cold" was jargon, and the rule was worded two different ways on one
+    // screen. One wording, and the word is explained where it is used.
+    ' <b>Mastered</b> means the <b>ascending</b> shape, whole, played <b>cold</b> — the day’s first ' +
+    'run, before any warm-up on it — clean and in time with the click, on two separate days.';
 }
 function renderPanel(res, timingOk, attempt){
   const p = document.getElementById('drPanel');
@@ -1777,8 +1822,12 @@ function renderSongList(){
       '<p class="t-caption">' + song.why + '</p>' +
       songStrip(song) +
       '<div class="row" style="margin-top:var(--sp3)">' +
-        '<button class="btn primary" data-song="' + song.id + '" data-play="record">Play with the record</button>' +
-        '<button class="btn" data-song="' + song.id + '" data-play="click">Play with the app’s click</button>' +
+        /* The app's click leads. It is the mode that needs nothing you do not
+           already have and the only one that can grade you, so making "Play with
+           the record" — which wants a tab player with the bass track muted — the
+           orange primary pointed a beginner at the option he could not do tonight. */
+        '<button class="btn primary" data-song="' + song.id + '" data-play="click">Play with the app’s click</button>' +
+        '<button class="btn" data-song="' + song.id + '" data-play="record">Play with a record or tab player</button>' +
         '<a class="btn small ghost" href="' + song.tab + '" target="_blank" rel="noopener">Open in Songsterr ↗</a>' +
       '</div>' +
     '</div>';
@@ -2177,6 +2226,20 @@ function gateFor(m){
   document.getElementById('startBtn').textContent = MODES[m].cta;
   document.getElementById('gate').classList.remove('hidden');
   document.getElementById('app').classList.add('hidden');
+  /* What is due is a fact about your history, not about the microphone, and it
+     used to be locked behind the gate — you could not glance at tonight's review
+     without switching the mic on first. Read-only here: no run starts from it. */
+  const extra = document.getElementById('gateExtra');
+  if (!extra) return;
+  const due = m === 'drill' ? dueDrills() : [];
+  extra.innerHTML = !due.length ? '' :
+    '<div class="t-eyebrow">Due today</div>' +
+    due.map(it => '<div class="dr-row"><span class="dr-name">' + (it.label || it.id) + '</span>' +
+      '<span class="pill">' + masteryFor(it) + '</span>' +
+      '<span class="pill">due now</span></div>').join('') +
+    '<p class="t-caption" style="margin:var(--sp2) 0 0">Start listening and the first of these is what the ' +
+    'button runs.</p>';
+  extra.classList.toggle('hidden', !due.length);
 }
 
 /** Stop the analyser loop, keep the stream and the AudioContext. Called when a

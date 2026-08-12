@@ -438,14 +438,21 @@ function renderScales(){
     '<button data-k="names" class="' + (S.scales.labels === 'names' ? 'on' : '') + '">Names</button>' +
     '<button data-k="degrees" class="' + (S.scales.labels === 'degrees' ? 'on' : '') + '">Degrees</button></div>';
   h += '</div>';
-  if (view === 'open'){
-    h += '<p class="muted small" style="margin:8px 2px 0">Open position = frets 0–5, using open strings where you can. Home base for beginners.</p>';
-  } else if (view === 'box'){
-    h += '<p class="muted small" style="margin:8px 2px 0">The moveable box, anchored where the root (' + S.scales.root + ') sits on your lowest string — fret ' + anchor + '. Slide the whole box to a new root and it\'s the same scale in a new key. Numbers on the dots = suggested finger (1=index, 2=middle, 3=ring, 4=pinky).' +
-      (anchor >= 10 ? ' Cramped this high up? Slide the identical shape lower — anchored at fret 5 it becomes ' + noteName(TUNINGS[S.tuning].midi[0] + 5, false) + ' ' + sc.name.toLowerCase() + '.' : '') + '</p>';
-  } else {
-    h += '<p class="muted small" style="margin:8px 2px 0">Every ' + S.scales.root + ' ' + sc.name.toLowerCase() + ' note, frets 0–12. Notice the patterns repeating.</p>';
-  }
+  const viewNote = view === 'open'
+    ? 'Open position = frets 0–5, using open strings where you can. Home base for beginners.'
+    : view === 'box'
+    ? 'The moveable box, anchored where the root (' + S.scales.root + ') sits on your lowest string — fret ' + anchor + '. Slide the whole box to a new root and it\'s the same scale in a new key. Numbers on the dots = suggested finger (1=index, 2=middle, 3=ring, 4=pinky).' +
+      (anchor >= 10 ? ' Cramped this high up? Slide the identical shape lower — anchored at fret 5 it becomes ' + noteName(TUNINGS[S.tuning].midi[0] + 5, false) + ' ' + sc.name.toLowerCase() + '.' : '')
+    : 'Every ' + S.scales.root + ' ' + sc.name.toLowerCase() + ' note, frets 0–12. Notice the patterns repeating.';
+
+  /* Open position draws six fret columns, so on a desktop it was a ~450px picture
+     alone in a ~1100px card with two thirds of the row empty. The wide views fill
+     the card on their own and are left alone; this one gets its explanation beside
+     it instead of underneath. `.board-split` collapses back to one column below
+     1000px, so the phone layout is unchanged. */
+  const split = view === 'open';
+  if (split) h += '<div class="board-split">';
+  if (split) h += '<div class="bs-board">';
   h += '<div id="scaleFb"></div>';
   if (view === 'neck' && !window.matchMedia('(min-width:1000px)').matches){
     const wins = BassNeck.windows(12);
@@ -453,8 +460,11 @@ function renderScales(){
       '<button data-k="' + i + '" class="' + (i === scPage ? 'on' : '') + '">Frets ' + w[0] + '–' + w[1] + '</button>').join('') + '</div>';
   }
   h += fbCaption();
+  if (split) h += '</div><div class="bs-aside">';
+  h += '<p class="muted small" style="margin:' + (split ? '0' : '8px 2px 0') + '">' + viewNote + '</p>';
   h += '<div class="legend"><span class="l-root"><i></i>root</span><span class="l-tone"><i></i>scale tone</span><span class="l-hl"><i></i>now playing</span></div>';
   h += '<div class="row" style="margin-top:6px"><button class="btn primary" id="scPlay">▶ Play scale (slow)</button><button class="btn ghost" id="scStop">■ Stop</button></div>';
+  if (split) h += '</div></div>';
   h += '</div>';
 
   if ((S.scales.type === 'minPent' || S.scales.type === 'natMinor') && S.scales.root === 'E') h += theoryCard('relative');
@@ -826,8 +836,8 @@ function renderTrainer(){
 
   // Both halves are tabs of one page now, so this is a switch, not a page load.
   h += '<button class="card tight" data-live="tuner" style="display:block; width:100%; text-align:left; font:inherit; cursor:pointer; border-color:var(--line-hi)">' +
-    '<b style="color:var(--hl)">Live Trainer — play it, don\'t tap it</b>' +
-    '<div class="muted small" style="margin-top:2px">Plug your bass in (or use your phone\'s mic) and the app checks what you actually play: a <b>tuner</b>, single-note tests that feed the stats below, <b>ear training</b>, <b>Drills</b> that check you play a whole scale in the right order, and <b>Songs</b> — put on a tab player with the bass track muted, and the app follows the section roadmap and tells you how often you were on the root.</div></button>';
+    '<b style="color:var(--hl)">Play it, don’t tap it</b>' +
+    '<div class="muted small" style="margin-top:2px">The <b>Live</b> tabs check what you actually play, on the bass: a <b>tuner</b>, single-note tests that feed the stats below, <b>ear training</b>, <b>Drills</b> that check you play a whole scale in the right order, and <b>Songs</b> — put on a tab player with the bass track muted, and the app follows the section roadmap and tells you how often you were on the root.</div></button>';
 
   if (mode === 'study') h += studyHtml();
   else h += quizShellHtml(mode, tier);
@@ -1232,7 +1242,9 @@ const WEEKS = [
   { n:1, title:'Hands, fretboard & first notes',
     goal:'Get your hands working and learn where the notes are on E and A.',
     items:[
-      { id:'w1t', cat:'First', min:2,
+      // `tune:true` is what markTuned() looks for, so the Tuner can tick this
+      // off without the Live half needing to know any item id.
+      { id:'w1t', cat:'First', min:2, tune:true,
         text:'Tune up. Play each open string and match it to the green zone. An out-of-tune bass makes everything below sound wrong — and teaches your ear the wrong thing.',
         link:{ label:'Open the tuner', live:'tuner' } },
       { id:'w1a', diagram:'chromatic', cat:'Warm-up', min:5,
@@ -1336,11 +1348,17 @@ function banksMasteryDay(a){
 }
 function drillRollup(){
   const today = todayKey(), wk = isoBack(6), prevFrom = isoBack(13), prevTo = isoBack(7);
-  const out = { total:0, due:0, mastered:0, runs:0, runsPrev:0, banked:0, bankedPrev:0, nextDue:null };
+  const out = { total:0, due:0, mastered:0, runs:0, runsPrev:0, banked:0, bankedPrev:0,
+                nextDue:null, dueLabel:null };
   for (const it of storeItems(DRILL_KEY)){
     out.total++;
     const due = typeof it.due === 'string' ? it.due : null;
-    if (!due || due <= today) out.due++;
+    if (!due || due <= today){
+      out.due++;
+      // Named, so tonight's list can say which shape is waiting rather than
+      // just showing a number in a tile.
+      if (!out.dueLabel) out.dueLabel = it.label || it.id || null;
+    }
     else if (!out.nextDue || due < out.nextDue) out.nextDue = due;
     const attempts = Array.isArray(it.attempts) ? it.attempts.filter(a => a && typeof a === 'object') : [];
     const ascending = attempts.filter(a => a.direction !== 'down');
@@ -1415,15 +1433,17 @@ function thisWeekHtml(){
   if (!dr.total && !sg.plays && !answered && !days){
     return '<div class="card tight"><div class="t-eyebrow">This week</div>' +
       '<div class="muted small" style="margin-top:2px">Nothing recorded yet in any of the three places that keep ' +
-      'records — the note quiz here, <b>Drills</b> and <b>Songs</b> in the Live Trainer. Play anything in any of them ' +
+      'records — the <b>Note quiz</b>, <b>Drills</b> and <b>Songs</b>. Play anything in any of them ' +
       'and this card fills in, with last week beside this week as soon as there is a last week.</div>' + links + '</div>';
   }
 
   const tiles =
-    '<div class="stat"><b>' + dr.due + '</b><span>drills due now</span></div>' +
-    '<div class="stat"><b>' + dr.mastered + '</b><span>drills mastered</span></div>' +
+    // "1 drills due now" and "1 days practised" both shipped; every count that
+    // can be 1 now agrees with its noun, and the spelling is British throughout.
+    '<div class="stat"><b>' + dr.due + '</b><span>drill' + (dr.due === 1 ? '' : 's') + ' due now</span></div>' +
+    '<div class="stat"><b>' + dr.mastered + '</b><span>drill' + (dr.mastered === 1 ? '' : 's') + ' mastered</span></div>' +
     '<div class="stat"><b>' + sg.plays + '</b><span>song play' + (sg.plays === 1 ? '' : 's') + '</span></div>' +
-    '<div class="stat"><b>' + days + '</b><span>days this week</span></div>';
+    '<div class="stat"><b>' + days + '</b><span>day' + (days === 1 ? '' : 's') + ' this week</span></div>';
 
   const lines = [];
   lines.push('<div class="muted small" style="margin-top:var(--sp3)"><b>Drills:</b> ' + (dr.total
@@ -1492,14 +1512,36 @@ function practiceStats(){
   return { total, streak };
 }
 
+/**
+ * Tonight's list: the week's items, plus the drill review that is due today.
+ *
+ * A review was scheduled by the drill engine and shown only as a number in a
+ * tile called "drills due now" — so following the plan to 5/5 meant skipping the
+ * one piece of work the app had actually scheduled for today. It goes first,
+ * because that is the order the engine's own screen argues for.
+ */
+function todayItems(wk){
+  const dr = drillRollup();
+  if (!dr.due) return wk.items;
+  const review = {
+    id:'rev', cat:'Review', min:5, review:true,
+    text:'<b>Run the review that is due today</b>' + (dr.dueLabel ? ': ' + dr.dueLabel : '') +
+      (dr.due > 1 ? ' (first of ' + dr.due + ' due)' : '') +
+      '. A shape you last played days ago is the one with something to prove, so this comes before new work.',
+    link:{ label:'Run today’s review · ' + dr.due + ' due', live:'drill' },
+  };
+  return [review].concat(wk.items);
+}
+
 function renderPractice(){
   const el = document.getElementById('tab-practice');
   const wk = weekOf(S.practice.week);
   const log = dayLog();
   const ps = practiceStats();
-  const doneCount = wk.items.filter(i => log.items.includes(i.id)).length;
-  const pct = Math.round(100 * doneCount / wk.items.length);
-  const totalMin = wk.items.reduce((a, i) => a + i.min, 0);
+  const items = todayItems(wk);
+  const doneCount = items.filter(i => log.items.includes(i.id)).length;
+  const pct = Math.round(100 * doneCount / items.length);
+  const totalMin = items.reduce((a, i) => a + i.min, 0);
 
   let h = '<h2>Practice</h2>';
   // Everything that keeps a record, in one place, at the top.
@@ -1507,13 +1549,25 @@ function renderPractice(){
   // streak/overview
   if (ps.total === 0 && doneCount === 0){
     h += '<div class="card tight"><b class="t-title3">Day 1 — welcome.</b>' +
-      '<div class="muted small" style="margin-top:2px">Work through the ' + wk.items.length + ' items below and you\'ve started. ' +
+      '<div class="muted small" style="margin-top:2px">Work through the ' + items.length + ' items below and you\'ve started. ' +
       'Your streak begins today.</div></div>';
   } else {
+    /* Day 1 gets a "Day 1 — welcome" line saying what tonight is; every day after
+       it used to get three numbers and nothing else. This is the same sentence,
+       for the other days: what tonight is, and whether anything is waiting. */
+    const rev = items.find(i => i.review);
+    const revDone = rev && log.items.includes(rev.id);
     h += '<div class="card tight"><div class="statgrid">' +
       '<div class="stat"><b>' + ps.streak + '</b><span>day streak</span></div>' +
-      '<div class="stat"><b>' + ps.total + '</b><span>days practiced</span></div>' +
-      '<div class="stat"><b>' + doneCount + '/' + wk.items.length + '</b><span>today</span></div>' +
+      '<div class="stat"><b>' + ps.total + '</b><span>day' + (ps.total === 1 ? '' : 's') + ' practised</span></div>' +
+      '<div class="stat"><b>' + doneCount + '/' + items.length + '</b><span>today</span></div>' +
+      '</div><div class="muted small" style="margin-top:var(--sp2)">' +
+      (doneCount === items.length
+        ? 'Tonight is done — ' + items.length + ' of ' + items.length + '. Everything resets tomorrow.'
+        : 'Tonight: <b>week ' + wk.n + '</b>, ' + items.length + ' items, about ' + totalMin + ' min' +
+          (rev && !revDone ? ' — starting with the <b>review that is due</b>, which is first on the list.'
+                           : rev && revDone ? ' — today’s review is done.'
+                           : '. Nothing is due for review, so it is straight through the list.')) +
       '</div></div>';
   }
 
@@ -1529,7 +1583,7 @@ function renderPractice(){
   h += '<p class="muted small" style="margin:4px 0 4px">' + wk.goal + '</p>';
   h += '<p class="muted small" style="margin:0">Daily shape: 5\' warm-up → 5\' fretboard/scales → 10\' technique → 10\' music. Check things off as you go — it resets each day.</p>';
   h += '<div class="progressbar"><i style="width:' + pct + '%"></i></div>';
-  for (const it of wk.items){
+  for (const it of items){
     const done = log.items.includes(it.id);
     h += '<div class="pitem ' + (done ? 'done' : '') + '">';
     h += '<input type="checkbox" data-item="' + it.id + '" ' + (done ? 'checked' : '') + ' aria-label="done">';
@@ -1552,7 +1606,7 @@ function renderPractice(){
     }
     h += '</div></div></div>';
   }
-  if (doneCount === wk.items.length) h += '<p class="okmark" style="text-align:center; margin:10px 0 2px">Session complete — see you tomorrow.</p>';
+  if (doneCount === items.length) h += '<p class="okmark" style="text-align:center; margin:10px 0 2px">Session complete — see you tomorrow.</p>';
   h += '</div>';
 
   // metronome
@@ -1667,10 +1721,10 @@ function reportText(){
       (sg.best ? ', best ' + Math.round(sg.best * 100) + '% on the section root (' + songTitle(sg.bestId) + ', ' +
         (sg.bestFull ? 'whole roadmap' : sg.bestSections + ' of ' + sg.bestOf + ' sections') + ')' : ', none graded yet') + '\n'
     : 'Songs (root roadmaps over a muted-bass tab): none played yet\n';
-  return 'Hi Claude! I just finished the 3-week beginner program in my Bass Theory Trainer app. Please design weeks 4-5 for me.\n\n' +
+  return 'Hi Claude! I just finished the 3-week beginner program in my Bass Trainer app. Please design weeks 4-5 for me.\n\n' +
     'My setup: ' + rig + ', goal = rock/metal, 20-30 min/day.\n' +
     'Program completed: ' + cps + '\n' +
-    'Days practiced: ' + ps.total + ' (current streak ' + ps.streak + ')\n' +
+    'Days practised: ' + ps.total + ' (current streak ' + ps.streak + ')\n' +
     'Note trainer: ' + acc + '% lifetime accuracy over ' + st.answered + ' questions, best streak ' + st.bestStreak + '\n' +
     (perStr ? 'Per string:\n' + perStr + '\n' : '') +
     drLine + sgLine +
@@ -1741,7 +1795,32 @@ function mount(opts){
   });
 }
 
-window.BassTheory = { mount, showTab: show };
+/**
+ * Tick today's "Tune up" item off, because the Tuner just watched every string
+ * land in the green. The Tuner used to promise this and not do it: you tuned all
+ * five, came back, and the box was still empty.
+ *
+ * Owned here rather than in the Live half so that item ids stay this file's
+ * business — the Live half only knows that tuning happened. Once a day, and
+ * never against an item already ticked, so unticking it by hand sticks.
+ * @returns {boolean} true if this call is what ticked it.
+ */
+function markTuned(){
+  S = loadState();
+  const today = todayKey();
+  if (S.practice.tunedMarked === today) return false;
+  const item = (weekOf(S.practice.week).items || []).find(it => it.tune);
+  S.practice.tunedMarked = today;
+  if (!item){ save(); return false; }
+  const log = dayLog();
+  const already = log.items.includes(item.id);
+  if (!already) log.items.push(item.id);
+  save();
+  if (currentTab === 'practice') renderPractice();
+  return !already;
+}
+
+window.BassTheory = { mount, showTab: show, markTuned };
 
 /* ---- test seam ----
    trainer/test/*.js and the scratchpad smoke script drive this app from page

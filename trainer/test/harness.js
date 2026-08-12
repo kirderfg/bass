@@ -27,23 +27,57 @@ function startServer() {
   });
 }
 
-/** Write a looping WAV of a plucked bass tone (weak fundamental, like the real thing). */
+/** A plucked bass tone: weak fundamental and strong partials, like the real thing. */
+const PARTIALS = [[1, 0.25], [2, 0.6], [3, 0.35], [4, 0.2], [5, 0.1]];
+
+function wavHeader(dataLength, rate) {
+  const h = Buffer.alloc(44);
+  h.write('RIFF', 0); h.writeUInt32LE(36 + dataLength, 4); h.write('WAVE', 8);
+  h.write('fmt ', 12); h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(1, 22);
+  h.writeUInt32LE(rate, 24); h.writeUInt32LE(rate * 2, 28); h.writeUInt16LE(2, 32); h.writeUInt16LE(16, 34);
+  h.write('data', 36); h.writeUInt32LE(dataLength, 40);
+  return h;
+}
+
+/** Write a looping WAV of one plucked bass tone. */
 function writeNoteWav(hz, file, seconds = 3, rate = 44100) {
   const n = Math.floor(seconds * rate);
   const data = Buffer.alloc(n * 2);
-  const partials = [[1, 0.25], [2, 0.6], [3, 0.35], [4, 0.2], [5, 0.1]];
   for (let i = 0; i < n; i++) {
     const t = i / rate;
     let v = 0;
-    for (const [mult, amp] of partials) v += amp * Math.sin(2 * Math.PI * hz * mult * t);
+    for (const [mult, amp] of PARTIALS) v += amp * Math.sin(2 * Math.PI * hz * mult * t);
     data.writeInt16LE(Math.max(-32767, Math.min(32767, Math.round((v / 1.5) * 22000))), i * 2);
   }
-  const h = Buffer.alloc(44);
-  h.write('RIFF', 0); h.writeUInt32LE(36 + data.length, 4); h.write('WAVE', 8);
-  h.write('fmt ', 12); h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(1, 22);
-  h.writeUInt32LE(rate, 24); h.writeUInt32LE(rate * 2, 28); h.writeUInt16LE(2, 32); h.writeUInt16LE(16, 34);
-  h.write('data', 36); h.writeUInt32LE(data.length, 40);
-  fs.writeFileSync(file, Buffer.concat([h, data]));
+  fs.writeFileSync(file, Buffer.concat([wavHeader(data.length, rate), data]));
+  return file;
+}
+
+/**
+ * Write a WAV of several tones back to back, each followed by silence.
+ *
+ * Chromium's fake device takes ONE file, so a test that needs the app to hear
+ * more than one pitch in a single page load has to put them in the file. The
+ * silence matters: it is what lets the tracker release between notes, so five
+ * open strings read as five separate notes rather than one long smear.
+ */
+function writeSequenceWav(hzList, file, secondsEach = 2.4, rate = 44100) {
+  const per = Math.floor(secondsEach * rate);
+  const quiet = Math.floor(rate * 0.5);
+  const data = Buffer.alloc(hzList.length * per * 2);
+  let o = 0;
+  for (const hz of hzList) {
+    for (let i = 0; i < per; i++) {
+      const t = i / rate;
+      let v = 0;
+      for (const [mult, amp] of PARTIALS) v += amp * Math.sin(2 * Math.PI * hz * mult * t);
+      const gate = i > per - quiet ? 0 : 1;
+      data.writeInt16LE(Math.max(-32767, Math.min(32767,
+        Math.round((v / 1.5) * 22000 * gate))), o);
+      o += 2;
+    }
+  }
+  fs.writeFileSync(file, Buffer.concat([wavHeader(data.length, rate), data]));
   return file;
 }
 
@@ -56,13 +90,18 @@ function writeNoteWav(hz, file, seconds = 3, rate = 44100) {
  * `url` is served from the repo root, so it can be '/index.html#drill' or
  * '/trainer/index.html#drill' (which redirects).
  *
+ * Pass an ARRAY for `hz` to play those pitches in turn instead of one held note
+ * — the tuner, for instance, has to hear five different strings to finish.
+ *
+ * `viewport` widens the window for tests about the desktop layout.
+ *
  * @returns {{page, errors, gum, goto, close}} gum() counts getUserMedia calls.
  */
-async function openApp(hz, url = '/index.html') {
+async function openApp(hz, url = '/index.html', viewport) {
   const { chromium } = require(PW);
   const { server, port } = await startServer();
   const wav = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'basswav-')), 'note.wav');
-  writeNoteWav(hz, wav);
+  if (Array.isArray(hz)) writeSequenceWav(hz, wav); else writeNoteWav(hz, wav);
 
   const browser = await chromium.launch({
     executablePath: CHROME,
@@ -74,7 +113,7 @@ async function openApp(hz, url = '/index.html') {
   });
   const context = await browser.newContext({
     permissions: ['microphone'],
-    viewport: { width: 380, height: 800 },
+    viewport: viewport || { width: 380, height: 800 },
   });
   const page = await context.newPage();
   const errors = [];
@@ -129,4 +168,4 @@ async function until(page, fn, arg, timeout = 6000) {
   return last;
 }
 
-module.exports = { openApp, openWithNote, until, writeNoteWav };
+module.exports = { openApp, openWithNote, until, writeNoteWav, writeSequenceWav };
