@@ -309,6 +309,11 @@ nav.tabbar button.on{color:var(--root);}
 .neck-marker.is-wrong .neck-dot-label{fill:var(--bad);}
 .neck-marker.is-asked .neck-dot{fill:var(--s4); stroke:var(--root); stroke-width:2; stroke-dasharray:4 3;}
 .neck-marker.is-asked .neck-dot-label{fill:var(--root);}
+/* A study-board PEEK: the name of a fret just tapped to hear it — not a member
+   of any shape on the board, so it must not wear a scale tone's dress. Dashed
+   violet, and the code clears it a beat later. */
+.neck-marker.is-peek .neck-dot{fill:var(--s4); stroke:var(--hl); stroke-width:2; stroke-dasharray:2 2.5;}
+.neck-marker.is-peek .neck-dot-label{fill:var(--hl); font-weight:750;}
 .neck-badge{font-family:var(--sans); font-size:10px; font-weight:800; text-anchor:middle; dominant-baseline:central;}
 .neck-marker.is-correct .neck-badge{fill:var(--good);}
 .neck-marker.is-wrong .neck-badge{fill:var(--bad);}

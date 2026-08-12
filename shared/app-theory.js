@@ -699,7 +699,7 @@ function containmentChain(ch, rp, flats){
   h += '</div>';
   return h;
 }
-/* ================= FEATURE 3: FRETBOARD TRAINER ================= */
+/* ================= FEATURE 3: NOTE QUIZ ================= */
 const TIERS = [
   { label:'1 · E + A strings, frets 0–5', strings:['E','A'], maxFret:5, accidentals:false,
     tip:'Start here: these two strings are where most rock basslines live.' },
@@ -832,7 +832,9 @@ function renderTrainer(){
   const mode = S.trainer.mode;
   const tier = tierFor(S.trainer.tier);
 
-  let h = '<h2>Fretboard trainer</h2>';
+  // "Note quiz", the nav's name for this tab: it had three names — the nav said
+  // Note quiz, this header said Fretboard trainer, plan links said note trainer.
+  let h = '<h2>Note quiz</h2>';
   h += '<div class="card tight">';
   h += '<div class="seg" id="trMode">' + MODES.map(m =>
     '<button data-k="' + m.k + '" class="' + (m.k === mode ? 'on' : '') + '">' + m.label + '</button>').join('') + '</div>';
@@ -926,12 +928,24 @@ function mountStudy(){
     },
     onTap(si, f, midi){
       Audio_.note(midi);
-      if (!st.show){
-        const isNat = NATURALS.has(NAMES_S[pc(midi)]);
-        if (st.naturalsOnly && !isNat) return;
-        trainerFb.setNote(si, f, isNat ? 'tone' : 'ghost', NAMES_S[pc(midi)]);
-        setTimeout(() => { try{ trainerFb.clearNote(si, f); }catch(e){} }, 1400);
-      }
+      const name = NAMES_S[pc(midi)];
+      const isNat = NATURALS.has(name);
+      // Same test as mark() above: is this fret already wearing its name?
+      const labelled = st.show && (!st.naturalsOnly || isNat);
+      if (labelled){ trainerFb.pulse(si, f); return; }
+      /* An UNMARKED fret used to answer only in sound: the reveal ran solely
+         with names hidden, and skipped accidentals even then, so on the default
+         board a tapped F# played and showed nothing. Every unmarked tap now
+         shows a transient PEEK naming what was heard — dressed as a peek
+         (is-peek, dashed violet), never as a scale tone, so the board's
+         permanent vocabulary stays visibly separate. */
+      trainerFb.setNote(si, f, 'peek', name);
+      const fb = trainerFb;
+      setTimeout(() => {
+        // Only through the SAME handle: a re-render swaps trainerFb, and
+        // clearing through the stale one would paint the old board back.
+        if (trainerFb === fb) try{ fb.clearNote(si, f); }catch(e){}
+      }, 1400);
     }
   });
   bindSeg('stShow', k => { st.show = k === '1'; save(); renderTrainer(); });
@@ -1286,7 +1300,7 @@ const WEEKS = [
         text:'Chromatic 1-2-3-4: one finger per fret, up every string and back. Slow and clean beats fast and sloppy.', met:60 },
       { id:'w1b', cat:'Fretboard', min:5,
         text:'Note names on the E and A strings, frets 0–5. Study first, then try a few rounds of "Find the note".',
-        link:{ label:'Open note trainer (E+A, 0–5)', spec:{ tab:'trainer', trainer:{ tier:0, mode:'study', focus:null, study:{ show:true, strings:['E','A'], naturalsOnly:true, maxFret:5 } } } } },
+        link:{ label:'Open the Note quiz (E+A, 0–5)', spec:{ tab:'trainer', trainer:{ tier:0, mode:'study', focus:null, study:{ show:true, strings:['E','A'], naturalsOnly:true, maxFret:5 } } } } },
       { id:'w1c', diagram:'floatingThumb', cat:'Technique', min:8,
         text:'Alternate index and middle on the open E, one note per click. Rest your thumb on the B string so it stays silent.', met:60 },
       { id:'w1d', diagram:'plucking', cat:'Music', min:10,
@@ -1301,18 +1315,27 @@ const WEEKS = [
   { n:2, title:'Eighth notes + E minor pentatonic',
     goal:'Lock in eighth notes and memorize the most important scale in rock.',
     items:[
+      // Weeks 2 and 3 used to DROP the tune-up after week 1 had taught that an
+      // out-of-tune bass "teaches your ear the wrong thing" — the habit lapsed
+      // the week after it was argued for. markTuned() finds these by `tune`.
+      { id:'w2t', cat:'First', min:2, tune:true,
+        text:'Tune up. Each open string into the green zone before the scale work — this week is your ear learning E minor pentatonic, and an out-of-tune bass teaches it the wrong thing.',
+        link:{ label:'Open the tuner', live:'tuner' } },
       { id:'w2a', diagram:'chromatic', cat:'Warm-up', min:5,
         text:'Chromatic 1-2-3-4 on all strings. Push to 65 bpm if yesterday was clean.', met:65 },
       { id:'w2b', cat:'Scales', min:5,
         text:'E minor pentatonic, open position: E G A B D. Play it up and down slowly until your fingers know it in both directions. Use "Play scale" to check yourself.',
         link:{ label:'Open E minor pentatonic', spec:{ tab:'scales', scales:{ root:'E', type:'minPent', view:'open', labels:'names' } } },
-        link2:{ label:'Then check it in Drills', live:'drill' } },
+        // The preset makes the link land CONFIGURED: without it, Drills opens on
+        // whatever the picker last showed, which is only this shape by luck.
+        link2:{ label:'Then check it in Drills', live:'drill',
+                preset:{ drill:{ type:'scale', scaleKey:'minPent', rootPc:4, from:0 } } } },
       { id:'w2c', diagram:'eighthNotes', cat:'Technique', min:10,
         text:'Eighth notes on the open E: two notes per click, strict index-middle alternation. Every 4 beats, switch to another pentatonic note without breaking the rhythm.', met:65 },
       { id:'w2d', cat:'Music', min:10,
         text:'Loop E → G → A, eighth notes, 4 beats each. Smooth switches matter more than speed.', met:65 },
       { id:'w2e', cat:'Bonus', min:5,
-        text:'Note trainer: "Find the note" on E + A naturals. Use the "E only" drill button to bank 20 E-string answers at 90%+.',
+        text:'Note quiz: "Find the note" on E + A naturals. Use the "E only" drill button to bank 20 E-string answers at 90%+.',
         link:{ label:'Find the note (tier 1)', spec:{ tab:'trainer', trainer:{ tier:0, mode:'find', focus:null } } } }
     ],
     checkpoints:[
@@ -1324,20 +1347,31 @@ const WEEKS = [
   { n:3, title:'First song: T.N.T.',
     goal:'Everything so far becomes a real AC/DC song.',
     items:[
+      // Same reason as w2t: the tune-up must not lapse the week a real song lands.
+      { id:'w3t', cat:'First', min:2, tune:true,
+        text:'Tune up. Each open string into the green zone before the song — T.N.T. is the week\'s payoff, and an out-of-tune bass teaches your ear the wrong thing while you play it.',
+        link:{ label:'Open the tuner', live:'tuner' } },
       { id:'w3a', cat:'Warm-up', min:5,
         text:'Chromatic warmup at 70 bpm, or E minor pentatonic up and down twice.', met:70 },
       { id:'w3b', cat:'Scales', min:5,
         text:'The MOVEABLE pentatonic box. On your 5-string, the root E sits on the B string at fret 5 — the box anchors there. Same note recipe as the open position, packed into one closed shape with no open strings, so you can slide it anywhere.',
         link:{ label:'Open the moveable box', spec:{ tab:'scales', scales:{ root:'E', type:'minPent', view:'box', labels:'names' } } },
-        link2:{ label:'Then check it in Drills', live:'drill' } },
+        // from:5 is the E-root box boxOptions() offers (B string, fret 5). Without
+        // the preset this link opened the picker on the OPEN position — a
+        // different shape from the one the item just taught.
+        link2:{ label:'Then check it in Drills', live:'drill',
+                preset:{ drill:{ type:'scale', scaleKey:'minPent', rootPc:4, from:5 } } } },
       { id:'w3c', diagram:'tntRoots', cat:'Technique', min:10,
         text:'TNT chorus moves: roots E → A → G as eighth notes, 4 beats each. All three live in E minor pentatonic.', met:70 },
       { id:'w3d', cat:'Music', min:10,
         text:'T.N.T.: verse = steady eighth notes on E (palm-relaxed, locked to click). Chorus = the E→A→G shifts. Loop verse → chorus. Full speed is ~126 bpm — start at 70 and work up.',
         link:{ label:'TNT tab — mute the bass track, slow it down ↗', href:'https://www.songsterr.com/a/wsa/acdc-tnt-bass-tab-s407' },
-        link2:{ label:'Then let the app listen while you play it', live:'songs' } },
+        // The song preset scrolls to and highlights T.N.T.: this link used to
+        // land at the top of the list, on Back in Black.
+        link2:{ label:'Then let the app listen while you play it', live:'songs',
+                preset:{ song:'tnt' } } },
       { id:'w3e', cat:'Bonus', min:5,
-        text:'Note trainer: "Find the note" focused on the A string only. Get your last 20 answers above 90%.',
+        text:'Note quiz: "Find the note" focused on the A string only. Get your last 20 answers above 90%.',
         link:{ label:'Find the note (A string)', spec:{ tab:'trainer', trainer:{ tier:1, mode:'find', focus:['A'] } } } }
     ],
     checkpoints:[
@@ -1383,7 +1417,7 @@ function banksMasteryDay(a){
 function drillRollup(){
   const today = todayKey(), wk = isoBack(6), prevFrom = isoBack(13), prevTo = isoBack(7);
   const out = { total:0, due:0, mastered:0, runs:0, runsPrev:0, banked:0, bankedPrev:0,
-                nextDue:null, dueLabel:null };
+                nextDue:null, dueLabel:null, ranToday:false };
   for (const it of storeItems(DRILL_KEY)){
     // Stored drills carry cfg.tuning:5 (the id embeds it). Anything else can
     // only be a hand-edited store; Drills would not show it, so nor does this.
@@ -1404,6 +1438,9 @@ function drillRollup(){
     for (const a of attempts){
       const d = typeof a.date === 'string' ? a.date : null;
       if (!d) continue;
+      // Any run today is what keeps a finished review visibly credited on
+      // tonight's list after the run itself has rescheduled the due date away.
+      if (d === today) out.ranToday = true;
       const inWeek = d >= wk && d <= today, inPrev = d >= prevFrom && d <= prevTo;
       if (inWeek) out.runs++; else if (inPrev) out.runsPrev++;
       if (!banksMasteryDay(a)) continue;
@@ -1574,15 +1611,28 @@ function practiceStats(){
  */
 function todayItems(wk){
   const dr = drillRollup();
-  if (!dr.due) return wk.items;
-  const review = {
-    id:'rev', cat:'Review', min:5, review:true,
-    text:'<b>Run the review that is due today</b>' + (dr.dueLabel ? ': ' + dr.dueLabel : '') +
-      (dr.due > 1 ? ' (first of ' + dr.due + ' due)' : '') +
-      '. A shape you last played days ago is the one with something to prove, so this comes before new work.',
-    link:{ label:'Run today’s review · ' + dr.due + ' due', live:'drill' },
-  };
-  return [review].concat(wk.items);
+  if (dr.due){
+    const review = {
+      id:'rev', cat:'Review', min:5, review:true,
+      text:'<b>Run the review that is due today</b>' + (dr.dueLabel ? ': ' + dr.dueLabel : '') +
+        (dr.due > 1 ? ' (first of ' + dr.due + ' due)' : '') +
+        '. A shape you last played days ago is the one with something to prove, so this comes before new work.',
+      link:{ label:'Run today’s review · ' + dr.due + ' due', live:'drill' },
+    };
+    return [review].concat(wk.items);
+  }
+  /* A review that was RUN must stay credited: it used to vanish the moment the
+     run rescheduled it, so "0/6 today" silently became "0/5" and the one piece
+     of work the app itself scheduled left no trace of being done. `done:true`
+     is DERIVED from the drill store's own attempts — renderPractice never
+     writes it into the day log and never lets it be unticked. */
+  if (dr.ranToday){
+    return [{
+      id:'rev', cat:'Review', min:5, review:true, done:true,
+      text:'<b>Review — done today.</b> The drill work is run and rescheduled; tonight\'s list will say when it comes back.',
+    }].concat(wk.items);
+  }
+  return wk.items;
 }
 
 function renderPractice(){
@@ -1591,7 +1641,10 @@ function renderPractice(){
   const log = dayLog();
   const ps = practiceStats();
   const items = todayItems(wk);
-  const doneCount = items.filter(i => log.items.includes(i.id)).length;
+  // `i.done` is the derived tick (a review already run today) — it counts in
+  // the numerator exactly like a logged item, it just never lives in the log.
+  const itemDone = i => i.done || log.items.includes(i.id);
+  const doneCount = items.filter(itemDone).length;
   const pct = Math.round(100 * doneCount / items.length);
   const totalMin = items.reduce((a, i) => a + i.min, 0);
 
@@ -1608,7 +1661,7 @@ function renderPractice(){
        it used to get three numbers and nothing else. This is the same sentence,
        for the other days: what tonight is, and whether anything is waiting. */
     const rev = items.find(i => i.review);
-    const revDone = rev && log.items.includes(rev.id);
+    const revDone = rev && itemDone(rev);
     h += '<div class="card tight"><div class="statgrid">' +
       '<div class="stat"><b>' + ps.streak + '</b><span>day streak</span></div>' +
       '<div class="stat"><b>' + ps.total + '</b><span>day' + (ps.total === 1 ? '' : 's') + ' practised</span></div>' +
@@ -1642,10 +1695,14 @@ function renderPractice(){
     '. Check things off as you go — it resets each day.</p>';
   h += '<div class="progressbar"><i style="width:' + pct + '%"></i></div>';
   for (const it of items){
-    const done = log.items.includes(it.id);
+    const done = itemDone(it);
     h += '<div class="pitem ' + (done ? 'done' : '') + '">';
-    h += '<input type="checkbox" data-item="' + it.id + '" ' + (done ? 'checked' : '') + ' aria-label="done">';
-    h += '<div class="ptext"><span class="pmain" data-toggle="' + it.id + '"><span class="pcat">' + it.cat + ' · ' + it.min + ' min</span><br>' + it.text + '</span>';
+    // A derived tick (it.done) is disabled and carries no data-toggle: it states
+    // a fact from the drill store, so unticking it here could only tell a lie.
+    h += '<input type="checkbox" data-item="' + it.id + '" ' + (done ? 'checked' : '') +
+         (it.done ? ' disabled' : '') + ' aria-label="done">';
+    h += '<div class="ptext"><span class="pmain"' + (it.done ? '' : ' data-toggle="' + it.id + '"') +
+         '><span class="pcat">' + it.cat + ' · ' + it.min + ' min</span><br>' + it.text + '</span>';
     if (it.diagram) h += '<div class="drill-host" data-diagram="' + it.diagram + '"></div>';
     h += '<div class="plink row">';
     if (it.met) h += '<button class="btn small" data-met="' + it.met + '"><svg viewBox="0 0 24 24" class="btn-ic"><path d="M5 19V7l12-3v12"/><circle cx="4" cy="19" r="2.4"/><circle cx="16" cy="16" r="2.4"/></svg>Metronome ' + it.met + '</button>';
@@ -1657,7 +1714,11 @@ function renderPractice(){
       if (!ln) continue;
       if (ln.spec) h += '<button class="btn small" data-dl="' + encodeURIComponent(JSON.stringify(ln.spec)) + '">↪ ' + ln.label + '</button>';
       // A Live mode is a tab of this same page now: switch, don't navigate.
-      else if (ln.live) h += '<button class="btn small" data-live="' + ln.live + '">↪ ' + ln.label + '</button>';
+      // `preset` rides along so the link lands CONFIGURED — a link that names a
+      // drill or a song and then opens the mode's default is a broken promise.
+      else if (ln.live) h += '<button class="btn small" data-live="' + ln.live + '"' +
+        (ln.preset ? ' data-preset="' + encodeURIComponent(JSON.stringify(ln.preset)) + '"' : '') +
+        '>↪ ' + ln.label + '</button>';
       else if (ln.href) h += '<a class="btn small" style="text-decoration:none; display:inline-flex; align-items:center" href="' +
         ln.href + '" target="_blank" rel="noopener">↗ ' + ln.label + '</a>';
     }
@@ -1727,7 +1788,9 @@ function renderPractice(){
     save(); renderPractice();
   }
   el.querySelectorAll('[data-item]').forEach(c => c.addEventListener('change', () => toggleItem(c.dataset.item, c.checked)));
-  el.querySelectorAll('.pmain').forEach(p => p.addEventListener('click', () => toggleItem(p.dataset.toggle)));
+  // [data-toggle], not every .pmain: the derived review row renders without the
+  // attribute, and toggling `undefined` would push it into the day log.
+  el.querySelectorAll('.pmain[data-toggle]').forEach(p => p.addEventListener('click', () => toggleItem(p.dataset.toggle)));
   el.querySelectorAll('[data-cp]').forEach(c => c.addEventListener('change', () => {
     S.practice.checkpoints[c.dataset.cp] = c.checked; save(); renderPractice();
   }));
@@ -1758,6 +1821,9 @@ function renderPractice(){
 function reportText(){
   const ps = practiceStats();
   const st = S.stats;
+  // Every count-noun pair goes through this: "1 shapes drilled" shipped, and a
+  // report the player pastes as their own words must not read like a printout.
+  const n_ = (n, one, many) => n + ' ' + (n === 1 ? one : (many || one + 's'));
   const acc = st.answered ? Math.round(100 * st.correct / st.answered) : 0;
   const perStr = Object.keys(st.byString).map(n => {
     const s = st.byString[n];
@@ -1771,20 +1837,20 @@ function reportText(){
   // a third of the practice that actually happened.
   const dr = drillRollup(), sg = songRollup();
   const drLine = dr.total
-    ? 'Drills: ' + dr.total + ' shapes drilled, ' + dr.mastered + ' mastered (cold first run, in time with the click, two ' +
-      'separate days), ' + dr.due + ' due for review now, ' + dr.runs + ' run' + (dr.runs === 1 ? '' : 's') +
+    ? 'Drills: ' + n_(dr.total, 'shape') + ' drilled, ' + dr.mastered + ' mastered (cold first run, in time with the click, two ' +
+      'separate days), ' + dr.due + ' due for review now, ' + n_(dr.runs, 'run') +
       ' in the last 7 days\n'
     : 'Drills: none run yet\n';
   const sgLine = sg.plays
-    ? 'Songs (root roadmaps over a muted-bass tab): ' + sg.plays + ' plays across ' + sg.songs + ' songs' +
+    ? 'Songs (root roadmaps over a muted-bass tab): ' + n_(sg.plays, 'play') + ' across ' + n_(sg.songs, 'song') +
       (sg.best ? ', best ' + Math.round(sg.best * 100) + '% on the section root (' + songTitle(sg.bestId) + ', ' +
-        (sg.bestFull ? 'whole roadmap' : sg.bestSections + ' of ' + sg.bestOf + ' sections') + ')' : ', none graded yet') + '\n'
+        (sg.bestFull ? 'whole roadmap' : sg.bestSections + ' of ' + n_(sg.bestOf, 'section')) + ')' : ', none graded yet') + '\n'
     : 'Songs (root roadmaps over a muted-bass tab): none played yet\n';
   return 'Hi Claude! I just finished the 3-week beginner program in my Bass Trainer app. Please design weeks 4-5 for me.\n\n' +
     'My setup: ' + rig + ', goal = rock/metal, 20-30 min/day.\n' +
     'Program completed: ' + cps + '\n' +
     'Days practised: ' + ps.total + ' (current streak ' + ps.streak + ')\n' +
-    'Note trainer: ' + acc + '% lifetime accuracy over ' + st.answered + ' questions, best streak ' + st.bestStreak + '\n' +
+    'Note quiz: ' + acc + '% lifetime accuracy over ' + n_(st.answered, 'question') + ', best streak ' + st.bestStreak + '\n' +
     (perStr ? 'Per string:\n' + perStr + '\n' : '') +
     drLine + sgLine +
     'What I can do now: chromatic warmup @70bpm, clean eighth notes @70bpm, E minor pentatonic open + moveable box, TNT verse & chorus.\n' +
@@ -1799,10 +1865,17 @@ let rzTimer = null, lastWide = window.matchMedia('(min-width:1000px)').matches;
 function mount(opts){
   if (opts && opts.navigate) navigate = opts.navigate;
 
-  // Deep links into a Live mode, wherever they are rendered.
+  // Deep links into a Live mode, wherever they are rendered. A data-preset
+  // rider is handed to the Live half BEFORE navigating, so the mode consumes it
+  // as it opens; plain data-live buttons keep working with no preset at all.
   document.querySelector('main').addEventListener('click', e => {
     const b = e.target.closest('[data-live]');
-    if (b) navigate(b.dataset.live);
+    if (!b) return;
+    if (b.dataset.preset && window.BassLive && BassLive.preset){
+      try{ BassLive.preset(JSON.parse(decodeURIComponent(b.dataset.preset))); }
+      catch(err){ /* a malformed preset must not break the navigation itself */ }
+    }
+    navigate(b.dataset.live);
   });
 
   /* Unlock audio on first touch (mobile requirement). Scoped to this app's own

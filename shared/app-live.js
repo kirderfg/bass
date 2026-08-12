@@ -572,14 +572,51 @@ function setMode(m){
     ? 'Songs keep their own record too — plays and best root accuracy live with the song, and do not feed the Note quiz stats or the Practice checkpoints.'
     : 'Answers here feed the same progress stats as the Note quiz on the Practice tab.';
   tracker.reset();
+  /* The mute window belongs to Ear — it exists so the app cannot hear its own
+     note. Left set across a tab switch, the Tuner opened saying "playing the
+     note — listen…" about a note it never played, until the window expired.
+     Cleared BEFORE the echo branch below, which sets a fresh one on entry. */
+  A.muteUntil = 0;
+  // A pending preset is consumed by THIS switch, matching mode or not: it was
+  // stored for one navigation, and surviving it would configure a later,
+  // unrelated visit that never asked for it.
+  const pre = pendingPreset;
+  pendingPreset = null;
   if (m === 'find' && !q) newQuestion();
   if (m === 'echo') newEcho();
   // Leaving Songs stops its clock and its click; leaving Drills stops theirs.
   // (setMode is not called while a song is running, so this never cuts one off.)
   if (m !== 'songs') songTeardown();
   if (m !== 'drill') metStop();
+  // Applied before enterDrills, so the picker renders already configured.
+  if (pre && m === 'drill' && pre.drill) pickerFromCfg(pre.drill);
   if (m === 'drill') enterDrills();
   if (m === 'songs') enterSongs();
+  // After enterSongs: the list has to exist before an entry can be pointed at.
+  if (pre && m === 'songs' && pre.song) highlightSong(pre.song);
+}
+/** A spec stored by the Learn half just before it navigates here, so a plan
+    link lands CONFIGURED — the drill picker pre-picked, or the named song
+    scrolled to and ringed — instead of merely on the right tab. Consumed by
+    the next setMode. */
+let pendingPreset = null;
+function preset(spec){
+  pendingPreset = spec && typeof spec === 'object' ? spec : null;
+}
+/** Scroll one song entry into view and ring it briefly. */
+function highlightSong(id){
+  const btn = document.querySelector('#sgList [data-song="' + id + '"]');
+  const item = btn && btn.closest('.sg-item');
+  if (!item) return;
+  document.querySelectorAll('#sgList .sg-item.is-target').forEach(e => e.classList.remove('is-target'));
+  item.classList.add('is-target');
+  // Deferred: the shell scrolls to the top AFTER showMode returns, and a
+  // synchronous scrollIntoView here would be undone by it.
+  requestAnimationFrame(() => item.scrollIntoView({ block:'center' }));
+  // A pointer, not a state: it goes away on its own, or on the first touch.
+  const drop = () => { item.classList.remove('is-target'); clearTimeout(t); };
+  const t = setTimeout(drop, 4000);
+  document.getElementById('secSongs').addEventListener('pointerdown', drop, { once:true });
 }
 function renderTierUI(){
   const sel = document.getElementById('tierSel');
@@ -1591,18 +1628,24 @@ function renderShelf(){
     : '<p class="t-caption">No drills yet. Pick a scale, a root and a place on the neck, then play the shape in order. ' +
       'Every finished run is scheduled for review, and what you keep missing gets its own short repair drill.</p>';
 }
-function openStored(id){
-  const it = loadDrills()[id];
-  if (!it || !it.cfg) return;
-  const cfg = it.cfg;
+/** Load a cfg back into the picker controls. One mapping for the two callers
+    that need it — the shelf's "Open" and a practice-plan preset — so the two
+    can never disagree about how a cfg reads back into the selects. */
+function pickerFromCfg(cfg){
+  if (!cfg || !cfg.type) return;
   DP.type = cfg.type;
   if (cfg.scaleKey) DP.scaleKey = cfg.scaleKey;
   if (cfg.rootPc != null) DP.rootPc = cfg.rootPc;
   if (cfg.type === 'chromatic'){ DP.si = cfg.si; DP.winKey = String(cfg.from); }
   else DP.winKey = cfg.type === 'scale' ? (boxOptions(cfg.rootPc).find(w => w.from === cfg.from) || {}).key : null;
+}
+function openStored(id){
+  const it = loadDrills()[id];
+  if (!it || !it.cfg) return;
+  pickerFromCfg(it.cfg);
   // startDrill decides the tempo: a bpm the player set by hand always wins.
   renderDrillPicker();
-  startDrill(cfg);
+  startDrill(it.cfg);
 }
 function enterDrills(){
   renderDrillPicker(); renderDue(); renderShelf();
@@ -1947,10 +1990,13 @@ function songOpen(id, play){
   document.getElementById('sgSummary').innerHTML = '';
   document.getElementById('sgPlayTitle').textContent = song.title + ' · ' + song.artist;
   document.getElementById('sgPlayBpm').textContent = song.bpm + ' bpm';
-  document.getElementById('sgPlayMode').textContent =
-    SG.play === 'click' ? 'Play with the app’s click' : 'Play with the record';
+  songArmHeader();
+  /* "Start the click" read as a metronome toggle, so the press that begins the
+     SONG looked like a second setup step and nothing seemed to start. The
+     button now says what the press actually does: count-in, then the song.
+     Record mode keeps "Tap on beat 1" — there the tap IS beat 1. */
   document.getElementById('sgTap').textContent =
-    SG.play === 'click' ? 'Start the click' : 'Tap on beat 1';
+    SG.play === 'click' ? '▶ Start — one bar count-in, then the song' : 'Tap on beat 1';
   document.getElementById('sgArmWhy').innerHTML = (SG.play === 'click'
     ? 'The app’s own click at <b>' + song.bpm + ' bpm</b> drives the roadmap, starting after one bar of count-in — ' +
       'no record and no tapping. This is the mode that can actually grade you, so a best score is only kept from here, ' +
@@ -1964,6 +2010,13 @@ function songOpen(id, play){
   document.getElementById('sgBoardNote').innerHTML =
     'The amber dot is this section’s root; the teal dot is the same note an octave up — two strings across, two frets along. ' +
     'Both move when the section does.';
+}
+/** The arm screen's eyebrow says you are one press from the song; while it is
+    running the eyebrow goes back to naming the mode alone. */
+function songArmHeader(){
+  setTxt('sgPlayMode', SG.play === 'click'
+    ? 'Play with the app’s click · one press away'
+    : 'Play with the record');
 }
 /** @param fromSection optional section index to start from (3b: "run that bit again"). */
 function songArm(fromSection){
@@ -1993,6 +2046,8 @@ function songArm(fromSection){
   document.getElementById('sgArm').classList.add('hidden');
   document.getElementById('sgRoad').classList.remove('hidden');
   document.getElementById('sgProg').classList.remove('hidden');
+  // Running now, so "one press away" would be stale.
+  setTxt('sgPlayMode', SG.play === 'click' ? 'Play with the app’s click' : 'Play with the record');
   document.getElementById('sgSummary').innerHTML = '';
   document.getElementById('sgResync').classList.toggle('hidden', SG.play !== 'record');
   document.getElementById('sgResyncNote').innerHTML = SG.play === 'record'
@@ -2061,8 +2116,9 @@ function songFinish(reason){
   document.getElementById('sgRoad').classList.add('hidden');
   document.getElementById('sgArm').classList.remove('hidden');
   document.getElementById('sgProg').classList.add('hidden');   // no stale "section 3 of 5"
+  songArmHeader();
   document.getElementById('sgTap').textContent =
-    SG.play === 'click' ? 'Start the click again' : 'Tap on beat 1 and go again';
+    SG.play === 'click' ? '▶ Go again — one bar count-in, then the song' : 'Tap on beat 1 and go again';
 
   // Per-section breakdown, merged by section name the way the engine counts it.
   const names = [];
@@ -2265,7 +2321,7 @@ function showMode(m){
 
 function mount(){ /* nothing to boot: the wiring above runs at load */ }
 
-window.BassLive = { mount, showMode, armMic: startListening, suspend, resume };
+window.BassLive = { mount, showMode, armMic: startListening, suspend, resume, preset };
 
 /* ---- test seam ----
    trainer/test/integration.test.js drives this half the way a player cannot:

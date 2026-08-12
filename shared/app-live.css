@@ -88,6 +88,12 @@
 #drPanel .t-eyebrow{color:inherit; opacity:.85;}
 /* ---- songs ---- */
 .sg-item{border-top:1px solid var(--hair); padding:var(--sp4) 0 var(--sp3);}
+/* The plan's "let the app listen" link lands on ONE named song: the ring says
+   which entry the link meant, instead of leaving the player at the top of a
+   five-song list. Outline, so nothing shifts; the code removes it after a
+   moment or on the first touch. */
+.sg-item.is-target{outline:2px solid var(--hl); outline-offset:6px; border-radius:var(--r-sm);
+  background:color-mix(in srgb, var(--hl) 6%, transparent);}
 .sg-item:first-child{border-top:0; padding-top:0;}
 .sg-item p{margin:var(--sp2) 0 0;}
 .sg-strip{display:flex; flex-wrap:wrap; gap:var(--sp1); margin:var(--sp3) 0 0;}
