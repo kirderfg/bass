@@ -67,8 +67,24 @@ const DRIFT_MAX_CENTS = 60;
    is stopped meanwhile. */
 let armed = false;
 
+/* Report a listening failure wherever the player can actually see it: the gate
+   before arming, and the input row afterwards. Switching device is the case
+   that made this necessary — it can only fail once armed, and #gateErr is
+   hidden by then, so the old code wrote "could not open an audio input" into an
+   invisible element and the switch just appeared to do nothing. */
+function liveError(msg){
+  const gate = document.getElementById('gate');
+  const onGate = gate && !gate.classList.contains('hidden');
+  const shown = document.getElementById(onGate ? 'gateErr' : 'liveErr');
+  const other = document.getElementById(onGate ? 'liveErr' : 'gateErr');
+  if (other) other.classList.add('hidden');
+  if (!shown) return;
+  if (msg == null){ shown.classList.add('hidden'); return; }
+  shown.textContent = msg;
+  shown.classList.remove('hidden');
+}
+
 async function startListening(deviceId){
-  const err = document.getElementById('gateErr');
   try {
     if (A.stream) A.stream.getTracks().forEach(t => t.stop());
     const constraints = { audio: {
@@ -89,15 +105,14 @@ async function startListening(deviceId){
     src.connect(A.analyser);
     A.buf = new Float32Array(A.analyser.fftSize);
     armed = true;
-    err.classList.add('hidden');
+    liveError(null);
     await listDevices();
     if (!A.timer) A.timer = setInterval(tick, 55);
     return true;
   } catch(e){
-    err.textContent = e && e.name === 'NotAllowedError'
+    liveError(e && e.name === 'NotAllowedError'
       ? 'Microphone permission was blocked. Allow it in your browser’s address-bar icon, then tap Start again.'
-      : 'Could not open an audio input (' + (e && e.name || e) + '). Check your interface is plugged in.';
-    err.classList.remove('hidden');
+      : 'Could not open an audio input (' + (e && e.name || e) + '). Check your interface is plugged in.');
     return false;
   }
 }
@@ -1020,6 +1035,7 @@ function beginRep(){
   DR.phase = 'running'; DR.err = null; DR.errTargets = null;
   DR.plan = null; DR.skips = 0; DR.flash = false;
   DR.onsets = []; DR.metOrigin = null; DR.timing = null; DR.tempoDownTaken = false;
+  DR.clickLost = false;
   DR.lastAdvanceAt = performance.now();
   hideStall();
   document.getElementById('drPanel').innerHTML = '';
@@ -1184,10 +1200,14 @@ function timingLine(){
   const t = DR.timing;
   if (!t) return '';
   if (t.kind === 'spacing'){
-    return '<p class="t-caption"><b>Even spacing</b> (no click was running, so being “on the beat” could not be ' +
-      'checked): the gaps between notes varied by <b>' + Math.round(t.spread) + 'ms</b> around ' +
+    return '<p class="t-caption"><b>Even spacing</b> (' + (DR.clickLost
+        ? 'the click stopped part-way through, when you left the tab, so this run cannot be scored against it'
+        : 'no click was running, so being “on the beat” could not be checked') +
+      '): the gaps between notes varied by <b>' + Math.round(t.spread) + 'ms</b> around ' +
       Math.round(t.meanGap) + 'ms — ' + (t.inside ? 'even enough' : 'uneven') + '. ' +
-      'Switch the click on and the same run gets measured against the beat itself.</p>';
+      (DR.clickLost
+        ? 'Run it again without leaving the tab and it gets measured against the beat itself.'
+        : 'Switch the click on and the same run gets measured against the beat itself.') + '</p>';
   }
   return '<p class="t-caption">Against the click: <b>' + Math.abs(Math.round(t.meanSigned)) + 'ms ' +
     earlyLate(t.meanSigned) + '</b> on average, worst <b>' + Math.abs(Math.round(t.worstSigned)) + 'ms ' +
@@ -1367,8 +1387,13 @@ function renderRun(){
   const hint = document.getElementById('drHint');
   if (DR.phase === 'running'){
     hint.innerHTML = 'Play the <b style="color:var(--hl)">violet</b> note, then the next. Dotted circles are still to come.' +
-      (DR.met ? ' One note per click at ' + DR.bpm + ' bpm.' : '') +
-      '<br>Nothing is judged until the run stops.';
+      (DR.met && !DR.clickLost ? ' One note per click at ' + DR.bpm + ' bpm.' : '') +
+      '<br>Nothing is judged until the run stops.' +
+      // Said here rather than only in the verdict: otherwise he plays the rest
+      // of the run believing it is still being timed against a click.
+      (DR.clickLost ? '<br><b>The click stopped when you left this tab</b>, so the ' +
+        'rest of this run is not being timed against it — the notes still count. ' +
+        'Restart the run to get the click and the timing back.' : '');
   } else {
     hint.innerHTML = '';
   }
@@ -2156,9 +2181,24 @@ function gateFor(m){
 
 /** Stop the analyser loop, keep the stream and the AudioContext. Called when a
     Learn tab takes the screen: polling 18×/second behind a practice plan is
-    pure waste, but dropping the stream would put the gate back. */
+    pure waste, but dropping the stream would put the gate back.
+
+    The click stops too. It used to keep ticking from behind the practice plan,
+    audible with nothing on screen to stop it. Nothing already recorded is
+    harmed by stopping it — DR.metOrigin is a snapshot taken at metStart, and
+    metStop leaves it alone — but the notes AFTER it would be graded against a
+    grid the player can no longer hear, so this rep stops claiming the click and
+    falls back to the even-spacing report, which already words itself honestly.
+    A song is stopped outright: its clock is wall-time from the tap, so it would
+    run away while off-screen and come back pointing at the wrong section. */
 function suspend(){
   if (A.timer){ clearInterval(A.timer); A.timer = null; }
+  if (SG.song && SG.t0 != null && !SG.finished){ songFinish('stopped'); return; }
+  if (MET.timer){
+    metStop();
+    if (DR.phase === 'running' && DR.met){ DR.clickLost = true; DR.metOrigin = null; }
+    if (DR.phase === 'running') renderRun();
+  }
 }
 function resume(){
   if (A.analyser && !A.timer) A.timer = setInterval(tick, 55);
@@ -2205,4 +2245,13 @@ window.setMode = setMode;
 window.showHint = showHint;
 window.renderTierUI = renderTierUI;
 window.A = A;
+/* trainer/test/shell.test.js asks what happened to the click, the drill run and
+   the song clock when the screen went to a Learn tab. Those are the objects that
+   hold the answer, and timingReport/timingLine are how a run's verdict is
+   reached — a test that re-derived either would be testing its own copy. */
+window.MET = MET;
+window.DR = DR;
+window.SG = SG;
+window.timingReport = timingReport;
+window.timingLine = timingLine;
 })();

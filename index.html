@@ -73,6 +73,10 @@
       <div style="margin-top:8px">
         <label class="small muted" for="deviceSel">Listening to this input — switch it if your bass isn't showing up:</label>
         <select id="deviceSel" style="margin-top:4px"></select>
+        <!-- The gate's own error slot lives inside #gate, which is hidden the
+             moment the mic is armed — so a failed switch of input DEVICE, which
+             can only happen after arming, needs somewhere visible to land. -->
+        <p class="err hidden" id="liveErr" style="margin:6px 0 0"></p>
       </div>
       <p class="small muted hidden" id="tuneWarn" style="margin:8px 0 0"></p>
     </div>
@@ -445,6 +449,14 @@ function go(dest){
     BassTheory.showTab(dest);
   }
   window.scrollTo(0, 0);
+  /* Keep the hash pointing at where you are, so a reload lands back here rather
+     than on the practice plan — you reload mid-session, and being thrown back to
+     the front page each time is its own small tax. replaceState, not a hash
+     assignment: it does not fire hashchange (no double-routing) and does not
+     stack a history entry per tab, so Back still leaves the app. Guarded because
+     replaceState is not reliable on every file:// browser, and a URL that will
+     not update is not worth failing a tab switch over. */
+  try { history.replaceState(null, '', '#' + dest); } catch(e){ /* URL stays put */ }
 }
 
 document.getElementById('tabbar').addEventListener('click', e => {

@@ -472,6 +472,14 @@ nav.tabbar button.on{color:var(--root);}
     padding:0 14px var(--sp4);
   }
   nav.tabbar .rail-title span{ color:var(--root); }
+  /* The rail carries the app's name at this width, so the header saying it again
+     is two titles on one screen. The header keeps the tuning toggle, which is
+     the one control both halves read, and it stays in the accessibility tree. */
+  body header h1{
+    position:absolute; width:1px; height:1px; overflow:hidden;
+    clip-path:inset(50%); white-space:nowrap;
+  }
+  body header{ justify-content:flex-end; }
 
   /* prose stops running to 1000px; the instrument is free to */
   .card p, .card .muted, .t-body, .ptext{ max-width:66ch; }
