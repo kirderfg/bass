@@ -996,8 +996,8 @@ function renderTrainer(){
   h += '</div>';
 
   h += '<a class="card tight" href="trainer/index.html" style="display:block; text-decoration:none; color:inherit; border-color:var(--line-hi)">' +
-    '<b style="color:var(--hl)">Live Trainer — answer by playing</b>' +
-    '<div class="muted small" style="margin-top:2px">Plug your bass into an interface (or use your phone\'s mic) and the app checks the notes you actually play. Includes a tuner. Results feed these same stats.</div></a>';
+    '<b style="color:var(--hl)">Live Trainer — play it, don\'t tap it</b>' +
+    '<div class="muted small" style="margin-top:2px">Plug your bass in (or use your phone\'s mic) and the app checks what you actually play: a <b>tuner</b>, single-note tests that feed the stats below, <b>ear training</b>, and <b>Drills</b> that check you play a whole scale in the right order.</div></a>';
 
   if (mode === 'study') h += studyHtml();
   else h += quizShellHtml(mode, tier);
@@ -1402,12 +1402,15 @@ const WEEKS = [
   { n:1, title:'Hands, fretboard & first notes',
     goal:'Get your hands working and learn where the notes are on E and A.',
     items:[
+      { id:'w1t', cat:'First', min:2,
+        text:'Tune up. Play each open string and match it to the green zone. An out-of-tune bass makes everything below sound wrong — and teaches your ear the wrong thing.',
+        link:{ label:'Open the tuner', href:'trainer/index.html' } },
       { id:'w1a', diagram:'chromatic', cat:'Warm-up', min:5,
         text:'Chromatic 1-2-3-4: one finger per fret, up every string and back. Slow and clean beats fast and sloppy.', met:60 },
       { id:'w1b', cat:'Fretboard', min:5,
         text:'Note names on the E and A strings, frets 0–5. Study first, then try a few rounds of "Find the note".',
         link:{ label:'Open note trainer (E+A, 0–5)', spec:{ tab:'trainer', trainer:{ tier:0, mode:'study', focus:null, study:{ show:true, strings:['E','A'], naturalsOnly:true, maxFret:5 } } } } },
-      { id:'w1c', diagram:'floatingThumb', cat:'Technique', min:10,
+      { id:'w1c', diagram:'floatingThumb', cat:'Technique', min:8,
         text:'Alternate index and middle on the open E, one note per click. Rest your thumb on the B string so it stays silent.', met:60 },
       { id:'w1d', diagram:'plucking', cat:'Music', min:10,
         text:'Groove on one note: open E, one note per click, every note dead on the beat. Boring is the point — that steady pulse is the TNT verse.', met:60 }
@@ -1425,7 +1428,8 @@ const WEEKS = [
         text:'Chromatic 1-2-3-4 on all strings. Push to 65 bpm if yesterday was clean.', met:65 },
       { id:'w2b', cat:'Scales', min:5,
         text:'E minor pentatonic, open position: E G A B D. Play it up and down slowly until your fingers know it in both directions. Use "Play scale" to check yourself.',
-        link:{ label:'Open E minor pentatonic', spec:{ tab:'scales', scales:{ root:'E', type:'minPent', view:'open', labels:'names' } } } },
+        link:{ label:'Open E minor pentatonic', spec:{ tab:'scales', scales:{ root:'E', type:'minPent', view:'open', labels:'names' } } },
+        link2:{ label:'Then check it in Drills', href:'trainer/index.html#drill' } },
       { id:'w2c', diagram:'eighthNotes', cat:'Technique', min:10,
         text:'Eighth notes on the open E: two notes per click, strict index-middle alternation. Every 4 beats, switch to another pentatonic note without breaking the rhythm.', met:65 },
       { id:'w2d', cat:'Music', min:10,
@@ -1448,7 +1452,8 @@ const WEEKS = [
       { id:'w3b', cat:'Scales', min:5,
         text:'The MOVEABLE pentatonic box. On your 5-string, the root E sits on the B string at fret 5 — the box anchors there. Same note recipe as the open position, packed into one closed shape with no open strings, so you can slide it anywhere.',
         note4:'On a 4-string, E\'s box anchors at fret 12 — or practice the identical shape as A minor pentatonic at fret 5.',
-        link:{ label:'Open the moveable box', spec:{ tab:'scales', scales:{ root:'E', type:'minPent', view:'box', labels:'names' } } } },
+        link:{ label:'Open the moveable box', spec:{ tab:'scales', scales:{ root:'E', type:'minPent', view:'box', labels:'names' } } },
+        link2:{ label:'Then check it in Drills', href:'trainer/index.html#drill' } },
       { id:'w3c', diagram:'tntRoots', cat:'Technique', min:10,
         text:'TNT chorus moves: roots E → A → G as eighth notes, 4 beats each. All three live in E minor pentatonic.', met:70 },
       { id:'w3d', cat:'Music', min:10,

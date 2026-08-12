@@ -338,6 +338,7 @@ input[type=range]{width:100%; accent-color:var(--root); min-height:44px;}
 
   /* prose stops running to 1000px; the instrument is free to */
   .card p, .card .muted, .t-body, .ptext{ max-width:66ch; }
+  .drill{ max-width:480px; }
   body .card{ padding:var(--sp5); }
 
   /* content beside its controls, instead of stacked half-empty */

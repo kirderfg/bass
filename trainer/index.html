@@ -257,16 +257,32 @@ select{
           </div>
           <span class="pill num" id="drProg">0 of 0</span>
         </div>
+        <div class="row" style="margin-top:var(--sp2)">
+          <span class="t-caption">Dots say</span>
+          <div class="seg compact" id="drLabelSegRun" aria-label="What the dots say">
+            <button data-k="names">Names</button>
+            <button data-k="degrees">Degrees</button>
+          </div>
+        </div>
         <div id="drBoard"></div>
+        <p class="t-caption hidden" id="drLegend" style="margin:0"></p>
         <p class="t-caption" id="drHint" style="margin:var(--sp2) 0 0"></p>
+        <!-- a run that will not advance must never be a dead end -->
+        <div class="note-box warn hidden" id="drStall" style="margin-top:var(--sp3)"></div>
+        <div class="row hidden" id="drEscape" style="margin-top:var(--sp2)">
+          <button class="btn" id="drShow">Show me this note</button>
+          <button class="btn" id="drSkip">Skip this note</button>
+        </div>
         <div id="drPanel"></div>
         <div class="row" style="margin-top:var(--sp3)">
           <button class="btn primary hidden" id="drGo">Again</button>
           <button class="btn hidden" id="drFix">Fix that bit</button>
           <button class="btn hidden" id="drTempoBtn">+8%</button>
+          <button class="btn ghost" id="drRestart">Restart this run</button>
           <button class="btn ghost" id="drBack">Change drill</button>
         </div>
         <div class="row" style="margin-top:var(--sp3)" id="drPills"></div>
+        <p class="t-caption" id="drPillNote" style="margin:var(--sp2) 0 0"></p>
       </div>
 
       <!-- ---- picking a drill ---- -->
@@ -276,6 +292,18 @@ select{
         <p class="t-caption" style="margin:0">A drill checks the <b>order</b> you play notes in — not just whether you can
         find one note. Nothing is flagged while you play: a wrong note stops the run, and you are told what happened
         once it has stopped.</p>
+        <!-- the primary action stays above the fold: it is the whole point of this card -->
+        <div class="row" style="margin-top:var(--sp3)">
+          <button class="btn primary" id="drStart">Start the drill</button>
+          <span class="t-caption" style="margin-left:var(--sp3)">Dots say</span>
+          <div class="seg compact" id="drLabelSeg" aria-label="What the dots say">
+            <button data-k="names">Names</button>
+            <button data-k="degrees">Degrees</button>
+          </div>
+        </div>
+        <p class="t-caption" id="drPreview" style="margin:var(--sp3) 0 0"></p>
+        <p class="t-caption hidden" id="drLegendPick" style="margin:var(--sp1) 0 0"></p>
+        <p class="t-caption hidden" id="drTargetNote" style="margin:var(--sp2) 0 0"></p>
         <div class="two-col" style="margin-top:var(--sp4)">
           <div>
             <div class="t-eyebrow">What to drill</div>
@@ -321,9 +349,6 @@ select{
               <span class="pill num" id="drBpmTxt">60 bpm</span>
               <button class="btn small dr-step" id="drBpmUp" aria-label="Faster">+</button>
             </div>
-
-            <p class="t-caption" id="drPreview" style="margin:var(--sp4) 0 0"></p>
-            <p style="margin:var(--sp3) 0 0"><button class="btn primary" id="drStart">Start the drill</button></p>
           </div>
           <div>
             <div class="t-eyebrow">Due today</div>
@@ -347,7 +372,7 @@ select{
           <button data-t="4">4-str EADG</button>
         </div>
       </div>
-      <p class="small muted" style="margin:8px 0 0">Answers here feed the same progress stats as the Theory Trainer's practice checkpoints.</p>
+      <p class="small muted" style="margin:8px 0 0" id="feedNote">Answers here feed the same progress stats as the Theory Trainer's practice checkpoints.</p>
     </div>
   </div>
 </main>
@@ -808,6 +833,12 @@ function setMode(m){
   // keep it below whichever exercise is showing, so it never jumps
   const sec = document.getElementById(m === 'echo' ? 'secEcho' : 'secFind');
   if ((m === 'find' || m === 'echo') && sec && sec.nextSibling !== dc) sec.parentNode.insertBefore(dc, sec.nextSibling);
+  // Say what this mode actually writes to. Drills keep their own record, so
+  // claiming they feed the Theory Trainer's checkpoints would be false.
+  const feed = document.getElementById('feedNote');
+  if (feed) feed.textContent = m === 'drill'
+    ? 'Drills keep their own record — review dates, tempo and mastery live with the drill itself, and do not feed the Theory Trainer’s practice checkpoints.'
+    : 'Answers here feed the same progress stats as the Theory Trainer\'s practice checkpoints.';
   tracker.reset();
   if (m === 'find' && !q) newQuestion();
   if (m === 'echo') newEcho();
@@ -868,6 +899,8 @@ document.getElementById('eShow').addEventListener('click', () => {
 });
 document.querySelectorAll('#tuningSeg button').forEach(x => x.classList.toggle('on', +x.dataset.t === tuning));
 renderTierUI();
+// The practice plan links straight to a drill, so honour #drill on load.
+if (location.hash === '#drill') { try { setMode('drill'); } catch(e){} }
 
 // Offer help when the player stops making progress — whether that is silence,
 // or being stuck holding one wrong note (which fires only a single verdict).
@@ -916,13 +949,62 @@ function saveDrillItem(item){
 }
 
 /* picker state (what the selects say) and run state (what is being played) */
-const DP = { type:'scale', scaleKey:'minPent', rootPc:4, winKey:null, si:1, variant:'full', bpm:60, met:false, wins:[] };
+const DP = { type:'scale', scaleKey:'minPent', rootPc:4, winKey:null, si:1, variant:'full',
+             bpm:60, bpmTouched:false, met:false, labels:'names', wins:[] };
 const DR = {
   cfg:null, item:null, targets:[], full:[], repairTargets:null, run:null,
   phase:'idle', direction:'up', variant:'full', repair:false,
   repairClean:0, needFullRep:false, err:null, errTargets:null,
-  history:[], seen:{}, tempoOffer:null, bpm:60, met:false
+  history:[], tempoOffer:null, bpm:60, met:false,
+  // plan is DRAWN ONCE when a rep ends, so the button's label and the button's
+  // click can never disagree; skips/stall drive the escape hatches.
+  plan:null, skips:0, lastAdvanceAt:0, stallLevel:0, boardApi:null, flash:false
 };
+
+/* ---- plain language for the two things the engine calls by jargon ---- */
+const CI_WORDS = { blocked:'one thing at a time', serial:'mixed in', random:'fully mixed' };
+const CI_NOTE = {
+  blocked:'One thing at a time: the same shape over and over, until it is solid.',
+  serial:'Mixed in: this shape now takes its turn alongside the others.',
+  random:'Fully mixed: direction and slice get shuffled — it feels worse and it sticks better.'
+};
+function dayGap(fromISO, toISO){
+  return Math.round((Date.parse(toISO + 'T12:00:00Z') - Date.parse(fromISO + 'T12:00:00Z')) / 86400000);
+}
+/** "today" / "tomorrow" / "in 3 days" — a date a person can act on, not a box number. */
+function dueWords(due){
+  if (!due) return 'not scheduled yet';
+  const d = dayGap(todayISO(), due);
+  if (d <= 0) return 'today';
+  if (d === 1) return 'tomorrow';
+  return 'in ' + d + ' days';
+}
+
+/* ---- what the dots say ----
+   NOTE NAMES by default: the practice plan teaches note names and never
+   teaches scale degrees, and a degree label ("4") sitting on fret 0 reads
+   as a fret number. Degrees are available, with a legend, for anyone who
+   wants them. */
+function targetLabel(x){
+  return DP.labels === 'degrees' ? x.degree : noteName(x.midi);
+}
+function legendFor(type){
+  if (DP.labels !== 'degrees') return '';
+  return type === 'chromatic'
+    ? '1 2 3 4 = which finger plays the note (1 = index) — not the fret number.'
+    : 'R = root, b3 = flat third — the note numbers counted up from the root.';
+}
+function setLegend(id, type){
+  const el = document.getElementById(id);
+  if (!el) return;
+  const txt = legendFor(type);
+  el.textContent = txt;
+  el.classList.toggle('hidden', !txt);
+}
+function renderLabelSegs(){
+  document.querySelectorAll('#drLabelSeg button, #drLabelSegRun button')
+    .forEach(b => b.classList.toggle('on', b.dataset.k === DP.labels));
+}
 
 /* ---------------- metronome (Web Audio, no assets) ---------------- */
 const MET = { timer:null, next:0, beat:0 };
@@ -1027,6 +1109,43 @@ function itemFor(cfg){
   return item;
 }
 
+/* ---------------- what "mastered" means here ----------------
+   The engine ignores direction, and the UI insists ascending and descending
+   are separate reps, so mastery is stated — and measured — on the ASCENDING
+   shape only. Descending reps still schedule review; they cannot bank a day. */
+function ascendingOnly(attempts){
+  return (attempts || []).filter(a => a.direction !== 'down');
+}
+function masteryFor(item){
+  return DE.masteryOf(ascendingOnly(item && item.attempts));
+}
+/** Would THIS attempt bank a mastery day? Asked of the engine, not re-derived. */
+function bankedDay(a){
+  return !!(a && a.cold && a.direction !== 'down' && DE.masteryOf([a]) !== 'new');
+}
+function masteryDays(item){
+  return new Set(((item && item.attempts) || []).filter(bankedDay).map(a => a.date)).size;
+}
+/** One sentence: did this run bank a mastery day, and if not, why not. */
+function masteryLine(attempt){
+  if (!attempt.cold)
+    return 'Today’s first run is the one that can bank a mastery day — this was a repeat, so it counts as practice, not as proof.';
+  const days = masteryDays(DR.item);
+  if (bankedDay(attempt))
+    return 'That was today’s first run — the one that counts — and it banked a mastery day (' + days + ' of 2). ' +
+      (days >= 2 ? 'That is mastered.' : 'One more, on another day, and this shape is mastered.');
+  const why =
+    attempt.skipped              ? 'You skipped a note, so the run was not all yours'
+  : !attempt.passed              ? 'It stopped on a wrong note'
+  : attempt.direction === 'down' ? 'Mastery is measured on the ascending shape and this was the descending one'
+  : attempt.window               ? 'It was part of the shape, not the whole shape'
+  : !attempt.timingOk            ? 'Right notes, but the timing wandered'
+  : !attempt.atTargetTempo       ? 'Right notes and even, but the click was off, so “in time” could not be checked'
+  :                                'It did not clear the bar';
+  return 'That was today’s first run — the one that counts. ' + why +
+    ', so today does not bank a mastery day; tomorrow’s first run is the next chance.';
+}
+
 /* ---------------- the picker ---------------- */
 function cfgFromPicker(){
   const T = TUNINGS[tuning];
@@ -1081,13 +1200,17 @@ function renderDrillPicker(){
 
   document.getElementById('drMet').checked = DP.met;
   document.getElementById('drBpmTxt').textContent = DP.bpm + ' bpm';
+  renderLabelSegs();
 
   const cfg = cfgFromPicker();
   const prev = document.getElementById('drPreview');
   const start = document.getElementById('drStart');
+  const targetNote = document.getElementById('drTargetNote');
   if (!cfg || !buildTargets(cfg).length){
     prev.textContent = 'That root does not give a full octave here — pick another place on the neck.';
     start.disabled = true;
+    setLegend('drLegendPick', DP.type);
+    targetNote.classList.add('hidden');
     return;
   }
   const t = buildTargets(cfg);
@@ -1095,8 +1218,21 @@ function renderDrillPicker(){
   start.disabled = false;
   prev.innerHTML = '<b>' + drillLabel(cfg) + '</b><br>' + shown.length +
     ' notes, ascending — then the same shape coming down as a second rep:<br>' +
-    shown.map(x => x.degree + ' <span class="t-data">' + TUNINGS[tuning].names[x.si] + '/' + x.fret + '</span>').join(' → ') +
+    shown.map(x => targetLabel(x) + ' <span class="t-data">' + TUNINGS[tuning].names[x.si] + '/' + x.fret + '</span>').join(' → ') +
     '<br><span class="t-data">string/fret</span>';
+  setLegend('drLegendPick', cfg.type);
+
+  // Tempo is not a ratchet: the picker's bpm is what will play. The stored
+  // target only decides when a run counts as "in time" — and it can come down.
+  const stored = loadDrills()[drillId(cfg)];
+  if (stored && stored.bpm && stored.bpm !== DP.bpm){
+    targetNote.innerHTML = 'This drill’s <b>target</b> is ' + stored.bpm + ' bpm. It will run at the ' + DP.bpm +
+      ' bpm you picked here — the target only decides when a run counts as “in time”.' +
+      (stored.bpm > DP.bpm
+        ? ' <button class="btn small" id="drLowerTarget">Make ' + DP.bpm + ' bpm the target</button>'
+        : '');
+    targetNote.classList.remove('hidden');
+  } else targetNote.classList.add('hidden');
 }
 
 /* ---------------- running a rep ---------------- */
@@ -1104,12 +1240,15 @@ function startDrill(cfg){
   if (!cfg) return;
   DR.cfg = cfg;
   DR.item = itemFor(cfg);
-  DR.bpm = DR.item.bpm || DP.bpm;
-  DP.bpm = DR.bpm;
+  // The PICKER's tempo is the session's tempo. The item's accepted target is
+  // only a starting suggestion for someone who has not touched the picker:
+  // otherwise one accepted step would lock the drill at that speed forever.
+  if (!DP.bpmTouched && DR.item.bpm) DP.bpm = Math.max(40, Math.min(200, DR.item.bpm));
+  DR.bpm = DP.bpm;
   DR.met = DP.met;
   DR.direction = 'up'; DR.variant = DP.variant;
   DR.repair = false; DR.repairTargets = null; DR.repairClean = 0; DR.needFullRep = false;
-  DR.history = []; DR.tempoOffer = null; DR.err = null;
+  DR.history = []; DR.tempoOffer = null; DR.err = null; DR.plan = null;
   document.getElementById('drPick').classList.add('hidden');
   document.getElementById('drRun').classList.remove('hidden');
   beginRep();
@@ -1122,10 +1261,23 @@ function beginRep(){
              : DR.full;
   DR.run = DE.createRun(DR.targets);
   DR.phase = 'running'; DR.err = null; DR.errTargets = null;
+  DR.plan = null; DR.skips = 0; DR.flash = false;
+  DR.lastAdvanceAt = performance.now();
+  hideStall();
   document.getElementById('drPanel').innerHTML = '';
-  tracker.reset();
+  // A new rep is a NEW INTENT, so detection is re-armed: tracker.reset() only
+  // clears the settle clock, which left a still-consumed note unable to answer
+  // the rep's first target — a drill whose first note you just played froze.
+  tracker = C.createTracker({ stableMs:150 });
   if (DR.met) metStart();
   renderRun();
+}
+function restartRun(){
+  if (!DR.cfg) return;
+  DR.direction = 'up'; DR.variant = DP.variant;
+  DR.repair = false; DR.repairTargets = null; DR.repairClean = 0; DR.needFullRep = false;
+  DR.history = []; DR.tempoOffer = null; DR.err = null;
+  beginRep();
 }
 /** The one place a played note enters a run. Returns the engine's status. */
 function drillPush(midi, atMs){
@@ -1137,9 +1289,69 @@ function drillPush(midi, atMs){
   } else if (r.status === 'done'){
     DR.phase = 'done';
     endRep(true);
-  } else renderRun();
+  } else {
+    DR.lastAdvanceAt = performance.now();
+    hideStall();
+    renderRun();
+  }
   return r;
 }
+
+/* ---------------- a run must never be a dead end ----------------
+   Find it has its own stall timer; Drills had none, so a run that would not
+   advance offered nothing but "Change drill", which throws the drill away. */
+function showStall(html, escapes){
+  const s = document.getElementById('drStall');
+  s.innerHTML = html;
+  s.classList.remove('hidden');
+  const esc = document.getElementById('drEscape');
+  const wasHidden = esc.classList.contains('hidden');
+  esc.classList.toggle('hidden', !escapes);
+  // A way out that sits below the fold is not a way out (the desktop board is tall).
+  if (escapes && wasHidden) esc.scrollIntoView({ block:'nearest' });
+}
+function hideStall(){
+  DR.stallLevel = 0;
+  document.getElementById('drStall').classList.add('hidden');
+  document.getElementById('drEscape').classList.add('hidden');
+}
+function showExpectedNote(){
+  if (DR.phase !== 'running' || !DR.run) return;
+  const want = DR.run.expected();
+  if (!want) return;
+  const T = TUNINGS[tuning];
+  showStall('It is the <b>' + T.names[want.si] + '</b> string, <b>fret ' + want.fret + '</b> — ' +
+    noteName(want.midi) + ' (the violet dot, flashing). Mute everything else and pluck just that.', true);
+  DR.flash = true;
+  drillBoard();
+  DR.flash = false;
+  if (DR.boardApi) DR.boardApi.scrollTo(want.fret);
+}
+function skipExpectedNote(){
+  if (DR.phase !== 'running' || !DR.run) return;
+  const want = DR.run.expected();
+  if (!want) return;
+  // The run advances, but the rep is marked as not clean: a note the app
+  // played for you cannot bank mastery or move the tempo.
+  DR.skips++;
+  drillPush(want.midi, performance.now());
+  if (DR.phase === 'running'){
+    tracker = C.createTracker({ stableMs:150 });
+    showStall('Skipped that note — this run no longer counts towards mastery or the tempo. Carry on from the violet dot.', true);
+  }
+}
+setInterval(() => {
+  if (mode !== 'drill' || DR.phase !== 'running' || !DR.run) return;
+  const stalledFor = performance.now() - DR.lastAdvanceAt;
+  if (stalledFor > 20000 && DR.stallLevel < 2){
+    DR.stallLevel = 2;
+    showStall('Still waiting on the <b style="color:var(--hl)">violet</b> note — mute the strings and pluck it again.' +
+      '<br>If it still will not register, take one of these ways out.', true);
+  } else if (stalledFor > 8000 && DR.stallLevel < 1){
+    DR.stallLevel = 1;
+    showStall('Still waiting on the <b style="color:var(--hl)">violet</b> note — mute the strings and pluck it again.', false);
+  }
+}, 700);
 function timingOkOf(res){
   const n = res.notes;
   if (n.length < 3) return true;
@@ -1157,56 +1369,81 @@ function timingOkOf(res){
 }
 function endRep(passed){
   metStop();
+  hideStall();
   const res = DR.run.result();
-  const timingOk = timingOkOf(res);
-  const accuracy = res.total ? (passed ? 1 : res.notes.length / res.total) : 0;
-  const cold = !DR.seen[DR.item.id];
-  DR.seen[DR.item.id] = true;
+  const skipped = DR.skips > 0;
+  // A skipped note is not a played note: it counts for nothing.
+  const clean = passed && !skipped;
+  const timingOk = !skipped && timingOkOf(res);
+  const played = Math.max(0, res.notes.length - DR.skips);
+  const accuracy = res.total ? (clean ? 1 : played / res.total) : 0;
   const today = todayISO();
+  // COLD = the first attempt of a DAY, persisted with the drill. Keying this
+  // on a page-lifetime object made mastery unreachable for anyone who leaves
+  // the tab open overnight — which is what a desktop tab does.
+  const cold = DR.item.coldDate !== today;
+  // A repair span, a middle-only slice or a run with a skipped note is not an
+  // attempt at the drill: the engine ignores such reps, and so does the gate.
+  const windowRep = DR.repair || DR.variant === 'middle' || skipped;
 
   // The drill's target tempo only moves when the player accepts the gate's
   // offer, so "at target tempo" stays a real condition on mastery.
   const targetBpm = DR.item.bpm || DR.bpm;
-  // Review is DAY-scale. schedule() runs on every completed rep, but a single
-  // session must not ratchet the box to 5: once today's pass has promoted the
-  // item, further passes today only refresh lastSeen. Failures still demote.
-  const promotedToday = passed && DR.item.lastSeen === today && (DR.item.box || 0) > 0;
-  const scheduled = DE.schedule(DR.item, passed, today);
-  DR.item = Object.assign(
-    promotedToday ? Object.assign({}, DR.item, { lastSeen: scheduled.lastSeen }) : scheduled,
-    { cfg:DR.cfg, label:drillLabel(DR.cfg) });
-  DR.item.ci = DE.nextCI(DR.item.ci, passed);
+  if (skipped){
+    // No promotion, no demotion: the review date is not this run's business.
+    DR.item = Object.assign({}, DR.item, { cfg:DR.cfg, label:drillLabel(DR.cfg) });
+  } else {
+    // Review is DAY-scale. schedule() runs on every completed rep, but a single
+    // session must not ratchet the box to 5: once today's pass has promoted the
+    // item, further passes today only refresh lastSeen. Failures still demote.
+    const promotedToday = passed && DR.item.lastSeen === today && (DR.item.box || 0) > 0;
+    const scheduled = DE.schedule(DR.item, passed, today);
+    DR.item = Object.assign(
+      promotedToday ? Object.assign({}, DR.item, { lastSeen: scheduled.lastSeen }) : scheduled,
+      { cfg:DR.cfg, label:drillLabel(DR.cfg) });
+  }
+  DR.item.ci = DE.nextCI(DR.item.ci, clean, { window: windowRep });
   DR.item.bpm = targetBpm;
-  DR.item.attempts.push({
-    date:today, cold, passed, accuracy, timingOk,
-    atTargetTempo: DR.bpm >= targetBpm,
+  DR.item.coldDate = today;
+  const attempt = {
+    date:today, cold, passed: clean, accuracy, timingOk,
+    // "In time" is only a claim you can check against a click, so mastery
+    // requires the click to be running. The wording says exactly this.
+    atTargetTempo: !!DR.met && DR.bpm >= targetBpm,
     direction:DR.direction, bpm:DR.bpm, notes:res.total,
-    window: DR.repair || DR.variant === 'middle'
-  });
+    window: windowRep, skipped
+  };
+  DR.item.attempts.push(attempt);
   if (DR.item.attempts.length > 40) DR.item.attempts.shift();
-  DR.history.push({ passed, timingOk });
+  // The tempo offer has to be earned by two clean reps of the WHOLE shape.
+  if (!windowRep) DR.history.push({ passed: clean, timingOk });
   saveDrillItem(DR.item);
 
   // Tempo never moves on its own — the gate only makes the offer.
   // Two clean reps in time earn an OFFER. Nothing speeds up unless it is tapped.
   const gate = DE.tempoGate(DR.history, DR.bpm);
-  DR.tempoOffer = (gate.advance && !DR.repair) ? gate.nextBpm : null;
+  DR.tempoOffer = (gate.advance && !windowRep) ? gate.nextBpm : null;
 
   if (DR.repair){
-    DR.repairClean = passed ? DR.repairClean + 1 : 0;
+    DR.repairClean = clean ? DR.repairClean + 1 : 0;
     if (DR.repairClean >= 2){ DR.repair = false; DR.repairClean = 0; DR.needFullRep = true; }
-  } else if (passed && DR.needFullRep && DR.variant !== 'middle'){
+  } else if (clean && DR.needFullRep && DR.variant !== 'middle'){
     DR.needFullRep = false;
   }
 
+  // Draw what happens next ONCE, here, and store it: the label on the button
+  // and the rep the button runs are then the same thing by construction.
+  DR.plan = drawPlan();
   renderRun();
-  renderPanel(passed, res, timingOk);
+  renderPanel(res, timingOk, attempt);
   renderDue(); renderShelf();
 }
 
 /* What the next tap should run. The contextual-interference rung decides,
-   not the player: blocked and serial are prescribed, random shuffles. */
-function nextPlan(){
+   not the player: blocked and serial are prescribed, random shuffles.
+   DRAWN ONCE per rep (see endRep) and stored in DR.plan — calling this from
+   both the label and the click made the button lie about what it would do. */
+function drawPlan(){
   const ci = (DR.item && DR.item.ci) || 'blocked';
   if (DR.phase === 'error')
     return { direction:DR.direction, variant:DR.variant, repair:DR.repair, label:'Run it again' };
@@ -1214,15 +1451,16 @@ function nextPlan(){
     return { direction:DR.direction, variant:'full', repair:false, label:'One clean full run' };
   if (DR.repair)
     return { direction:DR.direction, variant:DR.variant, repair:true, label:'The same few notes again' };
+  const slice = DR.variant === 'middle' ? ' · middle only' : '';
   if (DR.direction === 'up')
-    return { direction:'down', variant:DR.variant, repair:false, label:'Now descending →' };
+    return { direction:'down', variant:DR.variant, repair:false, label:'Now descending' + slice + ' →' };
   if (ci === 'random'){
     const dir = Math.random() < 0.5 ? 'up' : 'down';
     const variant = DR.full.length > WINDOW_SIZE && Math.random() < 0.4 ? 'middle' : 'full';
     return { direction:dir, variant, repair:false,
       label:'Next: ' + (dir === 'up' ? 'ascending' : 'descending') + (variant === 'middle' ? ' · middle only' : '') };
   }
-  return { direction:'up', variant:DR.variant, repair:false, label:'Ascending again →' };
+  return { direction:'up', variant:DR.variant, repair:false, label:'Ascending again' + slice + ' →' };
 }
 function findPosition(midi, near){
   const T = TUNINGS[tuning];
@@ -1250,7 +1488,7 @@ function drillBoard(){
     if (!cur || RANK[m.kind] > RANK[cur.kind]) cells.set(k, m);
   };
   t.forEach((x, i) => put({
-    si:x.si, fret:x.fret, label:x.degree, finger:x.finger,
+    si:x.si, fret:x.fret, label:targetLabel(x), finger:x.finger,
     kind: i < idx ? 'correct' : i === idx ? 'highlight' : 'ghost'
   }));
   if (DR.phase === 'error' && DR.err){
@@ -1265,7 +1503,7 @@ function drillBoard(){
   for (let si = 0; si < T.names.length; si++) if (!used.has(si)) dimStrings.push(si);
 
   const wide = window.matchMedia('(min-width:1000px)').matches;
-  BassNeck.render(host, {
+  DR.boardApi = BassNeck.render(host, {
     strings:T.names,
     fromFret: wide ? 0 : Math.max(0, lo - 1),
     toFret:   wide ? 12 : Math.min(12, Math.max(hi + 1, lo + 4)),
@@ -1274,6 +1512,7 @@ function drillBoard(){
     window: wide ? [lo, hi] : null,
     windowLabel: lo > 0,          // "BOX · FRET 0" would be a lie about open position
     scrollToFret: lo,
+    animate: !!DR.flash,          // "Show me this note" pops the dots back in
     title: DR.item ? DR.item.label : 'drill'
   });
 }
@@ -1287,7 +1526,9 @@ function renderRun(){
     ' · ' + (DR.direction === 'up' ? 'ascending' : 'descending');
   document.getElementById('drProg').textContent =
     (DR.phase === 'done' ? t.length : Math.min(idx + 1, t.length)) + ' of ' + t.length;
+  renderLabelSegs();
   drillBoard();
+  setLegend('drLegend', DR.cfg ? DR.cfg.type : DP.type);
 
   const hint = document.getElementById('drHint');
   if (DR.phase === 'running'){
@@ -1298,10 +1539,12 @@ function renderRun(){
     hint.innerHTML = '';
   }
 
-  const plan = nextPlan();
   const go = document.getElementById('drGo');
-  go.textContent = plan.label;
   go.classList.toggle('hidden', DR.phase === 'running');
+  if (DR.phase !== 'running'){
+    if (!DR.plan) DR.plan = drawPlan();     // stored, so the click matches the label
+    go.textContent = DR.plan.label;
+  }
   const fix = document.getElementById('drFix');
   fix.classList.toggle('hidden', DR.phase !== 'error');
   if (DR.phase === 'error'){
@@ -1312,19 +1555,22 @@ function renderRun(){
   tb.classList.toggle('hidden', !DR.tempoOffer);
   if (DR.tempoOffer) tb.textContent = '+8% → ' + DR.tempoOffer + ' bpm';
 
-  const mastery = DE.masteryOf(DR.item.attempts);
+  const mastery = masteryFor(DR.item);
+  const ci = DR.item.ci || 'blocked';
   document.getElementById('drPills').innerHTML =
     '<span class="pill' + (mastery === 'mastered' ? ' good' : '') + '">' + mastery + '</span>' +
-    '<span class="pill">practice: ' + (DR.item.ci || 'blocked') + '</span>' +
-    '<span class="pill">Leitner box ' + (DR.item.box || 0) + '</span>' +
-    (DR.item.due ? '<span class="pill">due ' + DR.item.due + '</span>' : '') +
+    '<span class="pill">Practice order: ' + CI_WORDS[ci] + '</span>' +
+    '<span class="pill">Next review: ' + dueWords(DR.item.due) + '</span>' +
     (DR.met ? '<span class="pill warn">' + DR.bpm + ' bpm</span>' : '');
+  document.getElementById('drPillNote').innerHTML = CI_NOTE[ci] +
+    ' <b>Mastered</b> means the <b>ascending</b> shape, whole, played cold as the day’s first run, ' +
+    'clean and in time with the click, on two separate days.';
 }
-function renderPanel(passed, res, timingOk){
+function renderPanel(res, timingOk, attempt){
   const p = document.getElementById('drPanel');
   const T = TUNINGS[tuning];
   const t = DR.errTargets || DR.targets;
-  if (!passed && DR.err){
+  if (!attempt.passed && DR.err){
     const e = DR.err, want = e.expected, diff = e.played - want.midi;
     const pos = findPosition(e.played, want);
     const why = e.reason === 'wrong-octave'
@@ -1336,37 +1582,50 @@ function renderPanel(passed, res, timingOk){
     p.innerHTML =
       '<div class="note-box bad">' +
         '<div class="t-eyebrow">Stopped at note ' + (e.index + 1) + ' of ' + t.length + '</div>' +
-        '<p>Expected <b>' + want.degree + ' · ' + noteName(want.midi) + '</b> — ' +
+        '<p>Expected <b>' + noteName(want.midi) +
+          (DP.labels === 'degrees' ? '</b> (degree ' + want.degree + ')' : '</b>') + ' — ' +
           T.names[want.si] + ' string, fret ' + want.fret + ' (violet on the neck).</p>' +
         '<p>' + why + (pos ? ' That note is at ' + T.names[pos.si] + ' string, fret ' + pos.fret +
           ' — the outlined circle.' : '') + '</p>' +
         '<p class="t-caption">You got ' + res.notes.length + ' of ' + t.length +
           ' before it stopped. Nothing was flagged while you were playing — that is deliberate.</p>' +
+        '<p class="t-caption">' + masteryLine(attempt) + '</p>' +
       '</div>';
     return;
   }
+  const dir = DR.direction === 'up' ? 'ascending' : 'descending';
   const bits = [];
-  bits.push('<div class="t-eyebrow">Clean · ' + t.length + ' notes ' +
-    (DR.direction === 'up' ? 'ascending' : 'descending') + '</div>');
-  bits.push('<p>' + (timingOk ? 'Even timing' : 'Right notes, uneven timing — the gaps between notes wandered') +
-    (DR.met ? ' at ' + DR.bpm + ' bpm.' : '.') + '</p>');
-  bits.push('<p class="t-caption">Review scheduled: Leitner box ' + DR.item.box + ', back on ' + DR.item.due +
-    '. Practice order is now <b>' + DR.item.ci + '</b>.</p>');
+  // A rep that failed on timing is not "clean", and is not painted as success.
+  const kind = attempt.skipped ? 'warn' : timingOk ? 'good' : 'warn';
+  bits.push('<div class="t-eyebrow">' +
+    (attempt.skipped ? 'Finished with a skipped note'
+     : timingOk ? 'Clean · ' + t.length + ' notes ' + dir
+     : 'Right notes, uneven timing · ' + t.length + ' notes ' + dir) + '</div>');
+  bits.push('<p>' + (attempt.skipped
+      ? 'One note was skipped for you, so this run is not a measurement of anything.'
+      : (timingOk ? 'Even timing' : 'The gaps between notes wandered') + (DR.met ? ' at ' + DR.bpm + ' bpm.' : '.')) +
+    '</p>');
+  bits.push('<p class="t-caption">' + (attempt.skipped
+    ? 'The review date is unchanged.'
+    : 'Back for review <b>' + dueWords(DR.item.due) + '</b> (' + DR.item.due + '). Practice order: <b>' +
+      CI_WORDS[DR.item.ci || 'blocked'] + '</b>.') + '</p>');
+  bits.push('<p class="t-caption">' + masteryLine(attempt) + '</p>');
   if (DR.needFullRep)
     bits.push('<p class="t-caption">Two clean window reps done — now one clean run of the whole shape.</p>');
   if (DR.tempoOffer)
-    bits.push('<p class="t-caption">Two clean reps in time. Take the tempo up if you want it — nothing moves unless you tap' +
+    bits.push('<p class="t-caption">Two clean reps of the whole shape, in time. Take the tempo up if you want it — nothing moves unless you tap' +
       (DR.met ? '.' : ', and taking it up switches the click on so the number means something.') + '</p>');
-  p.innerHTML = '<div class="note-box good">' + bits.join('') + '</div>';
+  p.innerHTML = '<div class="note-box ' + kind + '">' + bits.join('') + '</div>';
 }
 
 /* ---------------- due today / the shelf ---------------- */
 function drillRow(item, cta){
-  const mastery = DE.masteryOf(item.attempts || []);
+  const mastery = masteryFor(item);
   return '<div class="dr-row">' +
       '<span class="dr-name">' + (item.label || item.id) + '</span>' +
       '<span class="pill' + (mastery === 'mastered' ? ' good' : '') + '">' + mastery + '</span>' +
-      (item.due ? '<span class="pill">' + (DE.isDue(item, todayISO()) ? 'due now' : item.due) + '</span>' : '') +
+      (item.due ? '<span class="pill">' + (DE.isDue(item, todayISO())
+          ? 'due now' : 'next review ' + dueWords(item.due)) + '</span>' : '') +
       '<button class="btn small" data-open="' + item.id + '">' + cta + '</button>' +
     '</div>';
 }
@@ -1388,8 +1647,9 @@ function renderShelf(){
   const all = allDrills().sort((a,b) => String(a.due).localeCompare(String(b.due)));
   host.innerHTML = all.length
     ? all.map(it => drillRow(it, 'Open')).join('') +
-      '<p class="t-caption" style="margin-top:var(--sp3)">new → acquired → mastered. Mastered means a <b>cold</b> first run, ' +
-      'clean and in time, on two separate days — in-session fluency does not count.</p>'
+      '<p class="t-caption" style="margin-top:var(--sp3)">new → acquired → mastered. Mastered means the <b>ascending</b> shape, ' +
+      'whole, played as the day’s <b>first</b> run, clean and in time <b>with the click on</b>, on two separate days — ' +
+      'in-session fluency does not count, and neither do repair windows or skipped notes.</p>'
     : '<p class="t-caption">No drills yet. Pick a scale, a root and a place on the neck, then play the shape in order. ' +
       'Every finished run is scheduled for review, and what you keep missing gets its own short repair drill.</p>';
 }
@@ -1402,7 +1662,7 @@ function openStored(id){
   if (cfg.rootPc != null) DP.rootPc = cfg.rootPc;
   if (cfg.type === 'chromatic'){ DP.si = cfg.si; DP.winKey = String(cfg.from); }
   else DP.winKey = cfg.type === 'scale' ? (boxOptions(cfg.rootPc).find(w => w.from === cfg.from) || {}).key : null;
-  DP.bpm = it.bpm || DP.bpm;
+  // startDrill decides the tempo: a bpm the player set by hand always wins.
   renderDrillPicker();
   startDrill(cfg);
 }
@@ -1431,18 +1691,40 @@ document.getElementById('drMet').addEventListener('change', e => {
   if (DR.item) renderRun();
 });
 document.getElementById('drBpmDown').addEventListener('click', () => {
-  DP.bpm = Math.max(40, DP.bpm - 4); DR.bpm = DP.bpm; renderDrillPicker(); if (DR.item) renderRun();
+  DP.bpm = Math.max(40, DP.bpm - 4); DP.bpmTouched = true;
+  DR.bpm = DP.bpm; renderDrillPicker(); if (DR.item) renderRun();
 });
 document.getElementById('drBpmUp').addEventListener('click', () => {
-  DP.bpm = Math.min(200, DP.bpm + 4); DR.bpm = DP.bpm; renderDrillPicker(); if (DR.item) renderRun();
+  DP.bpm = Math.min(200, DP.bpm + 4); DP.bpmTouched = true;
+  DR.bpm = DP.bpm; renderDrillPicker(); if (DR.item) renderRun();
 });
 document.getElementById('drStart').addEventListener('click', () => startDrill(cfgFromPicker()));
+document.querySelectorAll('#drLabelSeg button, #drLabelSegRun button').forEach(b => {
+  b.addEventListener('click', () => {
+    DP.labels = b.dataset.k;
+    renderLabelSegs(); renderDrillPicker();
+    if (DR.item) renderRun();
+  });
+});
+/* The lower-the-target button is re-rendered with the picker, so it is delegated. */
+document.getElementById('drPick').addEventListener('click', e => {
+  if (!e.target.closest('#drLowerTarget')) return;
+  const cfg = cfgFromPicker(); if (!cfg) return;
+  const it = itemFor(cfg);
+  it.bpm = DP.bpm; saveDrillItem(it);
+  if (DR.item && DR.item.id === it.id) DR.item.bpm = DP.bpm;
+  renderDrillPicker(); renderDue(); renderShelf();
+});
 document.getElementById('drGo').addEventListener('click', () => {
-  const plan = nextPlan();
+  const plan = DR.plan || drawPlan();       // the plan that was on the label
+  DR.plan = null;
   DR.direction = plan.direction; DR.variant = plan.variant; DR.repair = plan.repair;
   DR.tempoOffer = null;
   beginRep();
 });
+document.getElementById('drRestart').addEventListener('click', restartRun);
+document.getElementById('drShow').addEventListener('click', showExpectedNote);
+document.getElementById('drSkip').addEventListener('click', skipExpectedNote);
 document.getElementById('drFix').addEventListener('click', () => {
   if (!DR.err) return;
   DR.repairTargets = DE.errorWindow(DR.errTargets || DR.targets, DR.err.index, WINDOW_SIZE);
@@ -1461,8 +1743,10 @@ document.getElementById('drTempoBtn').addEventListener('click', () => {
 });
 function drillReset(){
   metStop();
+  hideStall();
   DR.phase = 'idle'; DR.run = null; DR.item = null; DR.err = null;
   DR.repair = false; DR.repairTargets = null; DR.needFullRep = false; DR.targets = [];
+  DR.plan = null; DR.skips = 0; DR.cfg = null;
   DP.si = Math.min(DP.si, TUNINGS[tuning].names.length - 1);
   document.getElementById('drRun').classList.add('hidden');
   document.getElementById('drPick').classList.remove('hidden');
