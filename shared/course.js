@@ -229,7 +229,9 @@
       theory: [] },
 
     { n: 7, title: 'Play it with your eyes closed',
-      goal: 'Hells Bells brings the A-minor colour and a long tacet intro; your first two songs go from memory.',
+      // Not "the A-minor colour": the course never defines "colour", so the
+      // goal says what is actually different in words week 2 already taught.
+      goal: 'Hells Bells is your first minor-key song — the sadder-sounding home your E minor pentatonic already taught, now rooted on A — plus a long tacet intro; your first two songs go from memory.',
       items: [
         { id: 'w7t', cat: 'First', min: 2, tune: true,
           text: 'Tune up. Playing from memory means trusting your hands — give them an in-tune neck to trust.',
@@ -244,10 +246,12 @@
                   preset: { drill: { type: 'rhythm', pattern: 'restdrive', rootPc: 9, bars: 8, bpm: 92 } } } },
         { id: 'w7c', cat: 'Memory', min: 8,
           text: 'Back in Black <b>from memory</b>: arm the song with the app\'s click and flip the toggle to "From memory" — no roots, no neck, no warnings, just the count. A full play at 90%+ banks a memory day; two separate days is gig-ready.',
-          link: { label: 'Play it from memory', live: 'songs', preset: { song: 'bib' } } },
+          // memory:true arms the toggle the label names: without it the link
+          // landed on "Roadmap shown" and the promised mode was two taps deep.
+          link: { label: 'Play it from memory', live: 'songs', preset: { song: 'bib', memory: true } } },
         { id: 'w7d', cat: 'Memory', min: 8,
           text: 'Highway to Hell from memory — same deal. Two songs you can play with your eyes closed is the start of a set you can gig.',
-          link: { label: 'Play it from memory', live: 'songs', preset: { song: 'hth' } } },
+          link: { label: 'Play it from memory', live: 'songs', preset: { song: 'hth', memory: true } } },
       ],
       checkpoints: [
         { id: 'w7cp0', text: 'Hells Bells: whole roadmap (shown) at 85%+ on the root' },
@@ -264,7 +268,9 @@
           link: { label: 'Open the tuner', live: 'tuner' } },
         { id: 'w8a', cat: 'Fretboard', min: 6,
           text: 'B — the first root with <b>no open string anywhere</b>. Home base is <b>A-string fret 2</b>; and the week-3 moveable box slides here too: anchored at <b>E-string fret 7</b> it plays B minor pentatonic. Same box as G at fret 3 and A at fret 5 — two frets up again.',
-          link: { label: 'Find the note (E + A, 0–5)', spec: { tab: 'trainer', trainer: { tier: 0, mode: 'find', focus: null } } },
+          // Tier 1 (0–12), the same pattern as week 4's C link: the checkpoint
+          // below asks for B at E-string fret 7, which the 0–5 tier can never pose.
+          link: { label: 'Find the note (E + A, 0–12)', spec: { tab: 'trainer', trainer: { tier: 1, mode: 'find', focus: null } } },
           link2: { label: 'Drill the B box at fret 7', live: 'drill',
                    preset: { drill: { type: 'scale', scaleKey: 'minPent', rootPc: 11, from: 7 } } } },
         { id: 'w8b', cat: 'Music', min: 10,
@@ -322,7 +328,9 @@
           link: { label: 'Open the tuner', live: 'tuner' } },
         { id: 'w10a', cat: 'Memory', min: 20,
           text: 'Work the list: every song at <b>90%+ from memory</b>, full tempo, at least once. Two a night gets there; the readiness pills say which songs still owe you a memory day.',
-          link: { label: 'Open Songs', live: 'songs' } },
+          // memory:true (no song): whichever song gets opened next arms with
+          // the toggle already on the mode this item is about.
+          link: { label: 'Open Songs', live: 'songs', preset: { memory: true } } },
         { id: 'w10b', cat: 'Music', min: 15,
           text: 'The weakest three get the repeats — the set board names them: lowest scores, fewest memory days. Roadmap on, find what is actually going wrong, then memory again.',
           link: { label: 'Open Songs', live: 'songs' } },
@@ -340,10 +348,12 @@
           link: { label: 'Open the tuner', live: 'tuner' } },
         { id: 'w11a', cat: 'Set', min: 18,
           text: 'Build a 3–4 song set (the <b>Setlist</b> card on the Songs tab) and run it with the click. The 8-beat gap between songs IS the exercise — new key, count-in, go — and the verdict watches exactly those entries.',
-          link: { label: 'Open the Setlist card', live: 'songs' } },
+          // setlist:true scrolls to and rings the Setlist card the way {song}
+          // rings a song: without it this link landed ~2,900px above the card.
+          link: { label: 'Open the Setlist card', live: 'songs', preset: { setlist: true } } },
         { id: 'w11b', cat: 'Set', min: 15,
           text: 'A second set run, different songs or different order — "weakest first" makes the hard entries come while you are fresh.',
-          link: { label: 'Open the Setlist card', live: 'songs' } },
+          link: { label: 'Open the Setlist card', live: 'songs', preset: { setlist: true } } },
         { id: 'w11c', cat: 'Review', min: 5,
           text: 'Whichever entry you missed in the set runs, play that song\'s opening section on its own until the entry is boring.',
           link: { label: 'Open Songs', live: 'songs' } },
@@ -365,7 +375,7 @@
           link: { label: 'Open Songs', live: 'songs' } },
         { id: 'w12b', cat: 'Set', min: 20,
           text: 'The dress rehearsal: one setlist run of <b>4+ songs</b> with the click, from memory if you dare. Bank it.',
-          link: { label: 'Open the Setlist card', live: 'songs' } },
+          link: { label: 'Open the Setlist card', live: 'songs', preset: { setlist: true } } },
         { id: 'w12c', cat: 'Report', min: 5,
           text: 'Tick the last checkpoint below and the <b>gig-readiness report</b> appears at the bottom of this tab: song by song against the bar, the weakest named, and a block to paste to Claude for the set-two program.' },
       ],

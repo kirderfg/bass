@@ -591,11 +591,27 @@ function setMode(m){
   if (m !== 'songs') songTeardown();
   if (m !== 'drill') metStop();
   // Applied before enterDrills, so the picker renders already configured.
-  if (pre && m === 'drill' && pre.drill) pickerFromCfg(pre.drill);
+  if (pre && m === 'drill' && pre.drill){
+    pickerFromCfg(pre.drill);
+    /* The preset names NEW work, so a previous drill may not keep the screen:
+       enterDrills below re-shows any existing run, which put "Drill the C box"
+       on the last drill's finished verdict — with the configured picker hidden
+       underneath, reachable only through "Change drill". So take that same
+       path (drillReset) here: it is also exactly what "Change drill" does to a
+       run still mid-flight, and a finished run loses nothing — endRep banked
+       its results when the verdict was drawn. */
+    if (DR.item || DR.phase !== 'idle') drillReset();
+  }
   if (m === 'drill') enterDrills();
   if (m === 'songs') enterSongs();
   // After enterSongs: the list has to exist before an entry can be pointed at.
   if (pre && m === 'songs' && pre.song) highlightSong(pre.song);
+  // {setlist:true}: the week-11/12 "Open the Setlist card" links used to land
+  // ~2,900px above the card they name — ring it the way {song} rings a song.
+  if (pre && m === 'songs' && pre.setlist) highlightSetlist();
+  // {memory:true}: a "Play it from memory" link arms the toggle for the next
+  // song opened (see songOpen) — the mode the label names is one press away.
+  if (pre && m === 'songs' && pre.memory) memoryArm = pre.song || '*';
 }
 /** A spec stored by the Learn half just before it navigates here, so a plan
     link lands CONFIGURED — the drill picker pre-picked, or the named song
@@ -605,21 +621,39 @@ let pendingPreset = null;
 function preset(spec){
   pendingPreset = spec && typeof spec === 'object' ? spec : null;
 }
+/** Scroll an element into view and ring it briefly — the shared tail of every
+    "this link means THAT thing" preset. */
+function ringTarget(el, block){
+  if (!el) return;
+  el.classList.add('is-target');
+  // Deferred: the shell scrolls to the top AFTER showMode returns, and a
+  // synchronous scrollIntoView here would be undone by it.
+  requestAnimationFrame(() => el.scrollIntoView({ block: block || 'center' }));
+  // A pointer, not a state: it goes away on its own, or on the first touch.
+  const drop = () => { el.classList.remove('is-target'); clearTimeout(t); };
+  const t = setTimeout(drop, 4000);
+  document.getElementById('secSongs').addEventListener('pointerdown', drop, { once:true });
+}
 /** Scroll one song entry into view and ring it briefly. */
 function highlightSong(id){
   const btn = document.querySelector('#sgList [data-song="' + id + '"]');
   const item = btn && btn.closest('.sg-item');
   if (!item) return;
   document.querySelectorAll('#sgList .sg-item.is-target').forEach(e => e.classList.remove('is-target'));
-  item.classList.add('is-target');
-  // Deferred: the shell scrolls to the top AFTER showMode returns, and a
-  // synchronous scrollIntoView here would be undone by it.
-  requestAnimationFrame(() => item.scrollIntoView({ block:'center' }));
-  // A pointer, not a state: it goes away on its own, or on the first touch.
-  const drop = () => { item.classList.remove('is-target'); clearTimeout(t); };
-  const t = setTimeout(drop, 4000);
-  document.getElementById('secSongs').addEventListener('pointerdown', drop, { once:true });
+  ringTarget(item);
 }
+/** Scroll to and ring the Setlist card the same way. block:'start' because the
+    card is taller than a phone screen — centring it would hide its heading. */
+function highlightSetlist(){
+  const card = document.getElementById('sgSetCard');
+  if (!card || card.classList.contains('hidden')) return;
+  ringTarget(card, 'start');
+}
+/* Which song the NEXT songOpen should arm with "From memory" already on
+   ('*' = whichever is opened). Set by a {memory:true} plan preset, consumed by
+   the first open — songOpen resets the toggle per song on purpose, and a plan
+   link is allowed to override that for exactly one open. */
+let memoryArm = null;
 function renderTierUI(){
   const sel = document.getElementById('tierSel');
   sel.innerHTML = TIERS.map((t,i) =>
@@ -718,6 +752,15 @@ const RHYTHM_NOTES = {
   eighths:   'Two notes per click, every click, no drift — most of a live set is exactly this.',
   push:      'Skip the hit on beat 4 and land the and-of-4 instead, leaning into the next bar.',
   restdrive: 'Two beats of silence, then eighths: count through the rest and enter on cue.',
+};
+/* What the hand does against the click, per pattern — the run hint states
+   THIS. The scale drills' "one note per click" is false for every rhythm
+   pattern (an eighths drill is two per click, and the picker's own preview
+   said so while the run hint contradicted it). */
+const RHYTHM_CLICK_RULES = {
+  eighths:   'Two notes per click, every click',
+  push:      'Two notes per click, but skip the hit on beat 4 and land the and-of-4',
+  restdrive: 'Each bar: two beats of silence, then two notes per click to the bar line',
 };
 const RHYTHM_BARS = [4, 8, 16];
 
@@ -1083,16 +1126,20 @@ function renderDrillPicker(){
   const shown = cfg.type !== 'rhythm' && DP.variant === 'middle' ? DE.middleWindow(t, WINDOW_SIZE) : t;
   start.disabled = false;
   document.getElementById('drStartPicked').disabled = false;
+  // When a due review owns the primary button, this paragraph describes a
+  // DIFFERENT drill from the one that button runs — two drills on one card
+  // needed labels, so the preview names its owner.
+  const own = hasDue ? '<b>Your own pick</b> (the second button): ' : '';
   if (cfg.type === 'rhythm'){
     // Listing 64 identical notes would be noise; a rhythm drill previews as
     // what it is — one note, a pattern, a length, a claim about the click.
     const pos = TUNING.names[cfg.si] + (cfg.fret ? ' string, fret ' + cfg.fret : ' string, open');
-    prev.innerHTML = '<b>' + drillLabel(cfg) + '</b><br>' +
+    prev.innerHTML = own + '<b>' + drillLabel(cfg) + '</b><br>' +
       RHYTHM_NOTES[cfg.pattern] + '<br>' +
       shown.length + ' notes, all ' + C.NAMES[cfg.rootPc] + ' at ' + pos +
       ' — the pitch just has to hold; the verdict is about the click.';
   } else {
-    prev.innerHTML = '<b>' + drillLabel(cfg) + '</b><br>' + shown.length +
+    prev.innerHTML = own + '<b>' + drillLabel(cfg) + '</b><br>' + shown.length +
       ' notes, ascending — then the same shape coming down as a second rep:<br>' +
       shown.map(x => targetLabel(x) + ' <span class="t-data">' + TUNING.names[x.si] + '/' + x.fret + '</span>').join(' → ') +
       '<br><span class="t-data">string/fret</span>' +
@@ -1515,7 +1562,13 @@ function drillBoard(){
     scale: wide ? 'desk' : 'play',
     markers, dimStrings,
     window: wide ? [boxLo, boxHi] : null,
-    windowLabel: boxLo > 0,       // "BOX · FRET 0" would be a lie about open position
+    // "BOX · FRET 0" would be a lie about open position — and "BOX · FRET 2"
+    // on a rhythm drill names a box that does not exist: its window is only
+    // where the root sits, so the pill says the root instead (or nothing at
+    // fret 0, where "FRET 0" would mislabel an open string).
+    windowLabel: DR.cfg && DR.cfg.type === 'rhythm'
+      ? (boxLo > 0 ? noteName(TUNING.midi[DR.cfg.si] + DR.cfg.fret) + ' · FRET ' + DR.cfg.fret : false)
+      : boxLo > 0,
     scrollToFret: boxLo,
     animate: !!DR.flash,          // "Show me this note" pops the dots back in
     title: DR.item ? DR.item.label : 'drill'
@@ -1538,9 +1591,17 @@ function renderRun(){
   setLegend('drLegend', DR.cfg ? DR.cfg.type : DP.type);
 
   const hint = document.getElementById('drHint');
+  const isRhythm = DR.cfg && DR.cfg.type === 'rhythm';
   if (DR.phase === 'running'){
-    hint.innerHTML = 'Play the <b style="color:var(--hl)">violet</b> note, then the next. Dotted circles are still to come.' +
-      (DR.met && !DR.clickLost ? ' One note per click at ' + DR.bpm + ' bpm.' : '') +
+    hint.innerHTML = (isRhythm
+      ? 'Play the <b style="color:var(--hl)">violet</b> note over and over — same pitch, the pattern’s onsets.'
+      : 'Play the <b style="color:var(--hl)">violet</b> note, then the next. Dotted circles are still to come.') +
+      (DR.met && !DR.clickLost
+        ? (isRhythm
+          // The pattern's own rule, not "one note per click" — see RHYTHM_CLICK_RULES.
+          ? ' ' + RHYTHM_CLICK_RULES[DR.cfg.pattern] + ', at ' + DR.bpm + ' bpm.'
+          : ' One note per click at ' + DR.bpm + ' bpm.')
+        : '') +
       '<br>Nothing is judged until the run stops.' +
       // Said here rather than only in the verdict: otherwise he plays the rest
       // of the run believing it is still being timed against a click.
@@ -1586,8 +1647,16 @@ function renderRun(){
   document.getElementById('drPillNote').innerHTML = CI_NOTE[ci] +
     // "cold" was jargon, and the rule was worded two different ways on one
     // screen. One wording, and the word is explained where it is used.
-    ' <b>Mastered</b> means the <b>ascending</b> shape, whole, played <b>cold</b> — the day’s first ' +
-    'run, before any warm-up on it — clean and in time with the click, on two separate days.';
+    (isRhythm
+      /* Mirrors what masteryOf actually requires of a rhythm attempt: every
+         rep is 'up' (buildTargets never reverses a rhythm pattern), so the
+         ascending-only filter never bites — the real gate is cold + the whole
+         pattern + in time with the click + two distinct days. "Ascending"
+         here would describe a rule this drill does not have. */
+      ? ' <b>Mastered</b> means the <b>whole pattern held</b>, every note in time with the click, played <b>cold</b> ' +
+        '— the day’s first run, before any warm-up on it — on two separate days.'
+      : ' <b>Mastered</b> means the <b>ascending</b> shape, whole, played <b>cold</b> — the day’s first ' +
+        'run, before any warm-up on it — clean and in time with the click, on two separate days.');
 }
 function renderPanel(res, timingOk, attempt){
   const p = document.getElementById('drPanel');
@@ -1618,6 +1687,11 @@ function renderPanel(res, timingOk, attempt){
     return;
   }
   const dir = DR.direction === 'up' ? 'ascending' : 'descending';
+  // "64 NOTES ASCENDING" was a scale drill's sentence on a rhythm verdict —
+  // rhythm has no direction, so it names its pattern and root instead.
+  const shapeWords = DR.cfg && DR.cfg.type === 'rhythm'
+    ? t.length + ' notes · ' + RHYTHM_WORDS[DR.cfg.pattern] + ' on ' + C.NAMES[DR.cfg.rootPc]
+    : t.length + ' notes ' + dir;
   const bits = [];
   // A rep that failed on timing is not "clean", and is not painted as success.
   const kind = attempt.skipped ? 'warn' : timingOk ? 'good' : 'warn';
@@ -1633,8 +1707,8 @@ function renderPanel(res, timingOk, attempt){
     : 'The gaps between notes wandered';
   bits.push('<div class="t-eyebrow">' +
     (attempt.skipped ? 'Finished with a skipped note'
-     : timingOk ? 'Clean · ' + t.length + ' notes ' + dir
-     : (clicked ? 'Right notes, off the click · ' : 'Right notes, uneven spacing · ') + t.length + ' notes ' + dir) + '</div>');
+     : timingOk ? 'Clean · ' + shapeWords
+     : (clicked ? 'Right notes, off the click · ' : 'Right notes, uneven spacing · ') + shapeWords) + '</div>');
   bits.push('<p>' + (attempt.skipped
       ? 'One note was skipped for you, so this run is not a measurement of anything.'
       : (timingOk ? okWords : offWords) + (DR.met ? ' at ' + DR.bpm + ' bpm.' : '.')) +
@@ -1979,15 +2053,23 @@ function renderSetStatus(store){
   const rows = SGE.SONGS.map(song => {
     const rec = store[song.id];
     return { song, status: SGE.songReadiness(rec, song),
-             days: rec && Array.isArray(rec.memoryDays) ? new Set(rec.memoryDays).size : 0 };
+             days: rec && Array.isArray(rec.memoryDays) ? new Set(rec.memoryDays).size : 0,
+             // Week 10 sends the player here to find "lowest scores", so the
+             // score sits on the board. No memory run shows NOTHING: 0% would
+             // read as a terrible run rather than no run.
+             memBest: rec && Number(rec.memoryBest) > 0 ? Math.round(Number(rec.memoryBest) * 100) : null };
   });
   const ready = rows.filter(r => r.status === 'gig-ready').length;
   host.innerHTML = '<div class="t-eyebrow">The set · ' + ready + ' of ' + rows.length + ' gig-ready</div>' +
     '<div class="row" style="margin-top:var(--sp2)">' + rows.map(r =>
       '<span class="pill' + (r.status === 'gig-ready' ? ' good' : '') + '">' + r.song.title +
-      ' · ' + (r.status === 'gig-ready' ? '✓' : r.status) + '</span>').join('') + '</div>' +
-    '<p class="t-caption" style="margin:var(--sp2) 0 0"><b>Gig-ready</b> = a full memory-mode play at ' +
-    Math.round(MEMORY_BAR * 100) + '%+ with the app’s click, on two separate days.</p>';
+      ' · ' + (r.status === 'gig-ready' ? '✓' : r.status) +
+      (r.memBest != null ? ' · ' + r.memBest + '% from memory' : '') + '</span>').join('') + '</div>' +
+    // The full bar, where gig-ready first becomes tappable: full tempo and the
+    // whole roadmap are conditions the shorter caption used to leave implicit.
+    '<p class="t-caption" style="margin:var(--sp2) 0 0"><b>Gig-ready</b> = two memory days: the <b>whole roadmap</b> ' +
+    'at <b>full tempo</b> with the app’s click, ' + Math.round(MEMORY_BAR * 100) +
+    '%+ <b>from memory</b>, on two <b>separate days</b>.</p>';
 }
 
 /* ---------------- the neck: the root, and the same note an octave up ----------------
@@ -2109,9 +2191,19 @@ function songTick(){
   // section name and root ARE the roadmap, so they stay hidden.
   setTxt('sgSection', SG.memoryRun ? 'From memory' : p.section.name);
   setTxt('sgRoot', SG.memoryRun ? '?' : p.section.root);
-  setTxt('sgBar', 'bar ' + p.barInSection + ' of ' + p.barsInSection + ' · beat ' + p.beatInBar);
-  setTxt('sgProg', 'section ' + (p.section.index + 1) + ' of ' + song.sections.length);
-  prog.classList.remove('hidden');
+  if (SG.memoryRun){
+    /* From memory the position must not leak the map: "bar 3 of 4" resets AT
+       every section change, which tells the player exactly when sections turn
+       over — so only the ABSOLUTE bar across the whole roadmap is shown, and
+       the "section N of M" counter stays hidden. */
+    setTxt('sgBar', 'bar ' + (Math.floor(p.beat / bpb) + 1) + ' of ' +
+      Math.ceil(SGE.totalBeats(song) / bpb) + ' · beat ' + p.beatInBar);
+    prog.classList.add('hidden');
+  } else {
+    setTxt('sgBar', 'bar ' + p.barInSection + ' of ' + p.barsInSection + ' · beat ' + p.beatInBar);
+    setTxt('sgProg', 'section ' + (p.section.index + 1) + ' of ' + song.sections.length);
+    prog.classList.remove('hidden');
+  }
   renderBeats(bpb, p.beatInBar, false);
   if (!SG.memoryRun) songBoard(p.section.root);
   // Two bars of notice, so the warning is never later than one full bar out.
@@ -2138,6 +2230,13 @@ function songOpen(id, play){
   // Every song starts with the roadmap shown: memory is a choice made per
   // song, not a mode that silently follows you from the last one.
   SG.memory = false; SG.memoryRun = false;
+  /* …except when a "Play it from memory" plan link armed it for this song —
+     then the mode the link named is one press away instead of two. Never for
+     a record play (memory is not offered there), and consumed by this first
+     open either way, so it cannot configure a later, unrelated visit. The run
+     still waits for the tap: nothing auto-starts. */
+  if (memoryArm && SG.play === 'click' && (memoryArm === '*' || memoryArm === id)) SG.memory = true;
+  memoryArm = null;
   renderMemSeg();
   document.getElementById('sgListCard').classList.add('hidden');
   // The set cards step aside too: an armed song is one job on the screen.
@@ -2185,8 +2284,12 @@ function renderMemSeg(){
   document.querySelectorAll('#sgMemSeg button').forEach(b =>
     b.classList.toggle('on', (b.dataset.m === 'memory') === SG.memory));
   note.innerHTML = SG.memory
-    ? '<b>From memory</b>: the run hides the roots, the neck and the section warnings — you get the count, the bar ' +
-      'position and the click, which is the closest this app gets to no tab on stage. Grading is unchanged. A full ' +
+    // "the bar position" used to be ambiguous — the run showed bar-in-SECTION,
+    // which leaks exactly when sections turn over. It is the bar count across
+    // the whole song, and the explainer says so.
+    ? '<b>From memory</b>: the run hides the roots, the neck and the section warnings — you get the count, your bar ' +
+      'number across the <b>whole song</b> (never within a section: that would say when sections change) and the ' +
+      'click, which is the closest this app gets to no tab on stage. Grading is unchanged. A full ' +
       'play at ' + Math.round(MEMORY_BAR * 100) + '%+ banks a <b>memory day</b>; two separate days is gig-ready.'
     : 'Roadmap shown: roots, neck and section warnings stay up. Flip to <b>From memory</b> when the map is in your head.';
 }

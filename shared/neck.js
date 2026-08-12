@@ -293,7 +293,11 @@
           }));
         });
         if (opts.windowLabel !== false) {
-          const label = 'BOX · FRET ' + opts.window[0];
+          // A caller may pass its own label text: the default names a BOX,
+          // which is a lie for windows that frame something else (a rhythm
+          // drill's window is just where the root sits).
+          const label = typeof opts.windowLabel === 'string'
+            ? opts.windowLabel : 'BOX · FRET ' + opts.window[0];
           const pw = label.length * 6.2 + 14;
           svg.appendChild(el('rect', { x: wx0 + 4, y: Math.max(0, wy0 - 15), width: pw, height: 15, rx: 7.5, class: 'neck-window-pill' }));
           const t = el('text', { x: wx0 + 4 + pw / 2, y: Math.max(0, wy0 - 15) + 8, class: 'neck-window-pill-label' });

@@ -1416,12 +1416,20 @@ function setBoardHtml(){
   const ready = rows.filter(r => r.status === 'gig-ready').length;
   let h = '<div class="card tight"><div class="t-eyebrow">The set · ' + ready + ' of ' + rows.length + ' gig-ready</div>';
   for (const r of rows){
+    // Week 10's copy promises "the set board names them: lowest scores, fewest
+    // memory days" — so each row carries its best memory-run %. A song with no
+    // memory run shows NOTHING: 0% would read as a run, not an absence.
+    const memBest = r.rec && Number(r.rec.memoryBest) > 0 ? Math.round(Number(r.rec.memoryBest) * 100) : null;
     h += '<div class="dr-row"><span class="dr-name">' + r.song.title + '</span>' +
+      (memBest != null ? '<span class="t-data">best ' + memBest + '% from memory</span>' : '') +
       (r.status !== 'gig-ready' && r.days ? '<span class="t-data">memory day ' + r.days + ' of 2</span>' : '') +
       '<span class="pill' + (r.status === 'gig-ready' ? ' good' : '') + '">' + r.status + '</span></div>';
   }
-  h += '<p class="muted small" style="margin:var(--sp2) 0 0"><b>Gig-ready</b> means a full memory-mode play at 90%+ ' +
-    'on two separate days — the bar the drill engine already uses for mastery, applied to a song.</p></div>';
+  // The full bar, stated where gig-ready becomes tappable: full tempo and the
+  // whole roadmap are conditions, not flavour, so the caption names them.
+  h += '<p class="muted small" style="margin:var(--sp2) 0 0"><b>Gig-ready</b> = two memory days: the <b>whole roadmap</b> ' +
+    'at <b>full tempo</b> with the app’s click, 90%+ <b>from memory</b>, on two <b>separate days</b> — the bar the ' +
+    'drill engine already uses for mastery, applied to a song.</p></div>';
   return h;
 }
 /** Answers inside a date window, from the day-stamped roll-up both apps write. */
@@ -1632,6 +1640,13 @@ function renderPractice(){
       '</div></div>';
   }
 
+  // The destination, stated once above the week picker: nothing on screen ever
+  // said where twelve weeks were going, so "gig-ready" arrived undefined at
+  // week 9 and the phases graded toward a goal the player had never been told.
+  h += '<div class="card tight" id="courseHead"><div class="t-eyebrow">The course</div>' +
+    '<div class="muted small" style="margin-top:2px">Twelve weeks, one destination: <b>ten songs at full tempo, ' +
+    'from memory, in a set</b>. Three phases get you there, and each week card below says how its phase is graded.</div></div>';
+
   // Week picker: twelve buttons need grouping, so one row per phase with the
   // phase name as the label — the shape of the course is visible at a glance.
   for (const ph of PHASES){
@@ -1648,14 +1663,13 @@ function renderPractice(){
   const ph = phaseOf(wk.n);
   h += '<div class="card">';
   h += '<div class="t-eyebrow" style="margin-bottom:2px">' + ph.name + ' · phase ' + ph.n + ' of 3</div>';
+  // The phase's own proof, verbatim from the course data (PHASES[].grades) —
+  // it existed as data and was rendered nowhere, so a week card never said
+  // what its phase was for. Phase 3's sentence also carries the 40-minute
+  // honesty that used to live in a separate, forked paragraph here.
+  h += '<p class="muted small" style="margin:0 0 6px">' + ph.grades + '</p>';
   h += '<div class="row between"><b>Week ' + wk.n + ': ' + wk.title + '</b><span class="ptime">' + totalMin + ' min</span></div>';
   h += '<p class="muted small" style="margin:4px 0 4px">' + wk.goal + '</p>';
-  // Said on the header, not discovered by adding the items up: Performance
-  // evenings run longer, and a plan that hides that is lying about its price.
-  if (ph.n === 3){
-    h += '<p class="muted small" style="margin:0 0 4px"><b>Performance-phase evenings run up to 40 minutes</b> — ' +
-      'a ten-song set does not maintain itself in 30, and saying so beats overrunning quietly.</p>';
-  }
   /* Built from the items, so it cannot disagree with them. The hard-coded version
      said "10' technique" beside an 8-minute technique item, always summed to 30
      against a header that read 35 or 40, and mentioned neither the tune-up, the

@@ -92,7 +92,8 @@
    which entry the link meant, instead of leaving the player at the top of a
    five-song list. Outline, so nothing shifts; the code removes it after a
    moment or on the first touch. */
-.sg-item.is-target{outline:2px solid var(--hl); outline-offset:6px; border-radius:var(--r-sm);
+/* #sgSetCard gets the same ring: "Open the Setlist card" links point at it. */
+.sg-item.is-target, #sgSetCard.is-target{outline:2px solid var(--hl); outline-offset:6px; border-radius:var(--r-sm);
   background:color-mix(in srgb, var(--hl) 6%, transparent);}
 .sg-item:first-child{border-top:0; padding-top:0;}
 .sg-item p{margin:var(--sp2) 0 0;}

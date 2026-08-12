@@ -124,6 +124,70 @@ test('every link points somewhere real: song presets, tab hrefs, destinations', 
   }
 });
 
+/* ---------------- the fourth evaluation's findings, as rules ---------------- */
+
+// The Note quiz tiers' fret ceilings, hardcoded from the app's TIERS table
+// (app-theory.js / app-live.js): tier 0 stops at fret 5, tiers 1-4 reach 12.
+// If the tiers change, change this map WITH them — the test pins the pairing
+// of checkpoint and link, not the table itself.
+const TIER_MAX_FRET = [5, 12, 12, 12, 12];
+
+test('a checkpoint that names a fret has a same-week quiz link whose tier can ask it', () => {
+  // Week 8 shipped "name B (A-string fret 2, E-string fret 7) under 2 seconds"
+  // with a quiz link capped at frets 0–5 — the checkpoint asked a question its
+  // own link could never pose. (Week 4's C checkpoint had it right: tier 1.)
+  for (const w of Course.WEEKS) {
+    const frets = [];
+    for (const cp of w.checkpoints) {
+      for (const m of cp.text.match(/fret (\d+)/gi) || []) frets.push(+m.replace(/\D/g, ''));
+    }
+    const need = Math.max(0, ...(frets.length ? frets : [0]));
+    if (need <= 5) continue;   // every tier covers 0–5; only higher frets can strand a checkpoint
+    const tiers = [];
+    for (const it of w.items) {
+      for (const key of ['link', 'link2', 'link3']) {
+        const ln = it[key];
+        if (ln && ln.spec && ln.spec.tab === 'trainer' && ln.spec.trainer) tiers.push(ln.spec.trainer.tier | 0);
+      }
+    }
+    assert.ok(tiers.some(t => TIER_MAX_FRET[t] >= need),
+      'week ' + w.n + ' names fret ' + need + ' in a checkpoint, but its quiz links (tiers ' +
+      tiers.join(', ') + ') cap below it');
+  }
+});
+
+test('the set-piece links carry the presets their labels promise', () => {
+  const linkOf = (id) => {
+    for (const w of Course.WEEKS) {
+      const it = w.items.find(i => i.id === id);
+      if (it) return it.link;
+    }
+    return null;
+  };
+  // "Open the Setlist card" landed at the TOP of the Songs tab, ~2,900px above
+  // the setlist card — the preset is what makes the label true.
+  for (const id of ['w11a', 'w11b', 'w12b']) {
+    const ln = linkOf(id);
+    assert.ok(ln && ln.preset && ln.preset.setlist === true,
+      id + ' says "Open the Setlist card" but carries no {setlist:true} preset');
+  }
+  // "Play it from memory" landed with the toggle still on "Roadmap shown" —
+  // the mode the link names must be one press away, not two.
+  assert.deepEqual(linkOf('w7c').preset, { song: 'bib', memory: true }, 'w7c must arm memory for Back in Black');
+  assert.deepEqual(linkOf('w7d').preset, { song: 'hth', memory: true }, 'w7d must arm memory for Highway to Hell');
+  assert.ok(linkOf('w10a').preset && linkOf('w10a').preset.memory === true,
+    'w10a is the work-the-list-from-memory item; its link must arm the memory toggle');
+});
+
+test('week 7\'s goal explains its new key instead of naming an unexplained "colour"', () => {
+  // "the A-minor colour" is a term the course never defines — a beginner owns
+  // "minor-key song" and "rooted on A"; they do not own "colour".
+  const w7 = Course.weekOf(7);
+  assert.doesNotMatch(w7.goal, /colou?r/i, 'week 7\'s goal still leans on an unexplained "colour"');
+  assert.match(w7.goal, /minor/i, 'the goal should still say the key is minor, in plain words');
+  assert.match(w7.goal, /\bA\b/, 'the goal should still name the new root, A');
+});
+
 test('all ten songs are scheduled at least once, ramping in tempo as they land', () => {
   const byId = Object.fromEntries(Songs.SONGS.map(s => [s.id, s]));
   const scheduled = new Set();

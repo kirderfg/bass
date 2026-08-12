@@ -81,6 +81,92 @@ test('week 3\'s "let the app listen" lands on T.N.T., highlighted and in view', 
   } finally { await app.close(); }
 });
 
+test('a preset drill link puts a finished run away and shows the configured picker', async () => {
+  // THE BIG ONE from the fourth session: after any drill run, enterDrills
+  // re-showed the old verdict — so "Run the rhythm drill" landed on the
+  // previous drill's finished E-minor-pentatonic verdict, with the preset
+  // having configured the picker perfectly UNDERNEATH it.
+  const app = await openApp(SILENT, '/index.html#drill', DESK);
+  try {
+    const { page } = app;
+    await page.click('#startBtn');
+    await page.waitForSelector('#drPick:not(.hidden)', { timeout: 5000 });
+    await page.click('#drStart');           // default pick: E minor pentatonic, open position
+    await page.waitForSelector('#drRun:not(.hidden)', { timeout: 3000 });
+    await page.evaluate(async () => {
+      if (A.timer) { clearInterval(A.timer); A.timer = null; }
+      A.muteUntil = 0;
+      for (let guard = 0; guard < 20 && DR.phase === 'running'; guard++) {
+        const want = DR.run.expected();
+        if (!want) break;
+        onStableNote({ midi: want.midi, hz: 100, cents: 0 });
+        await new Promise(r => setTimeout(r, 60));
+      }
+    });
+    assert.equal(await page.evaluate(() => DR.phase), 'done', 'the seed run did not reach a verdict');
+
+    // Preset-LESS return keeps today's behaviour: your verdict is where you left it.
+    await page.click('#tabbar button[data-tab="practice"]');
+    await page.waitForSelector('#tab-practice.on .pitem', { timeout: 3000 });
+    await page.click('#tabbar button[data-tab="drill"]');
+    await page.waitForSelector('#secDrill:not(.hidden)', { timeout: 3000 });
+    assert.equal(await page.isVisible('#drRun'), true,
+      'coming back by the nav should return to the verdict');
+
+    // A preset-carrying plan link must land on the configured PICKER instead.
+    await page.click('#tabbar button[data-tab="practice"]');
+    await page.waitForSelector('#tab-practice.on .pitem', { timeout: 3000 });
+    await page.click('[data-wk="5"]');
+    await page.waitForTimeout(200);
+    assert.equal(await clickPlanLink(page, /First rhythm drill/, /Run the rhythm drill/), 'ok');
+    await page.waitForSelector('#drPick:not(.hidden)', { timeout: 3000 });
+    const r = await page.evaluate(() => ({
+      runShown: !document.getElementById('drRun').classList.contains('hidden'),
+      preview: document.getElementById('drPreview').textContent,
+      bpm: document.getElementById('drBpmTxt').textContent,
+    }));
+    assert.equal(r.runShown, false, 'the previous drill\'s verdict screen is still up');
+    assert.match(r.preview, /Straight eighths on E · 8 bars/i, 'the picker is not configured to the preset');
+    assert.equal(r.bpm, '92 bpm', 'the preset names 92 bpm and the picker should land there');
+    assert.deepEqual(app.errors, [], 'page errors');
+  } finally { await app.close(); }
+});
+
+test('when a due review owns the primary button, the preview names its own drill\'s owner', async () => {
+  // "Run today's review · 1 due" was the primary button while the preview
+  // paragraph below still described the PICKER's drill — two drills on one
+  // card with no labels saying which text belongs to which button.
+  const app = await openApp(SILENT, '/index.html#drill', DESK);
+  try {
+    const { page } = app;
+    await page.waitForSelector('#gate:not(.hidden)', { timeout: 4000 });
+    await page.evaluate((dk) => {
+      localStorage.setItem(dk, JSON.stringify({
+        '5|scale|minPent|E|0-5': {
+          id: '5|scale|minPent|E|0-5', label: 'E minor pentatonic · Open position · frets 0–5',
+          due: '2020-01-01', box: 1, ci: 'blocked', bpm: 60, attempts: [],
+          cfg: { tuning: 5, type: 'scale', scaleKey: 'minPent', rootPc: 4,
+                 from: 0, to: 5, winLabel: 'Open position · frets 0–5' },
+        },
+      }));
+    }, DRILL_KEY);
+    await page.reload();
+    await page.waitForSelector('#gate:not(.hidden)', { timeout: 4000 });
+    await page.click('#startBtn');
+    await page.waitForSelector('#drPick:not(.hidden)', { timeout: 5000 });
+    assert.match(await page.textContent('#drStart'), /review/i, 'the review does not own the primary button');
+    assert.match(await page.textContent('#drPreview'), /^Your own pick \(the second button\): /,
+      'the preview does not say whose drill it describes');
+
+    // Without a due review there is only one drill on the card — no prefix.
+    await page.evaluate((dk) => { localStorage.removeItem(dk); setMode('drill'); }, DRILL_KEY);
+    await page.waitForTimeout(150);
+    assert.doesNotMatch(await page.textContent('#drPreview'), /Your own pick/,
+      'the owner prefix should only appear when a review is primary');
+    assert.deepEqual(app.errors, [], 'page errors');
+  } finally { await app.close(); }
+});
+
 test('tapping an unmarked study fret names the note, then lets it go', async () => {
   // The default board (names on, naturals only) leaves the accidentals
   // unmarked. Tapping one played a sound and showed NOTHING — the reveal code

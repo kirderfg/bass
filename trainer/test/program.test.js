@@ -32,7 +32,11 @@ test('the week picker is three phase rows, twelve weeks, and week 9 says 40 minu
     await page.click('[data-wk="9"]');
     await page.waitForTimeout(200);
     const wk9 = await page.evaluate(() => document.getElementById('tab-practice').innerText);
-    assert.match(wk9, /Performance/, 'week 9 names its phase');
+    // /i like the assertions below: the phase is named by the card's eyebrow,
+    // which renders in uppercase. (The mixed-case match used to be satisfied
+    // by a forked "Performance-phase evenings…" paragraph, replaced by the
+    // phase's own grades sentence — same 40-minute claim, stated once.)
+    assert.match(wk9, /Performance/i, 'week 9 names its phase');
     assert.match(wk9, /up to 40 minutes/i, 'the 40-minute honesty is missing from week 9');
     // /i because the eyebrow style renders in uppercase.
     assert.match(wk9, /The set · \d+ of 10 gig-ready/i,
@@ -42,6 +46,80 @@ test('the week picker is three phase rows, twelve weeks, and week 9 says 40 minu
     await page.waitForTimeout(200);
     const wk2 = await page.evaluate(() => document.getElementById('tab-practice').innerText);
     assert.doesNotMatch(wk2, /up to 40 minutes/i, 'week 2 borrowed week 9\'s warning');
+    assert.deepEqual(app.errors, [], 'page errors');
+  } finally { await app.close(); }
+});
+
+test('the course states its destination up front, and each week card carries its phase\'s grading', async () => {
+  // PHASES[].grades was data rendered nowhere, and nothing above the week
+  // picker ever said where twelve weeks were going — "gig-ready" arrived
+  // undefined at week 9.
+  const app = await openApp(SILENT, '/index.html', DESK);
+  try {
+    const { page } = app;
+    await page.waitForSelector('#tab-practice.on .pitem', { timeout: 4000 });
+    const head = await page.evaluate(() => {
+      const el = document.getElementById('courseHead');
+      if (!el) return null;
+      const firstPhase = document.querySelector('#tab-practice .wp-phase');
+      return {
+        text: el.innerText,
+        aboveWeeks: !!(firstPhase &&
+          (el.compareDocumentPosition(firstPhase) & Node.DOCUMENT_POSITION_FOLLOWING)),
+      };
+    });
+    assert.ok(head, 'no course header above the week picker');
+    for (const claim of [/ten songs/i, /full tempo/i, /from memory/i, /in a set/i, /twelve weeks|12 weeks/i]) {
+      assert.match(head.text, claim, 'the destination is missing ' + claim);
+    }
+    assert.ok(head.aboveWeeks, 'the course header must sit above the week picker');
+
+    // The phase's grades sentence, verbatim from the course data, on the week card.
+    for (const [wk, phase] of [[1, 0], [5, 1], [9, 2]]) {
+      await page.click('[data-wk="' + wk + '"]');
+      await page.waitForTimeout(150);
+      const text = await page.evaluate(() => document.getElementById('tab-practice').innerText);
+      assert.ok(text.includes(Course.PHASES[phase].grades),
+        'week ' + wk + ' does not carry its phase\'s grades sentence verbatim');
+    }
+
+    // Week 9 is on screen now: where gig-ready first becomes tappable, the bar
+    // is defined in full — full tempo, whole roadmap, from memory, separate days.
+    const wk9 = await page.evaluate(() => document.getElementById('tab-practice').innerText);
+    for (const claim of [/full tempo/i, /whole roadmap/i, /from memory/i, /separate days/i]) {
+      assert.match(wk9, claim, 'the set board\'s gig-ready caption is missing ' + claim);
+    }
+    assert.deepEqual(app.errors, [], 'page errors');
+  } finally { await app.close(); }
+});
+
+test('"Open the Setlist card" scrolls to and rings the setlist card', async () => {
+  // The week-11/12 links landed at the top of the Songs tab, ~2,900px above
+  // the card they name.
+  const app = await openApp(SILENT, '/index.html', DESK);
+  try {
+    const { page } = app;
+    await page.waitForSelector('#tab-practice.on .pitem', { timeout: 4000 });
+    await page.click('[data-wk="11"]');
+    await page.waitForTimeout(200);
+    await page.evaluate(() => {
+      const it = [...document.querySelectorAll('#tab-practice .pitem')]
+        .find(p => /Build a 3–4 song set/i.test(p.innerText));
+      [...it.querySelectorAll('button')].find(b => /Open the Setlist card/i.test(b.textContent)).click();
+    });
+    await page.waitForSelector('#gate:not(.hidden)', { timeout: 3000 });
+    await page.click('#startBtn');
+    await page.waitForSelector('#sgSetCard', { timeout: 5000 });
+    await page.waitForTimeout(400);          // the highlight scroll is deferred a frame
+    const r = await page.evaluate(() => {
+      const el = document.getElementById('sgSetCard');
+      const rect = el.getBoundingClientRect();
+      return { target: el.classList.contains('is-target'),
+               top: rect.top, bottom: rect.bottom, vh: innerHeight };
+    });
+    assert.ok(r.target, 'the setlist card is not ringed');
+    assert.ok(r.bottom > 0 && r.top < r.vh, 'the setlist card is ringed but out of view ' +
+      '(top ' + Math.round(r.top) + ', viewport ' + r.vh + ')');
     assert.deepEqual(app.errors, [], 'page errors');
   } finally { await app.close(); }
 });
@@ -118,6 +196,13 @@ test('a rhythm drill runs through the picker and its verdict is about timing', a
     await page.waitForSelector('#drRun:not(.hidden)', { timeout: 3000 });
     assert.match(await page.textContent('#drRunKind'), /Straight eighths · 4 bars/);
 
+    // The run hint states the PATTERN's rule: an eighths drill is two notes
+    // per click, and the scale drills' "one note per click" contradicted the
+    // picker's own preview.
+    const hint = await page.textContent('#drHint');
+    assert.match(hint, /Two notes per click, every click/i, 'the hint must state the pattern\'s own rule');
+    assert.doesNotMatch(hint, /One note per click/i, 'an eighths drill is not one note per click');
+
     // Play all 32 onsets (fast, so the honest verdict is "off the click").
     const phase = await page.evaluate(async () => {
       if (A.timer) { clearInterval(A.timer); A.timer = null; }
@@ -135,8 +220,40 @@ test('a rhythm drill runs through the picker and its verdict is about timing', a
     assert.match(verdict, /Against the click/i,
       'the verdict must be a timing verdict, measured against the click');
     assert.match(verdict, /mastery day/i, 'and say what it did to mastery');
+    // A rhythm drill has no direction, so the verdict must not wear the scale
+    // drills' "N notes ascending" — it names the pattern and its root.
+    assert.match(verdict, /32 notes · Straight eighths on E/i,
+      'the verdict eyebrow should name the pattern, not a direction');
+    assert.doesNotMatch(verdict, /notes ascending|notes descending/i,
+      'a rhythm drill\'s verdict claims a direction it does not have');
+    // …and neither must the mastery explainer or the next-rep button.
+    const pillNote = await page.textContent('#drPillNote');
+    assert.doesNotMatch(pillNote, /ascending/i,
+      'the mastery explainer describes a shape rule rhythm drills do not have');
+    assert.match(pillNote, /pattern/i, 'the rhythm mastery explainer should describe the pattern');
+    assert.match(pillNote, /in time with the click/i);
+    assert.match(pillNote, /first run|day’s first/i);
+    assert.match(pillNote, /two separate days/i);
+    assert.doesNotMatch(await page.textContent('#drGo'), /descending/i,
+      'the engine never runs a rhythm drill descending, so the button must not offer it');
     // It schedules like every other drill: the shelf now holds it.
     assert.match(await page.textContent('#drShelfBody'), /Straight eighths on E · 4 bars/);
+
+    // The neck-window pill: a rhythm drill has no BOX. On B (A string, fret 2)
+    // the window frames the root position, so the pill names that instead.
+    await page.click('#drBack');
+    await page.waitForSelector('#drPick:not(.hidden)', { timeout: 3000 });
+    await page.selectOption('#drRootSel', '11');
+    await page.waitForTimeout(120);
+    await page.click('#drStart');
+    await page.waitForSelector('#drRun:not(.hidden)', { timeout: 3000 });
+    const pill = await page.evaluate(() => {
+      const el = document.querySelector('#drBoard .neck-window-pill-label');
+      return el ? el.textContent : null;
+    });
+    assert.ok(pill == null || !/BOX/.test(pill),
+      'the window pill still says "' + pill + '" on a drill that has no box');
+    assert.equal(pill, 'B · FRET 2', 'the pill should name the root position');
     assert.deepEqual(app.errors, [], 'page errors');
   } finally { await app.close(); }
 });
@@ -176,6 +293,10 @@ test('memory mode hides the roadmap, says so in the verdict, and banks a memory 
     await page.click('#sgMemSeg button[data-m="memory"]');
     await page.waitForTimeout(100);
     assert.match(await page.textContent('#sgMemNote'), /memory day/i);
+    // The explainer must not promise "the bar position" ambiguously: what you
+    // get is your bar number across the WHOLE song, never within a section.
+    assert.match(await page.textContent('#sgMemNote'), /whole song/i,
+      'the explainer should say the bar count runs across the whole song');
     await page.click('#sgTap');
     await page.waitForFunction(() => SG.t0 != null, null, { timeout: 5000 });
 
@@ -193,12 +314,20 @@ test('memory mode hides the roadmap, says so in the verdict, and banks a memory 
       next: document.getElementById('sgNext').classList.contains('hidden'),
       root: document.getElementById('sgRoot').textContent,
       section: document.getElementById('sgSection').textContent,
+      bar: document.getElementById('sgBar').textContent,
+      progHidden: document.getElementById('sgProg').classList.contains('hidden'),
     }));
     assert.equal(road.board, true, 'the neck board is still showing');
     assert.equal(road.judge, true, 'the live judge pill leaks the expected root');
     assert.equal(road.next, true, 'the "Next:" warning is still showing');
     assert.equal(road.root, '?', 'the root display still names the root');
     assert.equal(road.section, 'From memory', 'the section name is half the roadmap');
+    // Bar-within-section resets AT each section change — from memory only the
+    // ABSOLUTE position may show. Back in Black is 24 bars (4+8+2+2+8).
+    assert.match(road.bar, /^bar 1 of 24\b/,
+      'memory mode leaks section boundaries: the bar line reads "' + road.bar + '"');
+    assert.equal(road.progHidden, true,
+      'the "section N of M" counter tells the player exactly when sections turn over');
 
     assert.equal(await playWholeSong(page), true, 'the play never finished');
     const summary = await page.textContent('#sgSummary');
@@ -249,6 +378,95 @@ test('a second memory day makes a song gig-ready, and the pills say so', async (
     }));
     assert.match(after.list, /gig-ready/, 'the song pill did not advance');
     assert.match(after.board, /The set · 1 of 10 gig-ready/i, 'the set board did not advance');
+    assert.deepEqual(app.errors, [], 'page errors');
+  } finally { await app.close(); }
+});
+
+test('the set boards show each song\'s best memory-run %, and nothing for no run', async () => {
+  // Week 10 promises "the set board names them: lowest scores, fewest memory
+  // days" — but neither board showed a score. A song with no memory run shows
+  // NOTHING: 0% would read as a terrible run rather than no run.
+  const app = await openApp(SILENT, '/index.html#songs', DESK);
+  try {
+    const { page } = app;
+    await page.click('#startBtn');
+    await page.waitForSelector('#sgList .sg-item', { timeout: 5000 });
+    await page.evaluate((k) => {
+      localStorage.setItem(k, JSON.stringify({
+        bib: { id: 'bib', plays: 4, bestAccuracy: 0.95, bestFull: true,
+               memoryBest: 0.87, memoryDays: ['2020-01-01'] },
+        hth: { id: 'hth', plays: 2, bestAccuracy: 0.8, bestFull: true },
+      }));
+    }, SONG_KEY);
+    await page.click('#tabbar button[data-tab="tuner"]');
+    await page.click('#tabbar button[data-tab="songs"]');
+    await page.waitForSelector('#sgList .sg-item', { timeout: 3000 });
+    const pills = await page.evaluate(() =>
+      [...document.querySelectorAll('#sgSetStatus .pill')].map(p => p.textContent));
+    const bib = pills.find(p => /Back in Black/.test(p));
+    const hth = pills.find(p => /Highway to Hell/.test(p));
+    assert.match(bib || '', /87%/, 'Back in Black\'s best memory % is missing from the set board');
+    assert.doesNotMatch(hth || '', /%/, 'a song with no memory run must show nothing, not a %');
+
+    // The Practice tab's set board (Performance phase) carries the same score.
+    await page.click('#tabbar button[data-tab="practice"]');
+    await page.waitForSelector('#tab-practice.on .pitem', { timeout: 3000 });
+    await page.click('[data-wk="10"]');
+    await page.waitForTimeout(200);
+    const rows = await page.evaluate(() =>
+      [...document.querySelectorAll('#tab-practice .dr-row')].map(r => r.innerText));
+    const bibRow = rows.find(r => /Back in Black/.test(r));
+    const hthRow = rows.find(r => /Highway to Hell/.test(r));
+    assert.match(bibRow || '', /87%/, 'the practice-tab set board row shows no memory score');
+    assert.doesNotMatch(hthRow || '', /%/, 'the practice-tab board shows a % for a song with no memory run');
+    assert.deepEqual(app.errors, [], 'page errors');
+  } finally { await app.close(); }
+});
+
+test('"Play it from memory" highlights the song and pre-flips the memory toggle', async () => {
+  // Week 7's links named memory mode and landed with the toggle on "Roadmap
+  // shown": the mode the link promises must be one press away — but the run
+  // itself must NOT auto-start.
+  const app = await openApp(SILENT, '/index.html', DESK);
+  try {
+    const { page } = app;
+    await page.waitForSelector('#tab-practice.on .pitem', { timeout: 4000 });
+    await page.click('[data-wk="7"]');
+    await page.waitForTimeout(200);
+    await page.evaluate(() => {
+      const it = [...document.querySelectorAll('#tab-practice .pitem')]
+        .find(p => /Back in Black/.test(p.innerText) && /from memory/i.test(p.innerText));
+      [...it.querySelectorAll('button')].find(b => /Play it from memory/i.test(b.textContent)).click();
+    });
+    await page.waitForSelector('#gate:not(.hidden)', { timeout: 3000 });
+    await page.click('#startBtn');
+    await page.waitForSelector('#sgList .sg-item', { timeout: 5000 });
+    await page.waitForTimeout(200);
+    const target = await page.evaluate(() => {
+      const el = document.querySelector('#sgList .sg-item.is-target');
+      return el ? el.innerText : null;
+    });
+    assert.match(target || '', /Back in Black/, 'the named song is not highlighted');
+
+    await page.click('#sgList button[data-song="bib"][data-play="click"]');
+    await page.waitForSelector('#sgArm:not(.hidden)', { timeout: 3000 });
+    const r = await page.evaluate(() => ({
+      memOn: document.querySelector('#sgMemSeg button[data-m="memory"]').classList.contains('on'),
+      running: SG.t0 != null,
+      note: document.getElementById('sgMemNote').textContent,
+    }));
+    assert.equal(r.memOn, true, 'the toggle the link names is not pre-flipped');
+    assert.equal(r.running, false, 'the link must not auto-start the run');
+    assert.match(r.note, /From memory/i, 'the memory explainer should be the one showing');
+
+    // One navigation's worth only: re-opening the song resets to roadmap shown.
+    await page.click('#sgBack');
+    await page.waitForSelector('#sgList .sg-item', { timeout: 3000 });
+    await page.click('#sgList button[data-song="bib"][data-play="click"]');
+    await page.waitForSelector('#sgArm:not(.hidden)', { timeout: 3000 });
+    assert.equal(await page.evaluate(() =>
+      document.querySelector('#sgMemSeg button[data-m="memory"]').classList.contains('on')), false,
+      'the preset flip leaked into a later visit the link never asked for');
     assert.deepEqual(app.errors, [], 'page errors');
   } finally { await app.close(); }
 });
