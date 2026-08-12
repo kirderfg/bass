@@ -586,10 +586,20 @@ function setMode(m){
   pendingPreset = null;
   if (m === 'find' && !q) newQuestion();
   if (m === 'echo') newEcho();
+  /* Same honesty as suspend(): checking the tuner mid-drill stops the click,
+     so the run must give up its claim on it — otherwise the notes played
+     after returning would be scored "against the click" on a grid that went
+     silent, and the hint would keep promising one-note-per-click. The
+     Learn-tab hop already did this; the Live-tab hop said nothing.
+     BEFORE songTeardown below: that also calls metStop() unconditionally, and
+     once the timer is gone there is no telling whose click just died. */
+  if (m !== 'drill' && MET.timer){
+    metStop();
+    if (DR.phase === 'running' && DR.met){ DR.clickLost = true; DR.metOrigin = null; }
+  }
   // Leaving Songs stops its clock and its click; leaving Drills stops theirs.
   // (setMode is not called while a song is running, so this never cuts one off.)
   if (m !== 'songs') songTeardown();
-  if (m !== 'drill') metStop();
   // Applied before enterDrills, so the picker renders already configured.
   if (pre && m === 'drill' && pre.drill){
     pickerFromCfg(pre.drill);
@@ -1786,9 +1796,12 @@ function renderShelf(){
   const all = allDrills().sort((a,b) => String(a.due).localeCompare(String(b.due)));
   host.innerHTML = all.length
     ? all.map(it => drillRow(it, 'Open')).join('') +
-      '<p class="t-caption" style="margin-top:var(--sp3)">new → acquired → mastered. Mastered means the <b>ascending</b> shape, ' +
-      'whole, played as the day’s <b>first</b> run, clean and in time <b>with the click on</b>, on two separate days — ' +
-      'in-session fluency does not count, and neither do repair windows or skipped notes.</p>'
+      // Captions a MIXED list: rhythm drills have no direction, so "the
+      // ascending shape" as a blanket rule contradicted their own screens.
+      '<p class="t-caption" style="margin-top:var(--sp3)">new → acquired → mastered. Mastered means the <b>whole</b> ' +
+      'drill — ascending for a shape, the full pattern for a rhythm — played as the day’s <b>first</b> run, clean and ' +
+      'in time <b>with the click on</b>, on two separate days. In-session fluency does not count, and neither do ' +
+      'repair windows or skipped notes.</p>'
     : '<p class="t-caption">No drills yet. Pick a scale, a root and a place on the neck, then play the shape in order. ' +
       'Every finished run is scheduled for review, and what you keep missing gets its own short repair drill.</p>';
 }

@@ -171,3 +171,33 @@ test('the app is titled once per screen, at every width', async () => {
     assert.deepEqual(app.errors, [], 'page errors');
   } finally { await app.close(); }
 });
+
+test('checking the tuner mid-drill costs the run its click claim, honestly', async () => {
+  /* The Learn-tab hop marked the run clickLost; the Live-tab hop (setMode also
+     stops the click) said nothing — so a player who glanced at the tuner came
+     back to a hint still promising one-note-per-click over a silent grid. */
+  const app = await openApp(SILENT, '/index.html#drill');
+  const { page } = app;
+  try {
+    await page.click('#startBtn');
+    await page.waitForSelector('#secDrill:not(.hidden)', { timeout: 5000 });
+    await page.check('#drMet');
+    await page.click('#drStart');
+    await page.waitForSelector('#drRun:not(.hidden)', { timeout: 3000 });
+    await page.waitForFunction(() => MET.timer !== null, null, { timeout: 3000 });
+
+    await page.click('#tabbar button[data-tab="tuner"]');
+    await page.waitForSelector('#secTuner:not(.hidden)', { timeout: 3000 });
+    assert.equal(await page.evaluate(() => MET.timer), null,
+      'the click kept ticking under the tuner');
+
+    await page.click('#tabbar button[data-tab="drill"]');
+    await page.waitForSelector('#secDrill:not(.hidden)', { timeout: 3000 });
+    assert.equal(await page.isVisible('#drRun'), true, 'the run was thrown away');
+    assert.equal(await page.evaluate(() => DR.clickLost), true,
+      'the run still claims a click that stopped');
+    assert.match(await page.textContent('#drHint'), /click stopped when you left/,
+      'the screen does not say the rest of the run is untimed');
+    assert.deepEqual(app.errors, [], 'page errors');
+  } finally { await app.close(); }
+});
