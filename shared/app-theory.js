@@ -99,7 +99,9 @@ function normalizeState(st){
   st.stats.daily = isObj(st.stats.daily) ? st.stats.daily : {};
   st.stats.speed = Array.isArray(st.stats.speed) ? st.stats.speed : [];
   st.practice = isObj(st.practice) ? st.practice : D.practice;
-  st.practice.week = [1,2,3].indexOf(+st.practice.week) >= 0 ? +st.practice.week : 1;
+  // Any week the course actually has — the course grew from 3 weeks to 12,
+  // and a hardcoded [1,2,3] here would have thrown week-4+ users back to week 1.
+  st.practice.week = window.BassCourse && BassCourse.weekOf(+st.practice.week) ? +st.practice.week : 1;
   st.practice.log = isObj(st.practice.log) ? st.practice.log : {};
   st.practice.checkpoints = isObj(st.practice.checkpoints) ? st.practice.checkpoints : {};
   st.practice.dismissed = Array.isArray(st.practice.dismissed) ? st.practice.dismissed : [];
@@ -1287,100 +1289,15 @@ function mountMetronome(){
 }
 
 /* ================= FEATURE 5: PRACTICE PLAN ================= */
-const WEEKS = [
-  { n:1, title:'Hands, fretboard & first notes',
-    goal:'Get your hands working and learn where the notes are on E and A.',
-    items:[
-      // `tune:true` is what markTuned() looks for, so the Tuner can tick this
-      // off without the Live half needing to know any item id.
-      { id:'w1t', cat:'First', min:2, tune:true,
-        text:'Tune up. Play each open string and match it to the green zone. An out-of-tune bass makes everything below sound wrong — and teaches your ear the wrong thing.',
-        link:{ label:'Open the tuner', live:'tuner' } },
-      { id:'w1a', diagram:'chromatic', cat:'Warm-up', min:5,
-        text:'Chromatic 1-2-3-4: one finger per fret, up every string and back. Slow and clean beats fast and sloppy.', met:60 },
-      { id:'w1b', cat:'Fretboard', min:5,
-        text:'Note names on the E and A strings, frets 0–5. Study first, then try a few rounds of "Find the note".',
-        link:{ label:'Open the Note quiz (E+A, 0–5)', spec:{ tab:'trainer', trainer:{ tier:0, mode:'study', focus:null, study:{ show:true, strings:['E','A'], naturalsOnly:true, maxFret:5 } } } } },
-      { id:'w1c', diagram:'floatingThumb', cat:'Technique', min:8,
-        text:'Alternate index and middle on the open E, one note per click. Rest your thumb on the B string so it stays silent.', met:60 },
-      { id:'w1d', diagram:'plucking', cat:'Music', min:10,
-        text:'Groove on one note: open E, one note per click, every note dead on the beat. Boring is the point — that steady pulse is the TNT verse.', met:60 }
-    ],
-    checkpoints:[
-      { id:'w1cp0', text:'Chromatic warmup is clean at 60 bpm (no buzzes, one finger per fret)' },
-      { id:'w1cp1', text:'I can name any note on E or A, frets 0–5, in under 2 seconds (check "seconds per answer" under Your progress, on the Note quiz tab)' },
-      { id:'w1cp2', text:'My thumb mutes the B string without me thinking about it' }
-    ],
-    theory:['fretHalfStep','bcef'] },
-  { n:2, title:'Eighth notes + E minor pentatonic',
-    goal:'Lock in eighth notes and memorize the most important scale in rock.',
-    items:[
-      // Weeks 2 and 3 used to DROP the tune-up after week 1 had taught that an
-      // out-of-tune bass "teaches your ear the wrong thing" — the habit lapsed
-      // the week after it was argued for. markTuned() finds these by `tune`.
-      { id:'w2t', cat:'First', min:2, tune:true,
-        text:'Tune up. Each open string into the green zone before the scale work — this week is your ear learning E minor pentatonic, and an out-of-tune bass teaches it the wrong thing.',
-        link:{ label:'Open the tuner', live:'tuner' } },
-      { id:'w2a', diagram:'chromatic', cat:'Warm-up', min:5,
-        text:'Chromatic 1-2-3-4 on all strings. Push to 65 bpm if yesterday was clean.', met:65 },
-      { id:'w2b', cat:'Scales', min:5,
-        text:'E minor pentatonic, open position: E G A B D. Play it up and down slowly until your fingers know it in both directions. Use "Play scale" to check yourself.',
-        link:{ label:'Open E minor pentatonic', spec:{ tab:'scales', scales:{ root:'E', type:'minPent', view:'open', labels:'names' } } },
-        // The preset makes the link land CONFIGURED: without it, Drills opens on
-        // whatever the picker last showed, which is only this shape by luck.
-        link2:{ label:'Then check it in Drills', live:'drill',
-                preset:{ drill:{ type:'scale', scaleKey:'minPent', rootPc:4, from:0 } } } },
-      { id:'w2c', diagram:'eighthNotes', cat:'Technique', min:10,
-        text:'Eighth notes on the open E: two notes per click, strict index-middle alternation. Every 4 beats, switch to another pentatonic note without breaking the rhythm.', met:65 },
-      { id:'w2d', cat:'Music', min:10,
-        text:'Loop E → G → A, eighth notes, 4 beats each. Smooth switches matter more than speed.', met:65 },
-      { id:'w2e', cat:'Bonus', min:5,
-        text:'Note quiz: "Find the note" on E + A naturals. Use the "E only" drill button to bank 20 E-string answers at 90%+.',
-        link:{ label:'Find the note (tier 1)', spec:{ tab:'trainer', trainer:{ tier:0, mode:'find', focus:null } } } }
-    ],
-    checkpoints:[
-      { id:'w2cp0', text:'2 minutes of clean, even eighth notes at 70 bpm' },
-      { id:'w2cp1', text:'E minor pentatonic memorized, up AND down, without looking' },
-      { id:'w2cp2', text:'Over 90% on my last 20 E-string answers (see "Accuracy by string" under Your progress, on the Note quiz tab)' }
-    ],
-    theory:['rootsJob','octave'] },
-  { n:3, title:'First song: T.N.T.',
-    goal:'Everything so far becomes a real AC/DC song.',
-    items:[
-      // Same reason as w2t: the tune-up must not lapse the week a real song lands.
-      { id:'w3t', cat:'First', min:2, tune:true,
-        text:'Tune up. Each open string into the green zone before the song — T.N.T. is the week\'s payoff, and an out-of-tune bass teaches your ear the wrong thing while you play it.',
-        link:{ label:'Open the tuner', live:'tuner' } },
-      { id:'w3a', cat:'Warm-up', min:5,
-        text:'Chromatic warmup at 70 bpm, or E minor pentatonic up and down twice.', met:70 },
-      { id:'w3b', cat:'Scales', min:5,
-        text:'The MOVEABLE pentatonic box. On your 5-string, the root E sits on the B string at fret 5 — the box anchors there. Same note recipe as the open position, packed into one closed shape with no open strings, so you can slide it anywhere.',
-        link:{ label:'Open the moveable box', spec:{ tab:'scales', scales:{ root:'E', type:'minPent', view:'box', labels:'names' } } },
-        // from:5 is the E-root box boxOptions() offers (B string, fret 5). Without
-        // the preset this link opened the picker on the OPEN position — a
-        // different shape from the one the item just taught.
-        link2:{ label:'Then check it in Drills', live:'drill',
-                preset:{ drill:{ type:'scale', scaleKey:'minPent', rootPc:4, from:5 } } } },
-      { id:'w3c', diagram:'tntRoots', cat:'Technique', min:10,
-        text:'TNT chorus moves: roots E → A → G as eighth notes, 4 beats each. All three live in E minor pentatonic.', met:70 },
-      { id:'w3d', cat:'Music', min:10,
-        text:'T.N.T.: verse = steady eighth notes on E (palm-relaxed, locked to click). Chorus = the E→A→G shifts. Loop verse → chorus. Full speed is ~126 bpm — start at 70 and work up.',
-        link:{ label:'TNT tab — mute the bass track, slow it down ↗', href:'https://www.songsterr.com/a/wsa/acdc-tnt-bass-tab-s407' },
-        // The song preset scrolls to and highlights T.N.T.: this link used to
-        // land at the top of the list, on Back in Black.
-        link2:{ label:'Then let the app listen while you play it', live:'songs',
-                preset:{ song:'tnt' } } },
-      { id:'w3e', cat:'Bonus', min:5,
-        text:'Note quiz: "Find the note" focused on the A string only. Get your last 20 answers above 90%.',
-        link:{ label:'Find the note (A string)', spec:{ tab:'trainer', trainer:{ tier:1, mode:'find', focus:['A'] } } } }
-    ],
-    checkpoints:[
-      { id:'w3cp0', text:'TNT verse + chorus at full speed, locked to the beat' },
-      { id:'w3cp1', text:'Moveable box shape playable from fret 5 without looking at a diagram' },
-      { id:'w3cp2', text:'Over 90% on my last 20 A-string answers (see "Accuracy by string" under Your progress, on the Note quiz tab)' }
-    ],
-    theory:['relative'] }
-];
+/* The plan itself lives in shared/course.js (BassCourse) — 12 weeks in 3
+   phases, held to invariants by trainer/test/course.test.js. It moved out of
+   this IIFE because a plan nothing can see is a plan nothing can check: the
+   3-week version scheduled You Shook Me against a C root no week had taught,
+   and only extraction made that a testable rule. This file keeps thin
+   delegates so its render code reads as before. */
+const WEEKS = window.BassCourse.WEEKS;
+const PHASES = window.BassCourse.PHASES;
+function phaseOf(n){ return window.BassCourse.phaseOf(n); }
 
 /* ================= THIS WEEK — the three stores, joined =================
    This page owns bassTheoryTrainer.v1. Drills and Songs each keep their own
@@ -1473,6 +1390,40 @@ function songTitle(id){
   const hit = list.filter(s => s.id === id)[0];
   return hit ? hit.title : String(id || 'a song');
 }
+/* ---- the set against the gig-ready bar ----
+   Readiness is BassSongs' rule (two distinct 90%+ memory days), asked of the
+   engine per song rather than re-derived here — two definitions of "ready"
+   would drift, and this screen would be the one telling the flattering lie. */
+const SET_KEY = 'bassTrainer.sets.v1';
+function readinessRows(){
+  const list = (window.BassSongs && BassSongs.SONGS) || [];
+  const store = readStore(SONG_KEY);
+  return list.map(song => {
+    const rec = store[song.id];
+    const days = rec && Array.isArray(rec.memoryDays) ? new Set(rec.memoryDays).size : 0;
+    return { song, rec, days, status: BassSongs.songReadiness(rec, song) };
+  });
+}
+/** Banked setlist runs — written by the Songs tab into their OWN store, never
+    into the songs store, whose values this file iterates as songs. */
+function setRuns(){
+  const v = readStore(SET_KEY);
+  return Array.isArray(v.runs) ? v.runs.filter(r => r && typeof r === 'object') : [];
+}
+function setBoardHtml(){
+  const rows = readinessRows();
+  if (!rows.length) return '';
+  const ready = rows.filter(r => r.status === 'gig-ready').length;
+  let h = '<div class="card tight"><div class="t-eyebrow">The set · ' + ready + ' of ' + rows.length + ' gig-ready</div>';
+  for (const r of rows){
+    h += '<div class="dr-row"><span class="dr-name">' + r.song.title + '</span>' +
+      (r.status !== 'gig-ready' && r.days ? '<span class="t-data">memory day ' + r.days + ' of 2</span>' : '') +
+      '<span class="pill' + (r.status === 'gig-ready' ? ' good' : '') + '">' + r.status + '</span></div>';
+  }
+  h += '<p class="muted small" style="margin:var(--sp2) 0 0"><b>Gig-ready</b> means a full memory-mode play at 90%+ ' +
+    'on two separate days — the bar the drill engine already uses for mastery, applied to a song.</p></div>';
+  return h;
+}
 /** Answers inside a date window, from the day-stamped roll-up both apps write. */
 function quizWindow(fromISO, toISO){
   const daily = (S.stats && S.stats.daily && typeof S.stats.daily === 'object') ? S.stats.daily : {};
@@ -1527,12 +1478,17 @@ function thisWeekHtml(){
       (dr.runs === 1 ? '' : 's') + ' in the last 7 days' +
       (!dr.due && dr.nextDue ? ' — next review ' + dr.nextDue : '')
     : 'none yet — a drill checks the order you play a shape in, which the note quiz cannot.') + '</div>');
+  // Once the first song reaches the bar, the count becomes the headline the
+  // Performance phase is graded on — before that it would just read "0 ready".
+  const rdRows = readinessRows();
+  const gigReady = rdRows.filter(r => r.status === 'gig-ready').length;
   lines.push('<div class="muted small"><b>Songs:</b> ' + (sg.plays
     ? sg.plays + ' play' + (sg.plays === 1 ? '' : 's') + ' across ' + sg.songs + ' song' + (sg.songs === 1 ? '' : 's') +
       (sg.best
         ? ' · best on the root <b>' + Math.round(sg.best * 100) + '%</b> (' + songTitle(sg.bestId) + ', ' +
           (sg.bestFull ? 'full play' : sg.bestSections + ' of ' + sg.bestOf + ' sections') + ')'
-        : ' · no graded play yet — the app’s own click is the mode that can score you')
+        : ' · no graded play yet — the app’s own click is the mode that can score you') +
+      (gigReady ? ' · <b>' + gigReady + ' of ' + rdRows.length + ' gig-ready</b>' : '')
     : 'none yet — play along with a record and it counts how often you were on the section’s root.') + '</div>');
   lines.push('<div class="muted small"><b>Note quiz:</b> ' + (q.a
     ? q.pct + '% of ' + q.a + ' answers in the last 7 days'
@@ -1573,7 +1529,7 @@ function thisWeekHtml(){
     '<div class="statgrid">' + tiles + '</div>' + lines.join('') + cmpHtml + links + '</div>';
 }
 
-function weekOf(n){ return WEEKS.find(w => w.n === n); }
+function weekOf(n){ return window.BassCourse.weekOf(n); }
 function dayLog(){
   const k = todayKey();
   const e = S.practice.log[k];
@@ -1676,16 +1632,30 @@ function renderPractice(){
       '</div></div>';
   }
 
-  // week picker
-  h += '<div class="weekpick">' + WEEKS.map(w => {
-    const cpsDone = w.checkpoints.every(c => S.practice.checkpoints[c.id]);
-    return '<button class="btn ' + (w.n === S.practice.week ? 'primary' : '') + '" data-wk="' + w.n + '">Week ' + w.n + (cpsDone ? ' ✓' : '') + '</button>';
-  }).join('') + '</div>';
+  // Week picker: twelve buttons need grouping, so one row per phase with the
+  // phase name as the label — the shape of the course is visible at a glance.
+  for (const ph of PHASES){
+    h += '<div class="wp-phase" data-phase="' + ph.n + '"><span class="t-eyebrow wp-label">' + ph.name + '</span>' +
+      '<div class="weekpick">' + ph.weeks.map(n => {
+        const w = weekOf(n);
+        const cpsDone = w.checkpoints.every(c => S.practice.checkpoints[c.id]);
+        return '<button class="btn ' + (n === S.practice.week ? 'primary' : '') + '" data-wk="' + n +
+          '" aria-label="Week ' + n + '">' + n + (cpsDone ? ' ✓' : '') + '</button>';
+      }).join('') + '</div></div>';
+  }
 
   // today's session
+  const ph = phaseOf(wk.n);
   h += '<div class="card">';
+  h += '<div class="t-eyebrow" style="margin-bottom:2px">' + ph.name + ' · phase ' + ph.n + ' of 3</div>';
   h += '<div class="row between"><b>Week ' + wk.n + ': ' + wk.title + '</b><span class="ptime">' + totalMin + ' min</span></div>';
   h += '<p class="muted small" style="margin:4px 0 4px">' + wk.goal + '</p>';
+  // Said on the header, not discovered by adding the items up: Performance
+  // evenings run longer, and a plan that hides that is lying about its price.
+  if (ph.n === 3){
+    h += '<p class="muted small" style="margin:0 0 4px"><b>Performance-phase evenings run up to 40 minutes</b> — ' +
+      'a ten-song set does not maintain itself in 30, and saying so beats overrunning quietly.</p>';
+  }
   /* Built from the items, so it cannot disagree with them. The hard-coded version
      said "10' technique" beside an 8-minute technique item, always summed to 30
      against a header that read 35 or 40, and mentioned neither the tune-up, the
@@ -1743,6 +1713,10 @@ function renderPractice(){
   }
   h += '</div>';
 
+  // The set at a glance, while the phase is about the set: ten songs against
+  // the gig-ready bar, read from the song store the Songs tab writes.
+  if (ph.n === 3) h += setBoardHtml();
+
   // theory dose
   const cards = wk.theory.filter(id => !S.practice.dismissed.includes(id));
   if (cards.length){
@@ -1750,12 +1724,15 @@ function renderPractice(){
     for (const id of cards) h += theoryCard(id);
   }
 
-  // report card
-  const w3 = weekOf(3);
-  if (w3.checkpoints.every(c => S.practice.checkpoints[c.id])){
-    h += '<div class="card" style="border-color:var(--good)"><b class="t-title3">3 weeks done — report to Claude</b>';
-    h += '<p class="muted small" style="margin:4px 0 6px">Copy this summary and paste it into a chat with Claude to get a personalized weeks 4–5 program.</p>';
-    h += '<div class="copybox" id="reportBox">' + reportText() + '</div>';
+  // The gig-readiness report: the end of the COURSE, not of week 3. It only
+  // appears once every checkpoint of every week is ticked, because it is a
+  // claim about the whole course — the old "3 weeks done" card is gone, and
+  // weeks 4–12 are its replacement.
+  if (WEEKS.every(w => w.checkpoints.every(c => S.practice.checkpoints[c.id]))){
+    h += '<div class="card" style="border-color:var(--good)"><b class="t-title3">12 weeks done — the gig-readiness report</b>';
+    h += '<p class="muted small" style="margin:4px 0 6px">The whole course, song by song, against the bar. ' +
+      'Copy it and paste it into a chat with Claude to get a set-two program built on what is actually banked.</p>';
+    h += '<div class="copybox" id="reportBox">' + gigReportText() + '</div>';
     h += '<button class="btn primary" id="copyReport">Copy report</button>';
     h += '</div>';
   }
@@ -1818,19 +1795,19 @@ function renderPractice(){
   mountMetronome();
 }
 
-function reportText(){
+/* The end-of-course report. It replaced the old "3 weeks done — report to
+   Claude" card when the course grew to 12 weeks: the paste block now asks for
+   a SET-TWO program, and its evidence is the set — song by song against the
+   gig-ready bar — rather than three weeks of fundamentals. */
+function gigReportText(){
   const ps = practiceStats();
   const st = S.stats;
   // Every count-noun pair goes through this: "1 shapes drilled" shipped, and a
   // report the player pastes as their own words must not read like a printout.
   const n_ = (n, one, many) => n + ' ' + (n === 1 ? one : (many || one + 's'));
   const acc = st.answered ? Math.round(100 * st.correct / st.answered) : 0;
-  const perStr = Object.keys(st.byString).map(n => {
-    const s = st.byString[n];
-    return '  - ' + n + ' string: ' + Math.round(100 * s.c / s.a) + '% (' + s.c + '/' + s.a + ')';
-  }).join('\n');
   const cps = WEEKS.map(w =>
-    'Week ' + w.n + ': ' + w.checkpoints.map(c => (S.practice.checkpoints[c.id] ? '✓' : '✗')).join(' ')
+    'W' + w.n + ' ' + w.checkpoints.map(c => (S.practice.checkpoints[c.id] ? '✓' : '✗')).join('')
   ).join('; ');
   const rig = '5-string bass (BEADG)';
   // Drills and Songs keep their own records; a report that omits them describes
@@ -1838,23 +1815,42 @@ function reportText(){
   const dr = drillRollup(), sg = songRollup();
   const drLine = dr.total
     ? 'Drills: ' + n_(dr.total, 'shape') + ' drilled, ' + dr.mastered + ' mastered (cold first run, in time with the click, two ' +
-      'separate days), ' + dr.due + ' due for review now, ' + n_(dr.runs, 'run') +
-      ' in the last 7 days\n'
+      'separate days), ' + n_(dr.runs, 'run') + ' in the last 7 days\n'
     : 'Drills: none run yet\n';
-  const sgLine = sg.plays
-    ? 'Songs (root roadmaps over a muted-bass tab): ' + n_(sg.plays, 'play') + ' across ' + n_(sg.songs, 'song') +
-      (sg.best ? ', best ' + Math.round(sg.best * 100) + '% on the section root (' + songTitle(sg.bestId) + ', ' +
-        (sg.bestFull ? 'whole roadmap' : sg.bestSections + ' of ' + n_(sg.bestOf, 'section')) + ')' : ', none graded yet') + '\n'
-    : 'Songs (root roadmaps over a muted-bass tab): none played yet\n';
-  return 'Hi Claude! I just finished the 3-week beginner program in my Bass Trainer app. Please design weeks 4-5 for me.\n\n' +
-    'My setup: ' + rig + ', goal = rock/metal, 20-30 min/day.\n' +
-    'Program completed: ' + cps + '\n' +
+  // The set, song by song, against the one bar every screen uses.
+  const rows = readinessRows();
+  const ready = rows.filter(r => r.status === 'gig-ready').length;
+  const songLines = rows.map(r =>
+    '  - ' + r.song.title + ' (' + r.song.bpm + ' bpm): ' + r.status +
+    (r.rec && r.rec.bestAccuracy ? ', best ' + Math.round(r.rec.bestAccuracy * 100) + '% on the root' : '') +
+    (r.days ? ', ' + n_(r.days, 'memory day') : '')
+  ).join('\n');
+  const rank = { 'new': 0, 'learning': 1, 'gig-ready': 2 };
+  const weakest = rows.slice().sort((a, b) =>
+    rank[a.status] - rank[b.status] ||
+    ((a.rec && a.rec.bestAccuracy) || 0) - ((b.rec && b.rec.bestAccuracy) || 0)
+  ).slice(0, 3).map(r => r.song.title);
+  const runs = setRuns();
+  const bestSet = runs.reduce((a, r) => Math.max(a, Number(r.overall) || 0), 0);
+  const setLine = runs.length
+    ? 'Set runs banked: ' + n_(runs.length, 'run') + ', longest ' +
+      n_(runs.reduce((a, r) => Math.max(a, (r.songs || []).length), 0), 'song') +
+      ', best ' + Math.round(bestSet * 100) + '% overall\n'
+    : 'Set runs banked: none yet\n';
+  return 'Hi Claude! I just finished the 12-week AC/DC course in my Bass Trainer app — the goal was ten songs, ' +
+    'full tempo, from memory, in a set. Please design set two: the next 3 months.\n\n' +
+    'My setup: ' + rig + ', goal = rock/metal, 30-40 min/evening.\n' +
+    'Checkpoints: ' + cps + '\n' +
     'Days practised: ' + ps.total + ' (current streak ' + ps.streak + ')\n' +
     'Note quiz: ' + acc + '% lifetime accuracy over ' + n_(st.answered, 'question') + ', best streak ' + st.bestStreak + '\n' +
-    (perStr ? 'Per string:\n' + perStr + '\n' : '') +
-    drLine + sgLine +
-    'What I can do now: chromatic warmup @70bpm, clean eighth notes @70bpm, E minor pentatonic open + moveable box, TNT verse & chorus.\n' +
-    'Please give me: a weeks 4-5 plan (same 25-30 min daily shape), 1-2 next songs slightly harder than TNT, and the next theory concepts to learn.';
+    drLine +
+    'The set (' + ready + ' of ' + rows.length + ' gig-ready — a 90%+ memory play on two separate days):\n' +
+    songLines + '\n' +
+    'Weakest three, in order: ' + weakest.join(', ') + '\n' +
+    setLine +
+    'Please give me: a 12-week set-two program in the same weekly shape (tune-up first, ' +
+    'checkpoints, up to 40 min/evening), 8-10 next songs that stretch beyond AC/DC root-eighths ' +
+    '(riffs, walking lines, a slow blues), and the technique and theory the new songs will need.';
 }
 
 /* ================= BOOT ================= */

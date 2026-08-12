@@ -192,6 +192,9 @@ test('a finished review stays on tonight\'s list, ticked and counted', async () 
 });
 
 test('the report pluralizes every count it makes', async () => {
+  // UPDATED with the 12-week course: the report card now appears at the END OF
+  // THE COURSE (every checkpoint of every week), not at week 3 — the
+  // pluralization contract it asserts is unchanged.
   const app = await openApp(SILENT, '/index.html', DESK);
   try {
     const { page } = app;
@@ -203,7 +206,7 @@ test('the report pluralizes every count it makes', async () => {
           ci: 'blocked', bpm: 60, attempts: [], cfg: { tuning: 5, type: 'scale' } };
       }
       localStorage.setItem(dk, JSON.stringify(all));
-      ['w3cp0', 'w3cp1', 'w3cp2'].forEach(id => S.practice.checkpoints[id] = true);
+      BassCourse.WEEKS.forEach(w => w.checkpoints.forEach(c => S.practice.checkpoints[c.id] = true));
       save(); renderPractice();
       return document.getElementById('reportBox').textContent;
     }, [DRILL_KEY, n]);

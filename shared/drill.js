@@ -80,6 +80,43 @@
     return direction === 'down' ? out.slice().reverse() : out;
   }
 
+  /* ---- rhythm drills ----
+     A live set's missing trainable skill is SUSTAINING a rhythm, and the
+     timing machinery already exists here: a rhythm drill is one pitch over
+     and over, run through createRun (a wrong pitch still halts) and judged
+     by the same click report as every other drill. Scope note: a bar of
+     eighths on E belongs to nobody — this grades the rhythm the songs' tap
+     clock honestly cannot, and it stays on shared/songs.js's side of the
+     Songsterr line (see the scope header there): no transcription, no tab. */
+  const RHYTHM_PATTERNS = {
+    // Beat offsets within one 4-beat bar, 0-based. 0.5 = an eighth.
+    eighths:   [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5],
+    // The push: skip the hit ON beat 4, land the and-of-4 leaning into the
+    // next bar — the most AC/DC move there is.
+    push:      [0, 0.5, 1, 1.5, 2, 2.5, 3.5],
+    // Rest-then-drive: two beats of silence, then eighths. Counting through
+    // silence and entering on cue is the tacet-intro skill, made drillable.
+    restdrive: [2, 2.5, 3, 3.5],
+  };
+
+  /**
+   * The target list for a rhythm drill: the same position repeated, one entry
+   * per expected onset, each carrying its beat offset from the start.
+   * @param spec {{si, fret, midi, pattern:'eighths'|'push'|'restdrive', bars, beatsPerBar?}}
+   */
+  function rhythmSequence(spec) {
+    const offsets = RHYTHM_PATTERNS[spec.pattern] || RHYTHM_PATTERNS.eighths;
+    const bpb = spec.beatsPerBar || 4;
+    const out = [];
+    for (let bar = 0; bar < (spec.bars || 4); bar++) {
+      for (const off of offsets) {
+        out.push({ si: spec.si, fret: spec.fret, midi: spec.midi,
+                   degree: 'R', beat: bar * bpb + off });
+      }
+    }
+    return out;
+  }
+
   /**
    * The middle `size` targets of a sequence. Beginnings and ends of a
    * sequence are learned first; the middle is what needs over-sampling.
@@ -224,8 +261,8 @@
   }
 
   return {
-    sequence, middleWindow, createRun, errorWindow,
+    sequence, rhythmSequence, middleWindow, createRun, errorWindow,
     nextCI, tempoGate, schedule, isDue, masteryOf,
-    DEGREES, CI_RUNGS, BOX_DAYS,
+    DEGREES, CI_RUNGS, BOX_DAYS, RHYTHM_PATTERNS,
   };
 });

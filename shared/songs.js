@@ -21,7 +21,11 @@
    beat), so the player taps on beat 1 and this keeps time from there,
    with a re-sync if it drifts. That inaccuracy is also why song play is
    judged on ROOTS ONLY and never on rhythm — timing is graded on the
-   drill screen, against a click the app itself scheduled.
+   drill screen, against a click the app itself scheduled. The drill
+   screen's RHYTHM drills are the other half of that split: a bar of
+   eighths on one root belongs to nobody, so sustaining a rhythm can be
+   trained and graded there without crossing the tab-layer line drawn
+   above.
 
    No dependencies; `BassSongs` in a browser, require()-able in Node.
    ============================================================ */
@@ -45,7 +49,7 @@
   const SONGS = [
     {
       id: 'bib', title: 'Back in Black', artist: 'AC/DC', bpm: 92, beatsPerBar: 4,
-      why: 'Slowest of the five and built from three roots. The riff is the guitar’s; your job is landing E, D and A on time.',
+      why: 'Slowest of the ten and built from three roots. The riff is the guitar’s; your job is landing E, D and A on time.',
       tab: 'https://www.songsterr.com/a/wsa/acdc-back-in-black-bass-tab-s449',
       sections: [
         { name: 'Intro riff', root: 'E', bars: 4 },
@@ -53,6 +57,24 @@
         { name: 'Pre-chorus', root: 'D', bars: 2 },
         { name: 'Pre-chorus', root: 'A', bars: 2 },
         { name: 'Chorus', root: 'E', bars: 8 },
+      ],
+    },
+    /* The five below joined for the 12-week course. Roadmaps were researched and
+       cross-checked; the Songsterr URLs came from live search-index results but
+       could not be click-verified from this sandbox. */
+    {
+      id: 'hb', title: 'Hells Bells', artist: 'AC/DC', bpm: 108, beatsPerBar: 4,
+      why: 'Slow and in A minor — your first long tacet intro with an entry on cue, and the C root is the first note the open-string drills never touch.',
+      tab: 'https://www.songsterr.com/a/wsa/ac-dc-hells-bells-bass-tab-s205',
+      sections: [
+        { name: 'Intro', root: 'A', bars: 4 },
+        { name: 'Verse', root: 'A', bars: 4 },
+        { name: 'Verse', root: 'D', bars: 2 },
+        { name: 'Verse', root: 'C', bars: 2 },
+        { name: 'Chorus', root: 'A', bars: 2 },
+        { name: 'Chorus', root: 'D', bars: 2 },
+        { name: 'Chorus', root: 'C', bars: 2 },
+        { name: 'Chorus', root: 'D', bars: 2 },
       ],
     },
     {
@@ -81,6 +103,20 @@
       ],
     },
     {
+      id: 'hadom', title: 'Have a Drink on Me', artist: 'AC/DC', bpm: 122, beatsPerBar: 4,
+      why: 'Four roots instead of three — the verse walks A, G and D like Highway, then the chorus adds C, so you prove you can hold a longer map.',
+      tab: 'https://www.songsterr.com/a/wsa/ac-dc-have-a-drink-on-me-bass-tab-s23714',
+      sections: [
+        { name: 'Intro riff', root: 'A', bars: 4 },
+        { name: 'Verse', root: 'A', bars: 4 },
+        { name: 'Verse', root: 'G', bars: 2 },
+        { name: 'Verse', root: 'D', bars: 2 },
+        { name: 'Chorus', root: 'A', bars: 4 },
+        { name: 'Chorus', root: 'C', bars: 2 },
+        { name: 'Chorus', root: 'A', bars: 2 },
+      ],
+    },
+    {
       id: 'tnt', title: 'T.N.T.', artist: 'AC/DC', bpm: 126, beatsPerBar: 4,
       why: 'The song the three-week plan builds to: steady eighths on E, then the E → A → G chorus moves.',
       tab: 'https://www.songsterr.com/a/wsa/acdc-tnt-bass-tab-s407',
@@ -105,6 +141,45 @@
         { name: 'Chorus', root: 'G', bars: 4 },
         { name: 'Chorus', root: 'C', bars: 2 },
         { name: 'Chorus', root: 'D', bars: 2 },
+      ],
+    },
+    {
+      id: 'ts', title: 'Thunderstruck', artist: 'AC/DC', bpm: 134, beatsPerBar: 4,
+      why: 'One root for minutes at a time — but it is B, your first root with no open string, so the fretting hand finally earns its keep.',
+      tab: 'https://www.songsterr.com/a/wsa/ac-dc-thunderstruck-bass-tab-s1352',
+      sections: [
+        { name: 'Intro chant', root: 'B', bars: 8 },
+        { name: 'Verse', root: 'B', bars: 8 },
+        { name: 'Chorus', root: 'B', bars: 2 },
+        { name: 'Chorus', root: 'A', bars: 2 },
+        { name: 'Chorus', root: 'E', bars: 2 },
+        { name: 'Chorus', root: 'A', bars: 2 },
+      ],
+    },
+    {
+      id: 'ggr', title: 'Girls Got Rhythm', artist: 'AC/DC', bpm: 138, beatsPerBar: 4,
+      why: 'Pure eighth-note stamina on roots you already drill — nothing new to learn, everything to sustain at speed. Check the chorus root order against the tab before you gig it: the roots are confirmed, their order here is a best reconstruction.',
+      tab: 'https://www.songsterr.com/a/wsa/ac-dc-girls-got-rhythm-bass-tab-s24083',
+      sections: [
+        { name: 'Intro', root: 'A', bars: 4 },
+        { name: 'Verse', root: 'A', bars: 8 },
+        { name: 'Chorus', root: 'D', bars: 2 },
+        { name: 'Chorus', root: 'A', bars: 2 },
+        { name: 'Chorus', root: 'E', bars: 2 },
+        { name: 'Chorus', root: 'A', bars: 2 },
+      ],
+    },
+    {
+      id: 'stt', title: 'Shoot to Thrill', artist: 'AC/DC', bpm: 141, beatsPerBar: 4,
+      why: 'Fastest of the ten: Dirty Deeds’ A, G and D moves at a sprint, plus a breakdown where you go quiet without slowing down.',
+      tab: 'https://www.songsterr.com/a/wsa/ac-dc-shoot-to-thrill-bass-tab-s569',
+      sections: [
+        { name: 'Intro riff', root: 'A', bars: 4 },
+        { name: 'Verse', root: 'A', bars: 8 },
+        { name: 'Chorus', root: 'A', bars: 2 },
+        { name: 'Chorus', root: 'G', bars: 2 },
+        { name: 'Chorus', root: 'D', bars: 2 },
+        { name: 'Chorus', root: 'A', bars: 2 },
       ],
     },
   ];
@@ -208,8 +283,101 @@
     };
   }
 
+  /* ---------------- the gig-ready bar ----------------
+     One rule for what "ready" means, stated as code so every screen agrees:
+     - gig-ready: a 90%+ FULL memory-mode play on two DISTINCT days. Same day
+       twice is one day of evidence — the drill engine's mastery-day rule.
+     - learning: any banked full play (the store only banks bests from plays
+       that covered the whole roadmap), or a first memory day.
+     - new: nothing proved yet. Plays alone prove nothing — an abandoned
+       twelve-second intro increments `plays` too. */
+  function songReadiness(rec, song) {
+    void song;   // the bar is the same for every song; the arg keeps call sites honest
+    if (!rec || typeof rec !== 'object') return 'new';
+    const days = Array.isArray(rec.memoryDays) ? new Set(rec.memoryDays).size : 0;
+    if (days >= 2) return 'gig-ready';
+    if (days >= 1 || (Number(rec.bestAccuracy) || 0) > 0) return 'learning';
+    return 'new';
+  }
+
+  /* ---------------- setlist runs ----------------
+     A live set is songs back to back, and the skill the single-song screen
+     never tests is the seam: new key, count-in, go. So a set run is the same
+     roots-per-section judging, chained, with an 8-beat gap between songs that
+     runs at the NEXT song's tempo — it is that song's count-in. */
+  const GAP_BEATS = 8;
+
+  function createSetRun(songs) {
+    // Boundaries in absolute ms from the set's beat 1, computed once.
+    const segs = [];
+    let t = 0;
+    songs.forEach((song, i) => {
+      if (i > 0) t += GAP_BEATS * (60000 / song.bpm);   // count-in at THIS song's tempo
+      const len = totalBeats(song) * (60000 / song.bpm);
+      segs.push({ song, index: i, startMs: t, endMs: t + len });
+      t += len;
+    });
+    const runs = songs.map(createSongRun);
+    // The entry is watched per song: a correct root inside the FIRST BAR, or
+    // the song was entered late — the exact failure a band notices most.
+    const entered = songs.map(() => false);
+
+    function positionAt(ms) {
+      for (const seg of segs) {
+        if (ms < seg.startMs) {
+          const beatMs = 60000 / seg.song.bpm;
+          return {
+            gap: true, finished: false, index: seg.index, nextSong: seg.song,
+            nextRoot: seg.song.sections[0].root,
+            beatsLeft: Math.max(1, Math.ceil((seg.startMs - ms) / beatMs)),
+          };
+        }
+        if (ms < seg.endMs) {
+          return { gap: false, finished: false, index: seg.index, song: seg.song,
+                   pos: positionAtSong(seg.song, ms - seg.startMs) };
+        }
+      }
+      return { finished: true, gap: false };
+    }
+
+    return {
+      segments() { return segs.slice(); },
+      totalMs() { return segs.length ? segs[segs.length - 1].endMs : 0; },
+      positionAt,
+      push(midi, ms) {
+        const p = positionAt(ms);
+        if (p.finished) return { verdict: 'finished' };
+        if (p.gap) return { verdict: 'gap', nextSong: p.nextSong };
+        const seg = segs[p.index];
+        const r = runs[p.index].push(midi, ms - seg.startMs);
+        const bpb = seg.song.beatsPerBar || 4;
+        if (r.verdict === 'correct' && (ms - seg.startMs) < bpb * (60000 / seg.song.bpm)) {
+          entered[p.index] = true;
+        }
+        return Object.assign({ songId: seg.song.id, songTitle: seg.song.title }, r);
+      },
+      result() {
+        let correct = 0, wrong = 0;
+        const perSong = songs.map((song, i) => {
+          const r = runs[i].result();
+          correct += r.correct; wrong += r.wrong;
+          return { id: song.id, title: song.title, correct: r.correct, wrong: r.wrong,
+                   accuracy: r.accuracy, bySection: r.bySection };
+        });
+        return {
+          perSong, correct, wrong,
+          accuracy: correct + wrong ? correct / (correct + wrong) : 0,
+          entries: songs.map((song, i) => ({ id: song.id, made: entered[i] })),
+        };
+      },
+    };
+  }
+  // createSongRun's clock is song-local; the set clock is absolute. Alias the
+  // song-level positionAt so the closure above can use both without shadowing.
+  const positionAtSong = positionAt;
+
   return {
     SONGS, timeline, totalBeats, positionAt, expectedRoot, upcomingChange,
-    createSongRun, NAMES,
+    createSongRun, createSetRun, songReadiness, GAP_BEATS, NAMES,
   };
 });

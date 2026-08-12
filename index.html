@@ -246,6 +246,7 @@
               <button data-k="scale" class="on">Scale</button>
               <button data-k="chromatic">Chromatic 1-2-3-4</button>
               <button data-k="octave">Octave shape</button>
+              <button data-k="rhythm">Rhythm</button>
             </div>
 
             <div class="row" style="margin-top:var(--sp3); align-items:flex-end">
@@ -267,12 +268,25 @@
                 <span class="t-caption">String</span>
                 <select id="drStringSel"></select>
               </label>
+              <!-- rhythm drills only: what to sustain, and for how long -->
+              <label style="flex:2 1 170px" id="drPatWrap">
+                <span class="t-caption">Pattern</span>
+                <select id="drPatSel"></select>
+              </label>
+              <label style="flex:1 1 96px" id="drBarsWrap">
+                <span class="t-caption">Length</span>
+                <select id="drBarsSel"></select>
+              </label>
             </div>
 
-            <div class="t-eyebrow" style="margin:var(--sp4) 0 6px">How much of it</div>
-            <div class="seg compact" id="drVarSeg">
-              <button data-v="full" class="on">Whole shape</button>
-              <button data-v="middle">Middle only</button>
+            <!-- hidden for rhythm drills: a "middle" of the same note over and
+                 over is not a different task, so the choice would be noise -->
+            <div id="drVarWrap">
+              <div class="t-eyebrow" style="margin:var(--sp4) 0 6px">How much of it</div>
+              <div class="seg compact" id="drVarSeg">
+                <button data-v="full" class="on">Whole shape</button>
+                <button data-v="middle">Middle only</button>
+              </div>
             </div>
 
             <div class="t-eyebrow" style="margin:var(--sp4) 0 6px">Click</div>
@@ -319,6 +333,14 @@
         <!-- ---- before the clock is running ---- -->
         <div id="sgArm">
           <p class="t-caption" id="sgArmWhy" style="margin:var(--sp3) 0"></p>
+          <!-- click-mode plays only: the closest an app gets to "no tab on stage" -->
+          <div class="row hidden" id="sgMemRow" style="margin:0 0 var(--sp3)">
+            <div class="seg compact" id="sgMemSeg" aria-label="Roadmap or memory">
+              <button data-m="road" class="on">Roadmap shown</button>
+              <button data-m="memory">From memory</button>
+            </div>
+          </div>
+          <p class="t-caption hidden" id="sgMemNote" style="margin:0 0 var(--sp3)"></p>
           <button class="btn primary" id="sgTap">Tap on beat 1</button>
         </div>
 
@@ -335,7 +357,8 @@
           <div class="note-box warn hidden" id="sgNext" style="margin-top:var(--sp3)"></div>
           <div id="sgBoard"></div>
           <p class="t-caption" id="sgBoardNote" style="margin:0"></p>
-          <div class="row" style="margin-top:var(--sp3)">
+          <!-- hidden in memory mode: a live "wants E" pill is half a roadmap -->
+          <div class="row" id="sgJudgeRow" style="margin-top:var(--sp3)">
             <span class="pill" id="sgJudge">nothing played yet</span>
             <span class="pill num" id="sgTally">on the root 0 of 0</span>
           </div>
@@ -352,7 +375,10 @@
         </div>
       </div>
 
-      <!-- ---- the five songs ---- -->
+      <!-- ---- the set at a glance: ten songs against the gig-ready bar ---- -->
+      <div class="card tight" id="sgSetStatus"></div>
+
+      <!-- ---- the ten songs ---- -->
       <div class="card" id="sgListCard">
         <!-- no "Songs" eyebrow here: the section's h2 above already says it -->
         <h2 class="t-title3" style="margin:2px 0 4px">A tab shows you the notes. This one listens to yours.</h2>
@@ -365,6 +391,39 @@
         order of the sections and the root to sit on, which is most of a root-driven rock bassline. Deliberately
         <b>not</b> a transcription — the fills and the exact notes live in the tab, and that is where they belong.</p>
         <div id="sgList" style="margin-top:var(--sp4)"></div>
+      </div>
+
+      <!-- ---- setlist: songs back to back, the way a set actually runs ---- -->
+      <div class="card" id="sgSetCard">
+        <h2 class="t-title3" style="margin:2px 0 4px">Setlist — songs back to back</h2>
+        <p class="t-caption" style="margin:0">A live set is not ten songs, it is the seams between them: song ends,
+        eight beats of count-in, <b>new key, go</b>. Pick 3–4 songs and run them with the click — each at its own
+        tempo — and the verdict watches exactly those entries.</p>
+        <div class="row" id="stPickRow" style="margin-top:var(--sp3)"></div>
+        <div class="row" style="margin-top:var(--sp3)">
+          <div class="seg compact" id="stOrderSeg" aria-label="Set order">
+            <button data-o="set" class="on">In set order</button>
+            <button data-o="weakest">Weakest first</button>
+          </div>
+          <button class="btn primary" id="stStart" disabled>Run the set</button>
+        </div>
+        <p class="t-caption" id="stPickNote" style="margin:var(--sp2) 0 0"></p>
+
+        <div id="stRun" class="hidden">
+          <div class="sg-now">
+            <div>
+              <div class="t-eyebrow" id="stSong">—</div>
+              <div class="t-display sg-root" id="stRoot">—</div>
+              <div class="t-caption" id="stBar">—</div>
+            </div>
+            <div class="sg-beats" id="stBeats" aria-hidden="true"></div>
+          </div>
+          <div class="row" style="margin-top:var(--sp3)">
+            <span class="pill" id="stJudge">nothing played yet</span>
+            <button class="btn" id="stStop">Stop the set</button>
+          </div>
+        </div>
+        <div id="stSummary"></div>
       </div>
 
       <details class="card" id="sgSetup">
@@ -432,6 +491,9 @@
      Songs reached. -->
 <script src="shared/drill.js"></script>
 <script src="shared/songs.js"></script>
+<!-- the 12-week course as data. Loaded before app-theory, which renders it
+     and keeps only thin delegates (weekOf etc.) of its own. -->
+<script src="shared/course.js"></script>
 <script src="trainer/core.js"></script>
 <script src="shared/app-theory.js"></script>
 <script src="shared/app-live.js"></script>

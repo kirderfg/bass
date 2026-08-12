@@ -250,6 +250,54 @@ test('repair-window reps never count toward mastery', () => {
   assert.equal(D.masteryOf(mixed), 'mastered', 'the two full runs still count');
 });
 
+/* ---------------- rhythm drills ----------------
+   The missing trainable skill for a live set is SUSTAINING a rhythm, and the
+   timing machinery (createRun + the click grid) already exists — a rhythm
+   drill is the same pitch over and over, judged almost entirely on timing. */
+
+test('straight eighths on one note: eight onsets a bar, all the same pitch', () => {
+  const seq = D.rhythmSequence({ si: 1, fret: 0, midi: 28, pattern: 'eighths', bars: 4 });
+  assert.equal(seq.length, 32, '4 bars × 8 eighths');
+  for (const t of seq) {
+    assert.equal(t.midi, 28, 'a rhythm drill never changes pitch');
+    assert.equal(t.si, 1); assert.equal(t.fret, 0);
+  }
+  // Onsets sit on the half-beat grid, starting on beat 1.
+  assert.equal(seq[0].beat, 0);
+  assert.equal(seq[1].beat, 0.5);
+  assert.equal(seq[8].beat, 4, 'bar 2 starts on beat 4');
+});
+
+test('the push drops the hit on beat 4 and lands the and-of-4 instead', () => {
+  const seq = D.rhythmSequence({ si: 1, fret: 0, midi: 28, pattern: 'push', bars: 2 });
+  assert.equal(seq.length, 14, '2 bars × 7 onsets — one fewer than straight eighths');
+  const bar1 = seq.slice(0, 7).map(t => t.beat);
+  assert.deepEqual(bar1, [0, 0.5, 1, 1.5, 2, 2.5, 3.5],
+    'beat 4 (offset 3) is skipped; the and-of-4 (3.5) anticipates the next bar');
+});
+
+test('rest-then-drive: two beats of silence, then eighths', () => {
+  const seq = D.rhythmSequence({ si: 2, fret: 0, midi: 33, pattern: 'restdrive', bars: 2 });
+  assert.equal(seq.length, 8, '2 bars × 4 onsets');
+  assert.deepEqual(seq.slice(0, 4).map(t => t.beat), [2, 2.5, 3, 3.5],
+    'the first two beats of every bar are silence — the entry-on-cue drill');
+  assert.equal(seq[4].beat, 6, 'bar 2 rests through beats 5 and 6');
+});
+
+test('a rhythm sequence runs through the ordinary run judge', () => {
+  // No new judging machinery: the existing run halts on a wrong PITCH, and the
+  // timing verdict comes from the same click report every drill uses.
+  const seq = D.rhythmSequence({ si: 1, fret: 0, midi: 28, pattern: 'eighths', bars: 1 });
+  const run = D.createRun(seq);
+  for (let i = 0; i < 7; i++) assert.equal(run.push(28, i * 250).status, 'advanced');
+  assert.equal(run.push(28, 7 * 250).status, 'done');
+  assert.equal(run.result().passed, true);
+
+  const halt = D.createRun(seq);
+  halt.push(28, 0);
+  assert.equal(halt.push(31, 250).status, 'error', 'a wrong pitch still halts a rhythm drill');
+});
+
 test('the practice-order ramp needs a clean rep of the whole thing to advance', () => {
   // Promoting off the back of a 4-note repair window would burn the entire
   // blocked -> serial -> random ramp out in seconds, which defeats it.
