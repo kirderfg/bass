@@ -1,17 +1,27 @@
 /* ============================================================
    Song play-along engine.
 
-   These are PRACTICE ROADMAPS, not transcriptions: the root note and
-   order of each section, which for root-driven rock is most of the
-   bassline. Full note-for-note tablature of copyrighted songs is a
-   licensing problem and is deliberately not reproduced — each song
-   links out to a tab instead.
+   SCOPE, and why it stops where it does: a tab player already solves
+   learning the notes of a song — Songsterr Plus shows the tab, mutes the
+   bass track, slows the tempo and loops a section. Duplicating any of
+   that would be building a worse Songsterr. The one thing no tab player
+   does is HEAR THE PLAYER, so that is all this engine is for: it knows
+   which root the section wants, and judges what actually came out of the
+   bass against it.
 
-   The clock runs from a TAP, not from Spotify. There is no way to read
-   a streaming playhead accurately (the Web Playback SDK needs Premium
-   and its reported position jitters by up to a second, against a
-   ~500ms beat), so the player taps on beat 1 and this keeps time from
-   there, with a re-sync if it drifts.
+   So these are PRACTICE ROADMAPS, not transcriptions: the root note and
+   order of each section, which for root-driven rock is most of the
+   bassline. Full note-for-note tablature of copyrighted songs is also a
+   licensing problem, and is deliberately not reproduced — each song
+   links out to its Songsterr tab instead.
+
+   The clock runs from a TAP, not from the player. No player exposes a
+   playhead this can read (Spotify's Web Playback SDK needs Premium and
+   its reported position jitters by up to a second, against a ~500ms
+   beat), so the player taps on beat 1 and this keeps time from there,
+   with a re-sync if it drifts. That inaccuracy is also why song play is
+   judged on ROOTS ONLY and never on rhythm — timing is graded on the
+   drill screen, against a click the app itself scheduled.
 
    No dependencies; `BassSongs` in a browser, require()-able in Node.
    ============================================================ */

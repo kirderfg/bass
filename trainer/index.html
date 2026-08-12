@@ -453,16 +453,30 @@ select{
       <!-- ---- the five songs ---- -->
       <div class="card" id="sgListCard">
         <div class="t-eyebrow">Songs</div>
-        <h2 class="t-title3" style="margin:2px 0 4px">Play along with the record</h2>
-        <p class="t-caption" style="margin:0">These are <b>root-and-section roadmaps</b> — the order of the sections and
-        the root to sit on, which is most of a root-driven rock bassline — <b>not</b> full transcriptions: each song links
-        out to a tab, and that tab is where the fills and the exact notes are.</p>
+        <h2 class="t-title3" style="margin:2px 0 4px">A tab shows you the notes. This one listens to yours.</h2>
+        <p class="t-caption" style="margin:0">A scrolling tab player already does the hard part of learning a song —
+        it shows every note, mutes the bass track so you can take its place, slows the song to a tempo you can play, and
+        loops the bar that keeps beating you. <b>Songsterr Plus does all four</b>, and nothing here tries to compete with
+        it: use it as the record. What it cannot do is <b>hear you</b> — a tab never knows whether the note you actually
+        played was the note it asked for. That is the only job of this page.</p>
+        <p class="t-caption" style="margin:var(--sp2) 0 0">So what you get here is a <b>root-and-section roadmap</b>: the
+        order of the sections and the root to sit on, which is most of a root-driven rock bassline. Deliberately
+        <b>not</b> a transcription — the fills and the exact notes live in the tab, and that is where they belong.</p>
         <div id="sgList" style="margin-top:var(--sp4)"></div>
       </div>
 
       <details class="card" id="sgSetup">
-        <summary><span class="t-title3">Your rig: hearing the record without confusing the app</span></summary>
+        <summary><span class="t-title3">Your rig: the record, the tab player, and what the app hears</span></summary>
         <div id="sgSetupBody">
+          <p class="t-caption"><b>The best source is a tab player, not Spotify.</b> Spotify gives you the record at full
+          speed with the bass still playing — you cannot hear whether you are in the way, and you cannot slow it down.
+          In <b>Songsterr Plus</b> you get the four things that actually matter: mute the bass track so the part is yours,
+          drop the tempo to something you can play, loop the section that keeps beating you, and see the notes while you
+          do it. Anything with the same controls works — a backing track in a media player, a DAW, a looper.</p>
+          <p class="t-caption">Then the split is clean: <b>the tab player shows and plays</b>, <b>this page listens</b>.
+          Its roadmap tells you which root the section wants; your bass tells it what you played. Nothing here grades
+          your rhythm against the record — the tap-sync clock is not accurate enough to be honest about that, and the
+          drill screen's click is, so timing lives there.</p>
           <p class="t-caption">With the bass <b>DI'd into the audio interface</b>, this page hears <b>only the bass</b> —
           the interface sends it nothing else. So play the record as loud as you like, through headphones or through
           speakers: it never reaches the app, and it cannot be mistaken for a note you played.</p>
@@ -2200,7 +2214,7 @@ function renderSongList(){
       '<div class="row" style="margin-top:var(--sp3)">' +
         '<button class="btn primary" data-song="' + song.id + '" data-play="record">Play with the record</button>' +
         '<button class="btn" data-song="' + song.id + '" data-play="click">Play with the app’s click</button>' +
-        '<a class="btn small ghost" href="' + song.tab + '" target="_blank" rel="noopener">Tab, with the fills ↗</a>' +
+        '<a class="btn small ghost" href="' + song.tab + '" target="_blank" rel="noopener">Open in Songsterr ↗</a>' +
       '</div>' +
     '</div>';
   }).join('');
@@ -2359,8 +2373,10 @@ function songOpen(id, play){
     ? 'The app’s own click at <b>' + song.bpm + ' bpm</b> drives the roadmap, starting after one bar of count-in — ' +
       'no record and no tapping. This is the mode that can actually grade you, so a best score is only kept from here, ' +
       'and only from a play that covers the whole roadmap.'
-    : 'Start the record yourself, then tap on <b>beat 1</b>. A streaming playhead cannot be read accurately — its ' +
-      'reported position jitters by up to a second against a beat of about half that — so the app runs its own clock from your tap.') +
+    : 'Set the record up first — in a tab player, <b>mute the bass track</b> and <b>drop the tempo</b> so the part is ' +
+      'playable; loop one section if it is fighting you. Then start it and tap on <b>beat 1</b>. No player, streaming ' +
+      'or otherwise, exposes a playhead this can read — reported positions jitter by up to a second against a beat of ' +
+      'about half that — so the app keeps its own clock from your tap, and only listens to your bass.') +
     // Both hands are on the bass: a key you can hit with a thumb beats a button.
     '<br>Use the button <b>or press Space</b> — and once it is running, Space re-syncs.';
   document.getElementById('sgBoardNote').innerHTML =

@@ -1040,7 +1040,7 @@ function renderTrainer(){
 
   h += '<a class="card tight" href="trainer/index.html" style="display:block; text-decoration:none; color:inherit; border-color:var(--line-hi)">' +
     '<b style="color:var(--hl)">Live Trainer — play it, don\'t tap it</b>' +
-    '<div class="muted small" style="margin-top:2px">Plug your bass in (or use your phone\'s mic) and the app checks what you actually play: a <b>tuner</b>, single-note tests that feed the stats below, <b>ear training</b>, <b>Drills</b> that check you play a whole scale in the right order, and <b>Songs</b> — play along with the record while it follows the section roadmap and counts how often you were on the root.</div></a>';
+    '<div class="muted small" style="margin-top:2px">Plug your bass in (or use your phone\'s mic) and the app checks what you actually play: a <b>tuner</b>, single-note tests that feed the stats below, <b>ear training</b>, <b>Drills</b> that check you play a whole scale in the right order, and <b>Songs</b> — put on a tab player with the bass track muted, and the app follows the section roadmap and tells you how often you were on the root.</div></a>';
 
   if (mode === 'study') h += studyHtml();
   else h += quizShellHtml(mode, tier);
@@ -1501,8 +1501,8 @@ const WEEKS = [
         text:'TNT chorus moves: roots E → A → G as eighth notes, 4 beats each. All three live in E minor pentatonic.', met:70 },
       { id:'w3d', cat:'Music', min:10,
         text:'T.N.T.: verse = steady eighth notes on E (palm-relaxed, locked to click). Chorus = the E→A→G shifts. Loop verse → chorus. Full speed is ~126 bpm — start at 70 and work up.',
-        link:{ label:'TNT bass tab (Songsterr)', href:'https://www.songsterr.com/a/wsa/acdc-tnt-bass-tab-s407' },
-        link2:{ label:'Play it with the record', href:'trainer/index.html#songs' } },
+        link:{ label:'TNT tab — mute the bass track, slow it down ↗', href:'https://www.songsterr.com/a/wsa/acdc-tnt-bass-tab-s407' },
+        link2:{ label:'Then let the app listen while you play it', href:'trainer/index.html#songs' } },
       { id:'w3e', cat:'Bonus', min:5,
         text:'Note trainer: "Find the note" focused on the A string only. Get your last 20 answers above 90%.',
         link:{ label:'Find the note (A string)', spec:{ tab:'trainer', trainer:{ tier:1, mode:'find', focus:['A'] } } } }
@@ -1804,7 +1804,7 @@ function renderPractice(){
     '<li><a href="https://www.studybass.com/study-guide/" target="_blank" rel="noopener">StudyBass study guide</a> — structured free lessons, great theory grounding</li>' +
     '<li><a href="https://www.talkingbass.net/lessonmap/" target="_blank" rel="noopener">TalkingBass lesson map</a> — huge free lesson index by topic</li>' +
     '<li><a href="https://www.youtube.com/@BassBuzz" target="_blank" rel="noopener">BassBuzz (YouTube)</a> — start with “5 Beginner Bass Mistakes”</li>' +
-    '<li><a href="https://www.songsterr.com/a/wsa/acdc-tnt-bass-tab-s407" target="_blank" rel="noopener">Songsterr: T.N.T. bass tab</a> — scrolling tab with playback</li>' +
+    '<li><a href="https://www.songsterr.com/a/wsa/acdc-tnt-bass-tab-s407" target="_blank" rel="noopener">Songsterr: T.N.T. bass tab</a> — scrolling tab with playback; the Plus tier mutes the bass track, slows the tempo and loops a section, which is the setup Songs mode assumes</li>' +
     '<li><a href="https://bigbasstabs.com/" target="_blank" rel="noopener">BigBassTabs</a> — free bass tab library for your next songs</li>' +
     '</ul></div>';
 
@@ -1873,10 +1873,10 @@ function reportText(){
       ' in the last 7 days\n'
     : 'Drills: none run yet\n';
   const sgLine = sg.plays
-    ? 'Songs (play-along roadmaps): ' + sg.plays + ' plays across ' + sg.songs + ' songs' +
+    ? 'Songs (root roadmaps over a muted-bass tab): ' + sg.plays + ' plays across ' + sg.songs + ' songs' +
       (sg.best ? ', best ' + Math.round(sg.best * 100) + '% on the section root (' + songTitle(sg.bestId) + ', ' +
         (sg.bestFull ? 'whole roadmap' : sg.bestSections + ' of ' + sg.bestOf + ' sections') + ')' : ', none graded yet') + '\n'
-    : 'Songs (play-along roadmaps): none played yet\n';
+    : 'Songs (root roadmaps over a muted-bass tab): none played yet\n';
   return 'Hi Claude! I just finished the 3-week beginner program in my Bass Theory Trainer app. Please design weeks 4-5 for me.\n\n' +
     'My setup: ' + rig + ', goal = rock/metal, 20-30 min/day.\n' +
     'Program completed: ' + cps + '\n' +
