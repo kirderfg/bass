@@ -1891,7 +1891,7 @@ function renderPanel(res, timingOk, attempt){
   const okWords = clicked ? 'On the click' : 'Evenly spaced';
   const offWords = clicked
     ? 'The onsets sat ' + Math.abs(Math.round(DR.timing.meanSigned)) + 'ms ' +
-      earlyLate(DR.timing.meanSigned) + ' of the click'
+      (DR.timing.meanSigned < 0 ? 'ahead of' : 'behind') + ' the click'
     : 'The gaps between notes wandered';
   bits.push('<div class="t-eyebrow">' +
     (attempt.skipped ? 'Finished with a skipped note'
