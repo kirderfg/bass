@@ -42,7 +42,9 @@
 }
 /* green-on-green would vanish at the exact moment of success */
 .meter-needle.intune{background:var(--s0);}
-.meter-scale{position:relative; height:14px; font-family:var(--mono); font-size:10px; color:var(--t4);}
+/* Measured 4.98:1 at 10px — passing, but the smallest AND faintest text in the
+   app, on the screen a beginner stares at longest. */
+.meter-scale{position:relative; height:15px; font-family:var(--mono); font-size:10.5px; color:var(--t3);}
 .meter-scale span{position:absolute; transform:translateX(-50%); white-space:nowrap;}
 .tune-list{display:flex; gap:6px; justify-content:center; margin:var(--sp3) 0 0;}
 .tune-chip{

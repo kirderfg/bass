@@ -57,7 +57,7 @@
     },
     {
       id: 'hth', title: 'Highway to Hell', artist: 'AC/DC', bpm: 116, beatsPerBar: 4,
-      why: 'Three roots you already know from week 3, in a rhythm that never changes. The classic first AC/DC song.',
+      why: 'Three roots and a rhythm that never changes — the classic first AC/DC song. Week 3 of the plan drills these same roots.',
       tab: 'https://www.songsterr.com/a/wsa/acdc-highway-to-hell-bass-tab-s448',
       sections: [
         { name: 'Intro', root: 'A', bars: 4 },
@@ -95,7 +95,7 @@
     },
     {
       id: 'ysmanl', title: 'You Shook Me All Night Long', artist: 'AC/DC', bpm: 127, beatsPerBar: 4,
-      why: 'Fastest here, and in a new key — G, C and D instead of the E and A shapes you have drilled.',
+      why: 'Fastest here, and in a new key — G, C and D instead of the E and A shapes the plan starts with.',
       tab: 'https://www.songsterr.com/a/wsa/acdc-you-shook-me-all-night-long-bass-tab-s446',
       sections: [
         { name: 'Intro', root: 'G', bars: 4 },

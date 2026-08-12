@@ -17,6 +17,10 @@ const NAMES_S = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 const NAMES_F = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
 const FLAT_ROOTS = new Set(['F','Bb','Eb','Ab','Db']); // keys spelled with flats
 const NATURALS = new Set(['C','D','E','F','G','A','B']);
+/* Flat spellings, because that is how these keys are written in the rock the plan
+   is aimed at. The Drills root list is sharp-spelled (C#, D#…) for the same
+   reason in reverse, so both screens say somewhere that the two are one note —
+   otherwise it reads as two different sets of twelve. */
 const ALL_ROOTS = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
 
 // open-string MIDI numbers, low to high
@@ -253,9 +257,17 @@ function drawFretboard(el, cfg){
 }
 
 /* orientation helper line shown under fretboards */
-function fbCaption(){
+/**
+ * The caption under a fretboard.
+ *
+ * `tappable` must be false wherever a tap would give the answer away: "Name the
+ * note" marks a fret and asks what it is, and the caption sat underneath saying
+ * "Tap any fret to hear it" — an invitation to cheat the quiz being taken.
+ */
+function fbCaption(tappable){
   const low = S.tuning === 5 ? 'B' : 'E';
-  return '<div class="muted small" style="margin:2px 4px 6px">Reads like tab: thin G string on top, thick low ' + low + ' at the bottom. Tap any fret to hear it.</div>';
+  return '<div class="muted small" style="margin:2px 4px 6px">Reads like tab: thin G string on top, thick low ' +
+    low + ' at the bottom.' + (tappable === false ? '' : ' Tap any fret to hear it.') + '</div>';
 }
 
 /* ---------------- theory cards ---------------- */
@@ -285,7 +297,11 @@ function theoryCard(id){
   if (S.practice.dismissed.includes(id) || !CARDS[id]) return '';
   const c = CARDS[id];
   return '<div class="tcard" data-card="' + id + '">' +
-    '<button class="dismiss" title="Dismiss" onclick="dismissCard(\'' + id + '\')">✕</button>' +
+    // data-dismiss, not onclick="dismissCard(...)": an inline handler resolves
+    // against window, and this file's functions became private when the two apps
+    // were merged into one document — so all ten ✕ buttons silently threw
+    // "dismissCard is not defined" and nothing could be dismissed.
+    '<button class="dismiss" title="Dismiss" data-dismiss="' + id + '">✕</button>' +
     '<h4>' + c.title + '</h4><p>' + c.body + '</p></div>';
 }
 function dismissCard(id){
@@ -293,6 +309,12 @@ function dismissCard(id){
   save();
   document.querySelectorAll('[data-card="' + id + '"]').forEach(e => e.remove());
 }
+/* Delegated once, at the document, because theory cards are re-rendered by four
+   different tabs and a per-render binding would have to be re-attached by each. */
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-dismiss]');
+  if (b) dismissCard(b.dataset.dismiss);
+});
 
 /* ---------------- routing ---------------- */
 /** Board size for the current viewport: a desk gets a neck you can read
@@ -411,7 +433,9 @@ function renderScales(){
   h += '<div class="card tight">';
   h += '<h3>Scale</h3><div class="seg" id="scType">' + SCALE_ORDER.map(k =>
     '<button data-k="' + k + '" class="' + (k === S.scales.type ? 'on' : '') + '">' + SCALES[k].name + '</button>').join('') + '</div>';
-  h += '<h3>Root note</h3><div class="seg compact" id="scRoot">' + ALL_ROOTS.map(r =>
+  h += '<h3>Root note</h3><p class="muted small" style="margin:0 0 4px">Db is the same note as C#, Eb as D#, and so ' +
+    'on — one key, two spellings. Elsewhere in the app you will see the sharp names.</p>' +
+    '<div class="seg compact" id="scRoot">' + ALL_ROOTS.map(r =>
     '<button data-k="' + r + '" class="' + (r === S.scales.root ? 'on' : '') + '">' + r + '</button>').join('') + '</div>';
   h += '</div>';
 
@@ -836,8 +860,16 @@ function renderTrainer(){
 
   // Both halves are tabs of one page now, so this is a switch, not a page load.
   h += '<button class="card tight" data-live="tuner" style="display:block; width:100%; text-align:left; font:inherit; cursor:pointer; border-color:var(--line-hi)">' +
-    '<b style="color:var(--hl)">Play it, don’t tap it</b>' +
-    '<div class="muted small" style="margin-top:2px">The <b>Live</b> tabs check what you actually play, on the bass: a <b>tuner</b>, single-note tests that feed the stats below, <b>ear training</b>, <b>Drills</b> that check you play a whole scale in the right order, and <b>Songs</b> — put on a tab player with the bass track muted, and the app follows the section roadmap and tells you how often you were on the root.</div></button>';
+    // Titled "Play it, don't tap it" while sitting directly above a board captioned
+    // "tap frets to hear them". The point is that the Live tabs listen; say that.
+    '<b style="color:var(--hl)">The Live tabs listen to your bass</b>' +
+    // Was one 62-word sentence. Five destinations, five short lines.
+    '<div class="muted small" style="margin-top:2px">They hear the bass itself, so you play instead of tapping.' +
+    '<br><b>Tuner</b> — get in tune, string by string.' +
+    '<br><b>Find it</b> — it names a note, you go and play it. Feeds the stats below.' +
+    '<br><b>Ear</b> — it plays a note, you find it by ear.' +
+    '<br><b>Drills</b> — play a whole shape in the right order.' +
+    '<br><b>Songs</b> — it follows the roadmap and counts how often you were on the root.</div></button>';
 
   if (mode === 'study') h += studyHtml();
   else h += quizShellHtml(mode, tier);
@@ -943,7 +975,8 @@ function quizShellHtml(mode, tier){
       '</div></div>';
   }
   h += '<div class="quiz-q" id="qText"></div>';
-  h += '<div id="quizFb"></div>' + fbCaption();
+  // 'name' shows the fret and asks for the note, so hearing it is the answer.
+  h += '<div id="quizFb"></div>' + fbCaption(mode !== 'name');
   h += '<div id="qChoices"></div>';
   h += '<div class="feedback" id="qFeed"></div>';
   h += '</div>';
@@ -991,7 +1024,8 @@ function drawQuiz(){
       frets,
       disable(si, f){ return !tier.strings.includes(names[si]); },
       mark(si, f){ return (si === q.si && f === q.f) ? { cls:'asked', label:'?' } : null; },
-      onTap(si, f, midi){ Audio_.note(midi); }
+      // No onTap here on purpose: this mode marks a fret and asks what it is, so
+      // playing the fret IS the answer. The caption drops the invitation to match.
     });
     qChoices.innerHTML = '<div class="choices">' + q.choices.map(c =>
       '<button class="btn" data-c="' + c + '">' + c + '</button>').join('') + '</div>';
@@ -1096,11 +1130,26 @@ function statsHtml(){
   h += '<div class="stat"><b>' + acc + '<i>%</i></b><span>accuracy</span></div>';
   h += '<div class="stat"><b>' + st.correct + '</b><span>correct</span></div>';
   h += '<div class="stat"><b>' + st.bestStreak + '</b><span>best streak</span></div>';
-  if (st.speed && st.speed.length >= 5){
-    const avg = st.speed.reduce((a, b) => a + b, 0) / st.speed.length;
-    h += '<div class="stat"><b>' + avg.toFixed(1) + '<i>s</i></b><span>per answer</span></div>';
+  /* Week 1's checkpoint is "in under 2 seconds", so this number is what decides
+     whether you move on — it cannot be the one stat that hides. Three answers is
+     enough to show a figure, and below that it says what it is waiting for
+     rather than leaving the checkpoint pointing at nothing. */
+  const spd = st.speed || [];
+  if (spd.length >= 3){
+    const avg = spd.reduce((a, b) => a + b, 0) / spd.length;
+    h += '<div class="stat"><b>' + avg.toFixed(1) + '<i>s</i></b><span>seconds per answer</span></div>';
   }
   h += '</div>';
+  if (spd.length >= 3){
+    const avg = spd.reduce((a, b) => a + b, 0) / spd.length;
+    h += '<div class="muted small" style="margin-top:6px"><b>Seconds per answer</b> is the average over your last ' +
+      spd.length + ' — week 1\'s checkpoint asks for <b>under 2s</b>, and you are ' +
+      (avg < 2 ? 'there.' : 'at ' + avg.toFixed(1) + 's.') + '</div>';
+  } else {
+    h += '<div class="muted small" style="margin-top:6px"><b>Seconds per answer</b> appears here after ' +
+      (3 - spd.length) + ' more answer' + (3 - spd.length === 1 ? '' : 's') +
+      ' — it is what week 1\'s "under 2 seconds" checkpoint is asking about.</div>';
+  }
 
   const tr = (st.tierRecent || {})[S.trainer.tier];
   if (tr && tr.length >= 20 && S.trainer.tier < TIERS.length - 1 &&
@@ -1259,7 +1308,7 @@ const WEEKS = [
     ],
     checkpoints:[
       { id:'w1cp0', text:'Chromatic warmup is clean at 60 bpm (no buzzes, one finger per fret)' },
-      { id:'w1cp1', text:'I can name any note on E or A, frets 0–5, in under 2 seconds ("avg answer" in trainer stats helps check this)' },
+      { id:'w1cp1', text:'I can name any note on E or A, frets 0–5, in under 2 seconds (check "seconds per answer" under Your progress, on the Note quiz tab)' },
       { id:'w1cp2', text:'My thumb mutes the B string without me thinking about it' }
     ],
     theory:['fretHalfStep','bcef'] },
@@ -1283,7 +1332,7 @@ const WEEKS = [
     checkpoints:[
       { id:'w2cp0', text:'2 minutes of clean, even eighth notes at 70 bpm' },
       { id:'w2cp1', text:'E minor pentatonic memorized, up AND down, without looking' },
-      { id:'w2cp2', text:'Over 90% on my last 20 E-string answers in the trainer (see "Your stats")' }
+      { id:'w2cp2', text:'Over 90% on my last 20 E-string answers (see "Accuracy by string" under Your progress, on the Note quiz tab)' }
     ],
     theory:['rootsJob','octave'] },
   { n:3, title:'First song: T.N.T.',
@@ -1309,7 +1358,7 @@ const WEEKS = [
     checkpoints:[
       { id:'w3cp0', text:'TNT verse + chorus at full speed, locked to the beat' },
       { id:'w3cp1', text:'Moveable box shape playable from fret 5 without looking at a diagram' },
-      { id:'w3cp2', text:'Over 90% on my last 20 A-string answers in the trainer (see "Your stats")' }
+      { id:'w3cp2', text:'Over 90% on my last 20 A-string answers (see "Accuracy by string" under Your progress, on the Note quiz tab)' }
     ],
     theory:['relative'] }
 ];
@@ -1349,8 +1398,13 @@ function banksMasteryDay(a){
 function drillRollup(){
   const today = todayKey(), wk = isoBack(6), prevFrom = isoBack(13), prevTo = isoBack(7);
   const out = { total:0, due:0, mastered:0, runs:0, runsPrev:0, banked:0, bankedPrev:0,
-                nextDue:null, dueLabel:null };
+                nextDue:null, dueLabel:null, otherNeck:0 };
   for (const it of storeItems(DRILL_KEY)){
+    /* A drill is a FINGERING, so the Drills tab only ever shows the ones for the
+       neck you are on. This used to count both, so switching to 4-str left the
+       plan saying "1 drill due now" and putting a review first on tonight's list
+       that the Drills tab could no longer find. */
+    if (it.cfg && it.cfg.tuning && it.cfg.tuning !== S.tuning){ out.otherNeck++; continue; }
     out.total++;
     const due = typeof it.due === 'string' ? it.due : null;
     if (!due || due <= today){
@@ -1432,9 +1486,18 @@ function thisWeekHtml(){
   // Nothing anywhere: a wall of zeros reads as failure on day one.
   if (!dr.total && !sg.plays && !answered && !days){
     return '<div class="card tight"><div class="t-eyebrow">This week</div>' +
-      '<div class="muted small" style="margin-top:2px">Nothing recorded yet in any of the three places that keep ' +
-      'records — the <b>Note quiz</b>, <b>Drills</b> and <b>Songs</b>. Play anything in any of them ' +
-      'and this card fills in, with last week beside this week as soon as there is a last week.</div>' + links + '</div>';
+      '<div class="muted small" style="margin-top:2px">' +
+      // Not "nothing recorded" when drills exist on the other neck — that reads
+      // as a wipe. dr.total counts only the neck you are on, by design.
+      (dr.otherNeck
+        ? 'Nothing recorded yet <b>on this neck</b>. Your ' + dr.otherNeck + ' drill' +
+          (dr.otherNeck === 1 ? '' : 's') + ' belong' + (dr.otherNeck === 1 ? 's' : '') +
+          ' to the ' + (S.tuning === 4 ? '5-string' : '4-string') + ' neck — a drill is a fingering, so ' +
+          'switch the toggle back and they return.'
+        : 'Nothing recorded yet in any of the three places that keep records — the <b>Note quiz</b>, ' +
+          '<b>Drills</b> and <b>Songs</b>. Play anything in any of them and this card fills in, with ' +
+          'last week beside this week as soon as there is a last week.') +
+      '</div>' + links + '</div>';
   }
 
   const tiles =
@@ -1450,7 +1513,11 @@ function thisWeekHtml(){
     ? dr.due + ' of ' + dr.total + ' due now, ' + dr.mastered + ' mastered, ' + dr.runs + ' run' +
       (dr.runs === 1 ? '' : 's') + ' in the last 7 days' +
       (!dr.due && dr.nextDue ? ' — next review ' + dr.nextDue : '')
-    : 'none yet — a drill checks the order you play a shape in, which the note quiz cannot.') + '</div>');
+    : 'none on this neck yet — a drill checks the order you play a shape in, which the note quiz cannot.') +
+    // Otherwise switching neck looks like the drills were deleted.
+    (dr.otherNeck ? ' <span style="opacity:.85">(' + dr.otherNeck + ' more belong to the ' +
+      (S.tuning === 4 ? '5-string' : '4-string') + ' neck — a drill is a fingering, so it comes back when you ' +
+      'switch the toggle back.)</span>' : '') + '</div>');
   lines.push('<div class="muted small"><b>Songs:</b> ' + (sg.plays
     ? sg.plays + ' play' + (sg.plays === 1 ? '' : 's') + ' across ' + sg.songs + ' song' + (sg.songs === 1 ? '' : 's') +
       (sg.best
@@ -1472,12 +1539,14 @@ function thisWeekHtml(){
   if (q.pct != null && qPrev.pct != null)
     cmp.push('Note-quiz accuracy <b>' + q.pct + '%</b>, ' + trendWord(q.pct, qPrev.pct) + ' <b>' + qPrev.pct + '%</b> the 7 days before');
   else if (q.pct != null)
-    cmp.push('Note-quiz accuracy <b>' + q.pct + '%</b> — first week with answers in it, so there is nothing to compare against yet');
+    cmp.push('Note-quiz accuracy <b>' + q.pct + '%</b> — no earlier week of answers to hold it against yet');
   if (dr.banked || dr.bankedPrev)
     cmp.push('Mastery days banked <b>' + dr.banked + '</b>, ' + trendWord(dr.banked, dr.bankedPrev) + ' <b>' + dr.bankedPrev + '</b>');
   else if (dr.total)
-    cmp.push('Mastery days banked <b>0</b> — one comes from the day’s first run of a shape, played clean and in time with the click');
-  if (sg.best != null)
+    cmp.push('Mastery days banked <b>0</b> so far — one comes from the day’s first run of a shape, played clean and in time with the click');
+  // > 0, not != null: best is 0 until something is graded, and "0%" reads as
+  // "you are terrible at this" rather than "there is no data".
+  if (sg.best > 0)
     cmp.push('Best on the root <b>' + Math.round(sg.best * 100) + '%</b> in a song' +
       (sg.bestFull ? '' : ' (part of a roadmap — a full play is what a best is kept from)'));
   if (dr.runs || dr.runsPrev)
@@ -1592,7 +1661,13 @@ function renderPractice(){
   h += '<div class="card">';
   h += '<div class="row between"><b>Week ' + wk.n + ': ' + wk.title + '</b><span class="ptime">' + totalMin + ' min</span></div>';
   h += '<p class="muted small" style="margin:4px 0 4px">' + wk.goal + '</p>';
-  h += '<p class="muted small" style="margin:0">Daily shape: 5\' warm-up → 5\' fretboard/scales → 10\' technique → 10\' music. Check things off as you go — it resets each day.</p>';
+  /* Built from the items, so it cannot disagree with them. The hard-coded version
+     said "10' technique" beside an 8-minute technique item, always summed to 30
+     against a header that read 35 or 40, and mentioned neither the tune-up, the
+     review nor the bonus. */
+  h += '<p class="muted small" style="margin:0">Tonight: ' +
+    items.map(i => i.cat.toLowerCase() + ' ' + i.min + '\'').join(' → ') +
+    '. Check things off as you go — it resets each day.</p>';
   h += '<div class="progressbar"><i style="width:' + pct + '%"></i></div>';
   for (const it of items){
     const done = log.items.includes(it.id);
@@ -1625,7 +1700,11 @@ function renderPractice(){
 
   // checkpoints
   h += '<div class="card"><b>Week ' + wk.n + ' checkpoints</b>';
-  h += '<p class="muted small" style="margin:4px 0 6px">Check these honestly — they gate when you\'re ready for the next week. They stay checked (unlike the daily list).</p>';
+  // "They gate" promised a door: nothing is locked, ticking all three changes
+  // nothing, and week 3 opens with none of them ticked. Say what they are for.
+  h += '<p class="muted small" style="margin:4px 0 6px">Check these honestly — they are how <b>you</b> decide ' +
+    'you are ready for the next week. Nothing is locked: you can open any week whenever you like, but a week ' +
+    'built on a checkpoint you were generous about is a week built on sand. They stay checked (unlike the daily list).</p>';
   for (const cp of wk.checkpoints){
     const done = !!S.practice.checkpoints[cp.id];
     h += '<div class="checkpoint' + (done ? ' is-done' : '') + '"><label class="chk"><input type="checkbox" data-cp="' + cp.id + '" ' + (done ? 'checked' : '') + '> <span>' + cp.text + '</span></label></div>';

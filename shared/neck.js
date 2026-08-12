@@ -21,6 +21,11 @@
     read:  { openCol:26, nut:5, col:34, row:30, dot:9, inlay:4.0, fretNum:16, label:10.5, gaugeMul:0.68, finger:false },
     micro: { openCol:18, nut:4, col:26, row:22, dot:7.5, inlay:3.0, fretNum:13, label:9,   gaugeMul:0.5,  finger:false },
     desk:  { openCol:64, nut:9, col:76, row:64, dot:17, inlay:8.0, fretNum:28, label:16, gaugeMul:1.5, finger:true },
+    /* A SHORT window on a desktop: an open-position drill is six or seven fret
+       columns, which at `desk` is a ~600px picture adrift in an ~1100px card.
+       Same proportions, scaled up, so a few frets still fill the card and can be
+       read from a metre away — which is the point of the desk sizes. */
+    deskwide:{ openCol:92, nut:11, col:108, row:84, dot:23, inlay:10.5, fretNum:34, label:21, gaugeMul:1.9, finger:true },
     /* read-scale board, sized for a desktop card rather than a phone hint */
     readbig:{ openCol:38, nut:7, col:46, row:40, dot:12, inlay:5.5, fretNum:20, label:13, gaugeMul:0.9, finger:false },
   };
@@ -32,8 +37,21 @@
   // String pitch at the nut vs at the last drawn fret: the neck splays.
   const TAPER_NUT = 0.93, TAPER_END = 1.0;
 
+  /* 'desk' asked for on a SHORT window gets the wider desk sizing, so a six-fret
+     board fills its card instead of sitting small in the middle of it. Decided
+     here rather than at each call site: every desktop board wants the same
+     answer, and four call sites would drift apart. */
+  const DESK_WIDE_MAX_COLS = 9;
+  function scaleFor(opts) {
+    const from = opts.fromFret || 0;
+    const to = opts.toFret != null ? opts.toFret : 12;
+    const cols = to - from + 1;
+    if (opts.scale === 'desk' && cols <= DESK_WIDE_MAX_COLS) return SCALES.deskwide;
+    return SCALES[opts.scale || 'play'];
+  }
+
   function geometry(opts) {
-    const S = SCALES[opts.scale || 'play'];
+    const S = scaleFor(opts);
     const fromFret = opts.fromFret || 0;
     const toFret = opts.toFret != null ? opts.toFret : 12;
     const nStrings = opts.strings || 5;

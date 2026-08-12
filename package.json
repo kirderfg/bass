@@ -6,7 +6,7 @@
   "scripts": {
     "test": "node --test 'trainer/test/core.test.js' 'trainer/test/neck.test.js' 'trainer/test/drill.test.js' 'trainer/test/songs.test.js'",
     "test:watch": "node --test --watch 'trainer/test/core.test.js' 'trainer/test/neck.test.js' 'trainer/test/drill.test.js' 'trainer/test/songs.test.js'",
-    "test:e2e": "node --test --test-concurrency=1 'trainer/test/integration.test.js' 'trainer/test/merged.test.js' 'trainer/test/shell.test.js' 'trainer/test/session.test.js'",
+    "test:e2e": "node --test --test-concurrency=1 'trainer/test/integration.test.js' 'trainer/test/merged.test.js' 'trainer/test/shell.test.js' 'trainer/test/session.test.js' 'trainer/test/bookkeeping.test.js'",
     "test:all": "npm test && npm run test:e2e"
   }
 }

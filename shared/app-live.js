@@ -139,6 +139,9 @@ function tick(){
   const dot = document.getElementById('liveDot');
   dot.classList.toggle('on', rms > 0.008);
   document.getElementById('liveTxt').textContent = rms > 0.008 ? 'hearing your bass' : 'listening…';
+  // Remembered so a song that scored nothing can tell the difference between
+  // "nothing reached the input" and "the input was fine, no new notes started".
+  if (rms > 0.008 && SG.t0 != null && !SG.finished) SG.sawSignal = true;
 
   // While Echo mode is sounding its own note, the microphone hears the
   // speaker — especially on a phone. Treat that window as silence, which
@@ -272,7 +275,9 @@ function renderTuner(pitch, reading){
 
 /* ================= find it ================= */
 let q = null, hintLevel = 0, qStart = 0, wrongThisQ = 0, lastProgressAt = 0, outOfTuneThisQ = false;
-const sess = { find:{ score:0, streak:0, asked:0 }, echo:{ score:0, streak:0 } };
+/* `score` = questions you eventually found; `clean` = found on the first attempt,
+   which is the one the stored accuracy is built from. */
+const sess = { find:{ score:0, clean:0, streak:0, asked:0 }, echo:{ score:0, streak:0 } };
 
 function tierNow(){
   const t = TIERS[tier];
@@ -359,6 +364,7 @@ function drawBoard(opts){
 }
 function updateFindStats(){
   document.getElementById('fScore').textContent = sess.find.score;
+  document.getElementById('fClean').textContent = sess.find.clean;
   document.getElementById('fStreak').textContent = sess.find.streak;
   document.getElementById('fAsked').textContent = sess.find.asked;
 }
@@ -374,8 +380,16 @@ function onStableNote(reading){
     if (verdict === 'correct'){
       vEl.textContent = ['Yes!','Nailed it.','Correct!','That’s the one.'][Math.floor(Math.random()*4)];
       vEl.className = 'verdict ok';
-      sess.find.score++; sess.find.streak++; sess.find.asked++;
-      recordAnswer(true, q, performance.now() - qStart);
+      sess.find.score++;
+      /* One stored answer per QUESTION, graded on the first attempt — the rule the
+         heat map and the "in under 2 seconds" checkpoint already assume. Hunting
+         used to bank a wrong AND then a correct, so four questions all answered
+         right came out as 50% of 8. countWrong() has already banked this
+         question if the first attempt missed; banking again would double it. */
+      if (wrongThisQ === 0){
+        sess.find.clean++; sess.find.streak++; sess.find.asked++;
+        recordAnswer(true, q, performance.now() - qStart);
+      }
       updateFindStats();
       drawBoard({ reveal:true });
       setTimeout(newQuestion, 1100);
@@ -417,7 +431,7 @@ function onStableNote(reading){
       if (echoWrongThisTarget === 0) recordEcho(true);
       setTimeout(newEcho, 1600);
     } else {
-      vEl.textContent = 'You played ' + heardName + ' — that is not it. Tap “Play the note” to hear it again.';
+      vEl.textContent = 'You played ' + heardName + ' — that is not it. Tap “Let me hear it” to hear it again.';
       vEl.className = 'verdict no';
       sess.echo.streak = 0;
       recordEcho(false);
@@ -611,7 +625,7 @@ document.getElementById('deviceSel').addEventListener('change', e => startListen
     Live mode when the two have got out of step. */
 function applyTuning(t){
   tuning = t;
-  document.querySelectorAll('#tuningSeg button').forEach(x => x.classList.toggle('on', +x.dataset.t === tuning));
+  showTuningWords();
   if (tuning === 4 && TIERS[tier].strings.includes('B') && !TIERS[tier].accidentals){ tier = 2; persistTier(); }
   focus = null;
   renderTierUI(); newQuestion();
@@ -621,14 +635,11 @@ function applyTuning(t){
   SG.rootShown = null;
   if (mode === 'songs') songTick();
 }
-document.getElementById('tuningSeg').addEventListener('click', e => {
-  const b = e.target.closest('button'); if (!b) return;
-  const st = loadShared(); st.tuning = +b.dataset.t;
-  try { localStorage.setItem(LS_KEY, JSON.stringify(st)); } catch(err){}
-  applyTuning(+b.dataset.t);
-  // The header toggle shows the same value and would otherwise start lying.
-  window.dispatchEvent(new CustomEvent('bass:tuning', { detail:{ from:'live' } }));
-});
+/** Name the neck being listened to, since this card no longer sets it. */
+function showTuningWords(){
+  const el = document.getElementById('tuningWords');
+  if (el) el.textContent = tuning + '-string, ' + TUNINGS[tuning].names.join(' ');
+}
 /* The header's own toggle is visible from inside a Live mode, so this side has
    to follow it immediately — not on the next entry, by which time the tuner
    would have been naming the wrong strings for as long as you were looking. */
@@ -652,7 +663,7 @@ document.getElementById('eShow').addEventListener('click', () => {
   v.className = 'verdict warn';
   playNote(echoTarget);
 });
-document.querySelectorAll('#tuningSeg button').forEach(x => x.classList.toggle('on', +x.dataset.t === tuning));
+showTuningWords();
 renderTierUI();
 
 // Offer help when the player stops making progress — whether that is silence,
@@ -1399,16 +1410,26 @@ function drillBoard(){
   const dimStrings = [];
   for (let si = 0; si < T.names.length; si++) if (!used.has(si)) dimStrings.push(si);
 
+  /* The box is the window the drill's own TITLE names — cfg.from..cfg.to — not
+     merely the frets this shape happens to land on. A drill headed "Open position
+     · frets 0–5" was drawing its box over frets 0–3, so the picture and the
+     heading disagreed about what the drill was.
+     And the visible neck is that window plus a little context, instead of a full
+     twelve frets: a six-note open-position shape was three quarters empty. */
+  const num = (v) => typeof v === 'number' && isFinite(v);
+  const boxLo = Math.min(lo, num(DR.cfg && DR.cfg.from) ? DR.cfg.from : lo);
+  const boxHi = Math.max(hi, num(DR.cfg && DR.cfg.to) ? DR.cfg.to : hi);
   const wide = window.matchMedia('(min-width:1000px)').matches;
   DR.boardApi = BassNeck.render(host, {
     strings:T.names,
-    fromFret: wide ? 0 : Math.max(0, lo - 1),
-    toFret:   wide ? 12 : Math.min(12, Math.max(hi + 1, lo + 4)),
+    fromFret: wide ? Math.max(0, boxLo - 1) : Math.max(0, lo - 1),
+    toFret:   wide ? Math.min(12, Math.max(boxHi + 2, boxLo + 6))
+                   : Math.min(12, Math.max(hi + 1, lo + 4)),
     scale: wide ? 'desk' : 'play',
     markers, dimStrings,
-    window: wide ? [lo, hi] : null,
-    windowLabel: lo > 0,          // "BOX · FRET 0" would be a lie about open position
-    scrollToFret: lo,
+    window: wide ? [boxLo, boxHi] : null,
+    windowLabel: boxLo > 0,       // "BOX · FRET 0" would be a lie about open position
+    scrollToFret: boxLo,
     animate: !!DR.flash,          // "Show me this note" pops the dots back in
     title: DR.item ? DR.item.label : 'drill'
   });
@@ -1513,9 +1534,11 @@ function renderPanel(res, timingOk, attempt){
   // "On the click" is only said when the onsets were actually compared with the
   // click. Without one, the honest claim is even SPACING, and that is what it says.
   const okWords = clicked ? 'On the click' : 'Evenly spaced';
+  // "The onsets sat 101ms ahead of the click" — nobody outside audio code knows
+  // what an onset is. It is the moment a note starts, so say that.
   const offWords = clicked
-    ? 'The onsets sat ' + Math.abs(Math.round(DR.timing.meanSigned)) + 'ms ' +
-      (DR.timing.meanSigned < 0 ? 'ahead of' : 'behind') + ' the click'
+    ? 'Your notes started ' + Math.abs(Math.round(DR.timing.meanSigned)) + 'ms ' +
+      (DR.timing.meanSigned < 0 ? 'before' : 'after') + ' the click'
     : 'The gaps between notes wandered';
   bits.push('<div class="t-eyebrow">' +
     (attempt.skipped ? 'Finished with a skipped note'
@@ -1594,8 +1617,8 @@ function applyPrimaryCta(){
   if (DP.dueId){
     start.textContent = 'Run today’s review · ' + due.length + ' due';
     cta.innerHTML = 'That runs <b>' + (due[0].label || due[0].id) + '</b> — the review that is due today' +
-      (due.length > 1 ? ', first of ' + due.length : '') + '. Reviews come first because a shape you last played ' +
-      'days ago is the one with something to prove.';
+      (due.length > 1 ? ', first of ' + due.length : '') + '. Reviews come first because the shape you have not ' +
+      'touched since last time is the one with something to prove.';
   } else {
     start.textContent = 'Start the drill';
   }
@@ -1970,7 +1993,7 @@ function songOpen(id, play){
   SG.song = song; SG.play = play === 'click' ? 'click' : 'record';
   SG.t0 = null; SG.startAt = null; SG.startSection = 0; SG.seen = null;
   SG.run = null; SG.finished = false; SG.rootShown = null;
-  SG.tally = { correct:0, wrong:0 }; SG.last = null; SG.resyncs = 0;
+  SG.tally = { correct:0, wrong:0 }; SG.last = null; SG.resyncs = 0; SG.sawSignal = false;
   document.getElementById('sgListCard').classList.add('hidden');
   document.getElementById('sgPlay').classList.remove('hidden');
   document.getElementById('sgRoad').classList.add('hidden');
@@ -2003,7 +2026,7 @@ function songArm(fromSection){
   if (!song) return;
   songTeardown();
   SG.run = SGE.createSongRun(song);
-  SG.tally = { correct:0, wrong:0 }; SG.last = null;
+  SG.tally = { correct:0, wrong:0 }; SG.last = null; SG.sawSignal = false;
   SG.rootShown = null; SG.finished = false; SG.resyncs = 0;
   SG.seen = [];
   const bpb = song.beatsPerBar || 4, beatMs = 60000 / song.bpm;
@@ -2084,7 +2107,10 @@ function songFinish(reason){
   const fromTop = (SG.startSection || 0) === 0;
   const fullPlay = covered >= of || (reason === 'finished' && fromTop);
   const bankable = graded && total > 0 && fullPlay;
-  saveSongPlay(song, res.accuracy, bankable, { sections:covered, of, full:fullPlay });
+  /* A run in which nothing was heard is not a play. It used to increment the
+     count, so "song plays 2" included the one the app itself had just told the
+     player it could not score. */
+  if (total > 0) saveSongPlay(song, res.accuracy, bankable, { sections:covered, of, full:fullPlay });
   renderSongList();
 
   document.getElementById('sgRoad').classList.add('hidden');
@@ -2121,7 +2147,16 @@ function songFinish(reason){
   const head = (reason === 'finished' ? 'End of the roadmap · ' : 'Stopped partway · ') + song.title;
   const bits = ['<div class="t-eyebrow">' + head + '</div>'];
   if (!total){
-    bits.push('<p>No notes were heard, so there is nothing to score. Check the input at the top of the page is your bass.</p>');
+    /* "Check the input" was told to a player whose meter had been solid green the
+       whole way through — an evening spent debugging a working interface. Only
+       blame the input when the input really was silent. */
+    bits.push(SG.sawSignal
+      ? '<p><b>Nothing to score.</b> The input was hearing your bass the whole way through, but no ' +
+        '<b>new notes</b> started during the play — a string that was already ringing when the roadmap ' +
+        'began is not counted, and neither is one long sustained note. Pluck the root again on each ' +
+        'change and it will count them.</p>'
+      : '<p><b>Nothing reached the input.</b> No sound at all arrived while the roadmap ran, so there is ' +
+        'nothing to score — check the input at the top of the page is your bass, and that it is turned up.</p>');
   } else {
     bits.push('<p>On the root <b>' + Math.round(res.accuracy * 100) + '%</b> — ' + res.correct + ' of ' + total +
       ' notes matched the root of the section you were in.</p>');
@@ -2140,7 +2175,7 @@ function songFinish(reason){
         'better on the root.</p>');
     }
     bits.push('<p class="t-caption">Roots per section, untimed: this counts whether you were on the right note for ' +
-      'where the song was, not whether you were in the pocket.</p>');
+      'where the song was, not whether each note landed exactly on its beat.</p>');
     if (!graded){
       bits.push('<p class="t-caption">Played with the record, so this is not kept as a best score — the app cannot ' +
         'know the record was where you tapped. Run it with the app’s click for a score that means something.</p>');
@@ -2265,6 +2300,14 @@ function suspend(){
 }
 function resume(){
   if (A.analyser && !A.timer) A.timer = setInterval(tick, 55);
+  /* Nothing was listening while a Learn tab had the screen, so whatever is
+     sounding on the way back was not played AT the exercise — it is a string that
+     was still ringing, or the note you were on when you wandered off. Detection
+     is re-armed the way a new rep re-arms it, because otherwise the first thing
+     heard on return answered the current target and a drill could come back
+     already failed on a note the player never aimed at it. */
+  tracker = C.createTracker({ stableMs:150 });
+  if (DR.phase === 'running') DR.lastAdvanceAt = performance.now();
 }
 
 /** Enter a Live mode. Gates on the first one ever asked for, and never again. */
@@ -2317,4 +2360,8 @@ window.DR = DR;
 window.SG = SG;
 window.timingReport = timingReport;
 window.timingLine = timingLine;
+/* trainer/test/bookkeeping.test.js hunts for a note the way a beginner does —
+   two wrong notes then the right one — which needs to feed readings straight in:
+   a synthetic mic plays one fixed pitch, and the question is picked at random. */
+window.onStableNote = onStableNote;
 })();

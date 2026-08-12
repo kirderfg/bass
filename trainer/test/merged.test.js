@@ -140,14 +140,22 @@ test('the one tuning toggle in the header and the one in Live agree', async () =
     await page.waitForTimeout(150);
     assert.equal(await page.textContent('#tStrings'), 'E A D G',
       'the tuner kept naming a 5-string neck');
+    // There is now exactly ONE tuning control — the header's. The Live half used
+    // to carry a second 5-str/4-str segment on the same screen, which is what
+    // this test was originally about; the Live card states the neck in words.
+    assert.match(await page.textContent('#tuningWords'), /4-string, E A D G/,
+      'the Live card is not naming the neck it is listening for');
     assert.equal(await page.evaluate(() =>
-      document.querySelector('#tuningSeg button.on').dataset.t), '4');
+      document.querySelectorAll('[data-t]').length), 2,
+      'there should be one two-button tuning control on the page, not two');
 
-    await page.click('#tuningSeg button[data-t="5"]');
+    await page.click('#tuneToggle button[data-t="5"]');
     await page.waitForTimeout(150);
     assert.equal(await page.evaluate(() =>
       document.querySelector('#tuneToggle button.on').dataset.t), '5',
       'the header toggle kept showing 4-str');
+    assert.match(await page.textContent('#tuningWords'), /5-string, B E A D G/,
+      'the Live card did not follow the header back to 5-string');
     assert.deepEqual(app.errors, [], 'page errors');
   } finally { await app.close(); }
 });

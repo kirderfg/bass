@@ -131,9 +131,14 @@
           <button class="btn small" id="fSkip">Skip →</button>
         </div>
         <div class="stat-row">
-          <div class="stat"><b id="fScore">0</b><span>correct</span></div>
+          <!-- "correct / streak / asked" read as one rule and was two: hunting for
+               a note bumped "asked" as well as the eventual find, so four questions
+               answered right showed "4 correct, 8 asked". Found and first-time are
+               different facts and are now labelled as such. -->
+          <div class="stat"><b id="fScore">0</b><span>found</span></div>
+          <div class="stat"><b id="fClean">0</b><span>first try</span></div>
           <div class="stat"><b id="fStreak">0</b><span>streak</span></div>
-          <div class="stat"><b id="fAsked">0</b><span>asked</span></div>
+          <div class="stat"><b id="fAsked">0</b><span>questions</span></div>
         </div>
       </div>
     </section>
@@ -151,7 +156,9 @@
         <div class="q" id="eQ">Listen, then play it back</div>
         <div class="qsub">No note name, no fret — use your ears. Play the note you heard, anywhere on the neck.</div>
         <div class="row" style="justify-content:center; margin:10px 0">
-          <button class="btn primary" id="ePlay">Play the note</button>
+          <!-- "Play the note" sat directly under "Play the note you heard": one is
+               the app playing, the other is you. Only one of them is a button. -->
+          <button class="btn primary" id="ePlay">Let me hear it</button>
           <button class="btn small" id="eNext">New note →</button>
           <button class="btn small hidden" id="eShow">Show me the note</button>
         </div>
@@ -383,12 +390,12 @@
     </section>
 
     <div class="card" style="padding:10px 12px">
+      <!-- This used to be a SECOND 5-str/4-str control, on the same screen as the
+           one in the header. One control, and here the strings it means. -->
       <div class="row" style="justify-content:space-between">
         <span class="small muted">Bass</span>
-        <div class="seg" id="tuningSeg">
-          <button data-t="5" class="on">5-str BEADG</button>
-          <button data-t="4">4-str EADG</button>
-        </div>
+        <span class="small muted">Listening for a <b id="tuningWords">5-string, B E A D G</b>
+          — change it with the toggle at the top of the page.</span>
       </div>
       <p class="small muted" style="margin:8px 0 0" id="feedNote">Answers here feed the same progress stats as the Theory Trainer's practice checkpoints.</p>
     </div>
