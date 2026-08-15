@@ -146,19 +146,38 @@ test('a note never asked before gets a boost over the long-since-mastered', () =
   assert.ok(unseen > mastered);
 });
 
-test('the note just asked is strongly avoided but a one-note pool still works', () => {
+test('the note just asked never repeats back-to-back, but a one-note pool still works', () => {
+  // The review queue already guarantees no back-to-back repeats; the picker
+  // now honours the same rule — lastKey is hard-excluded (weight 0) whenever
+  // the pool has anything else to offer.
   const view = () => ({ tries: 1, recent: [1] });
-  // Sweep the roll space: the repeat's share of draws must collapse.
+  // Sweep the whole roll space, edges included: not one draw may repeat.
   let repeats = 0;
   for (let i = 0; i < 1000; i++) {
     const p = G.weightedPick(POOL, view, 'E:0', () => i / 1000);
     if (p.sn + ':' + p.f === 'E:0') repeats++;
   }
-  assert.ok(repeats < 100, `the just-asked note took ${repeats}/1000 draws`);
-  assert.ok(repeats > 0, 'avoided, not banned — it must still be possible');
+  assert.equal(repeats, 0,
+    `the just-asked note took ${repeats}/1000 draws — back-to-back must be impossible`);
+  // The exclusion only holds in a MULTI-note pool: with one note there is
+  // nothing else to serve, and a dead picker is worse than a repeat.
   const only = [{ sn: 'G', f: 5 }];
   assert.deepEqual(G.weightedPick(only, view, 'G:5', seq([0.5])), only[0],
     'a single-note pool must still yield its note');
+  assert.deepEqual(G.weightedPick(only, view, 'G:5', seq([0.999])), only[0],
+    'even at the top edge of the roll space');
+});
+
+test('the focus multiplier scales the premium by pool share, floored and capped', () => {
+  // A 6-note focus pool on a 24-position stage must not pay the full stage
+  // premium — but focused practice still earns at least half.
+  assert.equal(G.focusMult(6, 24), 0.5, '6/24 = 0.25 floors at 0.5');
+  assert.equal(G.focusMult(12, 24), 0.5, 'exactly half the pool pays half');
+  assert.equal(G.focusMult(18, 24), 0.75, 'a three-quarter pool pays 0.75');
+  assert.equal(G.focusMult(24, 24), 1, 'the unfocused pool pays in full');
+  assert.equal(G.focusMult(30, 24), 1, 'never a bonus above 1');
+  assert.equal(G.focusMult(6, 0), 1, 'a degenerate full-pool size opts out');
+  assert.equal(G.focusMult(6, Infinity), 1, 'so does an unbounded one');
 });
 
 test('six clean answers park a note much deeper than three, but never to zero', () => {

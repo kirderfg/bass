@@ -83,7 +83,11 @@
    snaps the scene wrapper to an integer multiple of 320px (gvFitScene), so
    the wrapper centres itself and the canvas keeps square corners — a radius
    would shave fractional pixels off a pixel-art edge. */
-.gv-screen{position:relative; margin:2px auto 6px;}
+/* scroll-margin-top on both scroll targets clears the sticky header (~48px):
+   gvScrollScene brings the card top (HUD included) into view on a new run,
+   and gvGameOver centres the screen — neither may land under the header. */
+.gv-card{scroll-margin-top:48px;}
+.gv-screen{position:relative; margin:2px auto 6px; scroll-margin-top:48px;}
 /* content-box, because gvFitScene sets the canvas to EXACT 320×150 multiples:
    border-box would shave the borders off the content and smear a column. */
 .gv-screen canvas{display:block; width:100%; height:auto; image-rendering:pixelated;
@@ -122,14 +126,17 @@
    against the track; the deep #A6281A is only the thin seam between steps. */
 .gv-fusebar.low i{background:repeating-linear-gradient(90deg,
     var(--bad) 0 9px, #A6281A 9px 12px);}
-/* The last-five-seconds numeral: 18px, high contrast, room of its own —
-   the old 12px chip overlapped the bar's corner and read as lint at arm's
-   length, which is where a bass player's eyes are. */
-.gv-fusesec{flex:0 0 auto; min-width:2.2em; text-align:center; margin-bottom:6px;
+/* The countdown numeral: 18px, high contrast, room of its own — the old 12px
+   chip overlapped the bar's corner and read as lint at arm's length, which is
+   where a bass player's eyes are. It shows for the ENTIRE burn now: dim grey
+   (.early) while >5s remain, full contrast in the last five, red with the
+   bar's .low — the reserved slot fits two digits so nothing ever reflows. */
+.gv-fusesec{flex:0 0 auto; min-width:2.6em; text-align:center; margin-bottom:6px;
   font-family:var(--mono); font-size:18px; font-weight:800; color:var(--t1);
   line-height:1; background:var(--s0); border:1px solid var(--line);
   border-radius:2px; padding:2px 5px; font-variant-numeric:tabular-nums;}
 .gv-fusesec:empty{visibility:hidden;}
+.gv-fusesec.early{color:var(--t4);}
 .gv-fusebar.low ~ .gv-fusesec{color:var(--bad); border-color:var(--bad);}
 /* Gated on BOTH reduced-motion signals: the OS media query, and the game's
    own "Effects: Calm" toggle (the .calm class on #secFind). */
@@ -143,8 +150,10 @@
    whole HUD sits in the scene's palette. */
 .gv-xp i{display:block; height:100%; width:0%;
   background:linear-gradient(90deg, #C77F1F, var(--root)); transition:width var(--slow) var(--ease);}
+/* .84, not .92: the darkened stage — its lamps off — should read through
+   LIGHTS OUT, not vanish behind a near-opaque slab. */
 .gv-over{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center;
-  justify-content:center; gap:6px; text-align:center; background:rgba(14,13,12,.92);
+  justify-content:center; gap:6px; text-align:center; background:rgba(14,13,12,.84);
   border-radius:var(--r-sm); padding:10px; overflow:hidden;}
 .gv-over-title{font-family:var(--mono); font-size:22px; letter-spacing:.18em; color:var(--root);
   text-shadow:0 0 14px rgba(242,169,59,.45);}
@@ -198,6 +207,16 @@
    380px phone; narrower than ~320px the row is allowed to wrap (see below). */
 #secFind .stat-row{gap:6px;}
 #secFind .stat-row .stat{padding:6px 8px; min-width:64px;}
+/* The tiny XP numbers beside the bar — data, not chrome, so they stay small.
+   Bar + numbers share one flex unit (.gv-xpwrap) so they wrap together. */
+.gv-xpwrap{display:flex; align-items:center; gap:6px; flex:1 1 90px; min-width:90px;}
+.gv-xpwrap .gv-xp{flex:1 1 60px;}
+.gv-hud .gv-xpnum{font-size:11px; color:var(--t4); white-space:nowrap;}
+/* 320px phones: four tiles wrap 2+2, never a lonely 3+1 — the basis forces
+   exactly two per row once the row cannot hold four. */
+@media (max-width:359px){
+  #secFind .stat-row .stat{flex:1 1 40%;}
+}
 /* The stat row measures THIS SITTING only — one quiet label says so.
    margin:auto, because the desktop card caps every p at 66ch: without it the
    caption centres inside a left-parked 66ch box, visibly off the tiles. */

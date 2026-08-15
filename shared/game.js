@@ -179,6 +179,16 @@
     };
   }
 
+  /* ================= XP multiplier honesty =================
+     The stage premium pays for the SIZE of the neck in play. A focus filter
+     (one string, a fret window) shrinks the askable pool, so the premium
+     scales by the pool's share of the unfocused stage pool — floored at 0.5
+     (focused practice still earns) and capped at 1 (no bonus for filters). */
+  function focusMult(poolSize, fullPoolSize) {
+    if (!fullPoolSize || !isFinite(fullPoolSize) || fullPoolSize <= 0) return 1;
+    return Math.max(0.5, Math.min(1, poolSize / fullPoolSize));
+  }
+
   /* ================= octave counting, in words =================
      A +24-semitone slip is "two octaves", not "an octave" — corrections that
      count wrong tell the player their ear is wrong when it was right. */
@@ -195,7 +205,8 @@
        - a note you keep missing shows up much more often
        - a note you have never been asked gets a look-in
        - a note you have nailed three times running fades back
-       - the note just asked is strongly (not absolutely) avoided
+       - the note just asked NEVER repeats back-to-back (weight 0) while the
+         pool has anything else to offer; a one-note pool still serves its note
      `view(key)` returns {recent:[0/1...], tries:number} or null — the
      caller owns storage; this owns only the arithmetic. */
   function weightFor(v, isLast) {
@@ -213,7 +224,7 @@
         w *= 0.15;                                        // parked
       }
     }
-    if (isLast) w *= 0.15;                              // rarely twice in a row
+    if (isLast) return 0;                               // never twice in a row
     return w;
   }
   function weightedPick(pool, view, lastKey, rand) {
@@ -228,8 +239,11 @@
     let roll = r() * total;
     for (let i = 0; i < pool.length; i++) {
       roll -= weights[i];
-      if (roll <= 0) return pool[i];
+      if (roll <= 0 && weights[i] > 0) return pool[i];
     }
+    // Floating-point fallthrough: return the last item that can be served —
+    // never the hard-excluded lastKey.
+    for (let i = pool.length - 1; i >= 0; i--) if (weights[i] > 0) return pool[i];
     return pool[pool.length - 1];
   }
 
@@ -341,6 +355,6 @@
     PACES, PACE_ORDER, PROMPTS, PROMPT_ORDER, resolvePrompt,
     XP_PER_LEVEL, LEVEL_TITLES, levelFor, levelTitle, levelProgress, approachMs,
     createRun, weightFor, weightedPick, createReviewQueue, staffSpec, staffPosName,
-    createFuseBudget, octaveWords,
+    createFuseBudget, octaveWords, focusMult,
   };
 });
