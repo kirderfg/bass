@@ -237,6 +237,9 @@ test('the string labels stay visible when the fretboard scrolls to a hint', asyn
       tier = 4; focus = null; renderTierUI();
       q = { si: 2, f: 11, midi: 66, sn: 'A', name: 'F#' };
       hintLevel = 1; showHint();          // jump to the full reveal
+      // The game scene sits above the board now, so on a phone viewport the
+      // reveal starts below the fold; elementFromPoint needs it on screen.
+      document.getElementById('fBoard').scrollIntoView({ block: 'center' });
     });
     await app.page.waitForTimeout(400);
 
@@ -250,6 +253,70 @@ test('the string labels stay visible when the fretboard scrolls to a hint', asyn
       });
     });
     assert.equal(labelsVisible, true, 'fretboard cells are covering the string labels');
+  } finally { await app.close(); }
+});
+
+test('a wrong answer paints one committed banner — the UI does not flicker', async () => {
+  // The regression the game overhaul exists for: the old screen streamed
+  // "hearing A…" and re-painted verdicts as the note rang, so playing felt
+  // like the UI was flickering. A judged note now paints ONE banner and the
+  // banner holds while the same note keeps sounding.
+  const app = await openWithNote(A1); // playing A at a question that wants G
+  try {
+    await app.page.evaluate(() => {
+      setMode('find');
+      q = { si: 1, f: 3, midi: 43, sn: 'E', name: 'G' };
+      hintLevel = 0; wrongThisQ = 0; qStart = performance.now();
+      tracker.reset();
+    });
+    await until(app.page, () => {
+      const el = document.getElementById('fVerdict');
+      return el.className.includes('no') ? el.textContent : null;
+    });
+    const samples = [];
+    for (let i = 0; i < 6; i++) {
+      samples.push(await app.page.evaluate(() =>
+        document.getElementById('fVerdict').textContent));
+      await new Promise(r => setTimeout(r, 140));
+    }
+    assert.equal(new Set(samples).size, 1,
+      'the verdict repainted while one wrong note rang: ' + JSON.stringify(samples));
+    const heard = await app.page.textContent('#fHeard');
+    assert.doesNotMatch(heard, /hearing /, 'the raw "hearing…" stream is back');
+    assert.ok(await app.page.evaluate(() => !!document.getElementById('gvScene')),
+      'the game scene canvas is missing');
+    assert.deepEqual(app.errors, [], 'page errors');
+  } finally { await app.close(); }
+});
+
+test('sheet-music mode poses the question on a bass-clef staff, and the hint names it', async () => {
+  const app = await openWithNote(A1); // a wrong note, so the question stays put
+  try {
+    const { page } = app;
+    await page.evaluate(() => {
+      setMode('find');
+      q = { si: 1, f: 3, midi: 43, sn: 'E', name: 'G' };
+      hintLevel = 0; wrongThisQ = 0; qStart = performance.now();
+      tracker.reset();
+    });
+    await page.click('#gvPromptSeg button[data-r="staff"]');
+    await page.waitForSelector('#gvStaffWrap:not(.hidden)', { timeout: 3000 });
+    const posed = await page.textContent('#fQ');
+    assert.match(posed, /Play this note on the/, 'the reading question should not name the note');
+    assert.doesNotMatch(posed, /\bG\b/, 'the note name leaked into a reading question');
+    // The staff canvas must actually carry ink — lines, clef and a note head.
+    const inked = await page.evaluate(() => {
+      const cv = document.getElementById('gvStaff');
+      const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+      let n = 0;
+      for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++;
+      return n;
+    });
+    assert.ok(inked > 300, 'the staff canvas is blank (' + inked + ' inked pixels)');
+    // First hint in reading mode is the note's NAME.
+    await page.click('#fHint');
+    assert.match(await page.textContent('#fQ'), /G/, 'the hint should reveal the name');
+    assert.deepEqual(app.errors, [], 'page errors');
   } finally { await app.close(); }
 });
 

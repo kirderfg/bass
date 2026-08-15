@@ -67,6 +67,46 @@
 .verdict{min-height:30px; text-align:center; font-weight:700; font-size:16px; margin-top:6px;}
 .verdict.ok{color:var(--good);} .verdict.no{color:var(--bad);} .verdict.warn{color:var(--root);}
 .heard{text-align:center; font-size:13px; color:var(--dim); min-height:20px;}
+
+/* ---- Fret Quest (Find it) ----
+   The game's canvases are drawn at a low internal resolution and scaled up:
+   image-rendering keeps the pixels square instead of smearing them. */
+.gv-screen{position:relative; margin:2px 0 6px;}
+.gv-screen canvas{display:block; width:100%; height:auto; image-rendering:pixelated;
+  border:1px solid var(--line); border-radius:var(--r-sm); background:var(--s0);}
+.gv-hud{display:flex; align-items:center; gap:10px; flex-wrap:wrap; min-height:18px; margin-bottom:6px;}
+.gv-hearts{display:flex; gap:3px;}
+.gv-hearts i{width:14px; height:13px; image-rendering:pixelated;
+  background-image:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 7 6' shape-rendering='crispEdges'><path fill='%23E4675C' d='M1 0h2v1h1V0h2v1h1v2h-1v1h-1v1h-1v1h-1V5H2V4H1V3H0V1h1z'/><path fill='%23F6A9A1' d='M1 1h1v1H1z'/></svg>");
+  background-size:100% 100%;}
+.gv-hearts i.lost{filter:grayscale(1) brightness(.5);}
+.gv-combo{color:var(--root); font-weight:700;}
+.gv-level{color:var(--t3);}
+.gv-xp{flex:1 1 60px; min-width:60px; height:7px; background:var(--s2);
+  border:1px solid var(--line); border-radius:2px; overflow:hidden;}
+.gv-xp i{display:block; height:100%; width:0%; background:var(--hl); transition:width var(--slow) var(--ease);}
+.gv-over{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center;
+  justify-content:center; gap:6px; text-align:center; background:rgba(14,13,12,.82);
+  border-radius:var(--r-sm); padding:10px;}
+.gv-over-title{font-family:var(--mono); font-size:22px; letter-spacing:.18em; color:var(--bad);}
+.gv-staffwrap{display:flex; justify-content:center; margin:4px 0 2px;}
+.gv-staffwrap canvas{width:min(230px, 70%); height:auto; image-rendering:pixelated;
+  background:var(--s2); border:1px solid var(--line); border-radius:var(--r-sm);}
+#gvClefHelp .gv-staffwrap canvas{width:min(340px, 96%);}
+/* Verdicts land as one committed banner per judged note — the pop replays
+   because the class is re-applied per judgement, and nothing else moves. */
+#secFind .verdict{min-height:34px; font-size:17px;}
+@media (prefers-reduced-motion: no-preference){
+  #secFind .verdict.ok, #secFind .verdict.no, #secFind .verdict.warn{
+    animation:gv-pop var(--cheer) var(--pop);}
+  @keyframes gv-pop{0%{transform:scale(.85); opacity:.4;} 100%{transform:scale(1); opacity:1;}}
+}
+#secFind .heard{font-family:var(--mono); font-size:12px;}
+#secFind summary{min-height:44px; display:flex; align-items:center; gap:var(--sp2);
+  cursor:pointer; list-style:none;}
+#secFind summary::-webkit-details-marker{display:none;}
+#secFind summary::before{content:'▸'; color:var(--root); font-weight:800;}
+#secFind details[open] summary::before{content:'▾';}
 /* Three tiles side by side in a narrow card need a floor, or "correct" and
    "streak" collapse to different widths and the row reads as broken. */
 .stat-row{display:flex; gap:8px; justify-content:center; margin:8px 0 0;}

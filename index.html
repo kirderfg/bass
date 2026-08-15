@@ -117,15 +117,37 @@
       </div></div>
     </section>
 
-    <!-- ================= FIND IT ================= -->
+    <!-- ================= FIND IT — Fret Quest =================
+         The note-memorisation game. One monster at a time carries the note
+         being asked for; the bass is the controller. Verdicts are COMMITTED
+         states — a wrong answer paints one banner and holds it — because the
+         old screen streamed raw detector output ("hearing G2…", verdicts
+         swapping as the note decayed) and read as flicker. -->
     <section id="secFind" class="hidden">
       <h2>Find it</h2>
-      <div class="card">
+      <div class="card gv-card">
+        <div class="gv-hud">
+          <span class="gv-hearts" id="gvHearts" aria-label="hearts left"></span>
+          <span class="t-data gv-level" id="gvLevel">LV 1 · FRET ROOKIE</span>
+          <span class="t-data gv-combo hidden" id="gvCombo">COMBO ×2</span>
+          <span class="gv-xp" title="XP to the next level"><i id="gvXpBar"></i></span>
+        </div>
+        <div class="gv-screen">
+          <canvas id="gvScene" width="320" height="150" aria-hidden="true"></canvas>
+          <div class="gv-over hidden" id="gvOver">
+            <b class="gv-over-title">GAME OVER</b>
+            <p class="t-caption" id="gvOverText"></p>
+            <button class="btn primary" id="gvRestart">Play again</button>
+          </div>
+        </div>
         <div class="q" id="fQ">—</div>
+        <div class="gv-staffwrap hidden" id="gvStaffWrap">
+          <canvas id="gvStaff" width="170" height="124" aria-label="the note, written on a bass clef staff"></canvas>
+        </div>
         <div class="qsub" id="fSub">Find it on the neck and play it.</div>
-        <div id="fBoard"></div>
         <div class="verdict" id="fVerdict">&nbsp;</div>
         <div class="heard" id="fHeard">&nbsp;</div>
+        <div id="fBoard"></div>
         <div class="row" style="justify-content:center; margin-top:8px">
           <button class="btn small" id="fHint">Hint</button>
           <button class="btn small" id="fSkip">Skip →</button>
@@ -135,14 +157,58 @@
                a note bumped "asked" as well as the eventual find, so four questions
                answered right showed "4 correct, 8 asked". Found and first-time are
                different facts and are now labelled as such. -->
-          <div class="stat"><b id="fScore">0</b><span>found</span></div>
+          <div class="stat"><b id="fScore">0</b><span>zapped</span></div>
           <div class="stat"><b id="fClean">0</b><span>first try</span></div>
           <div class="stat"><b id="fStreak">0</b><span>streak</span></div>
           <div class="stat"><b id="fAsked">0</b><span>questions</span></div>
         </div>
       </div>
+
+      <!-- The game's three difficulty axes: how much neck, how much time
+           pressure, and how the note is written. Kept apart from Ear
+           training's tier card — a game run owns its own settings. -->
+      <div class="card tight" id="gvSettings">
+        <div class="t-eyebrow" style="margin-bottom:6px">Difficulty</div>
+        <label style="display:block">
+          <span class="t-caption">World — how much of the neck is in play</span>
+          <select id="gvWorld" style="margin-top:4px"></select>
+        </label>
+        <div class="row" style="margin-top:var(--sp3); gap:var(--sp5); flex-wrap:wrap; align-items:flex-start">
+          <div>
+            <span class="t-caption">Pace</span>
+            <div class="seg compact" id="gvPaceSeg" style="margin-top:4px"></div>
+          </div>
+          <div>
+            <span class="t-caption">The note is shown as</span>
+            <div class="seg compact" id="gvPromptSeg" style="margin-top:4px"></div>
+          </div>
+        </div>
+        <p class="t-caption" id="gvPaceNote" style="margin:var(--sp2) 0 0"></p>
+        <div style="margin-top:var(--sp3)">
+          <span class="t-caption">Strings</span>
+          <div class="seg compact" id="gvFocusSeg" style="margin-top:4px"></div>
+        </div>
+      </div>
+
+      <!-- The reading mode's teaching support: what the staff is, and where
+           the four anchor notes sit. Collapsed — reference, not homework. -->
+      <details class="card" id="gvClefHelp">
+        <summary><span class="t-title3">Reading the staff — bass clef in one minute</span></summary>
+        <div>
+          <p class="t-caption" style="margin:var(--sp3) 0 0">Bass guitar is written in <b>bass clef</b>, one octave above
+          where it sounds — otherwise every note would drown in ledger lines. The five lines, bottom to top, are
+          <b>G B D F A</b> (<i>Good Bassists Deserve Fine Amps</i>); the four spaces spell <b>A C E G</b>.</p>
+          <div class="gv-staffwrap" style="margin-top:var(--sp3)"><canvas id="gvClefRef" width="300" height="124"></canvas></div>
+          <p class="t-caption" style="margin:var(--sp3) 0 0">Anchor the open strings first and read everything else off
+          them: open <b>E</b> hangs on the first ledger line below the staff, open <b>A</b> is the bottom space, open
+          <b>D</b> is the middle line, open <b>G</b> is the top space — and the low <b>B</b> hangs below two ledger
+          lines. A <b>♯</b> in front of a note head means one fret higher than the natural.</p>
+        </div>
+      </details>
     </section>
 
+    <!-- Ear training's difficulty: same tiers as the Note quiz. The game above
+         carries its own copy of these controls inside its settings card. -->
     <div class="card hidden" id="difficultyCard" style="padding:10px 12px">
         <div class="small muted" style="margin-bottom:6px">Difficulty</div>
         <select id="tierSel"></select>
@@ -486,6 +552,9 @@
 </nav>
 <script src="shared/neck.js"></script>
 <script src="shared/diagrams.js"></script>
+<!-- Fret Quest's rules (paces, XP, the adaptive picker, staff geometry),
+     kept pure so trainer/test/game.test.js can require() them in Node. -->
+<script src="shared/game.js"></script>
 <!-- the Live Trainer's own rules for mastery and its song list. The Theory
      half reads them too, so "This week" reports the same verdicts Drills and
      Songs reached. -->

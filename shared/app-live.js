@@ -157,15 +157,19 @@ function tick(){
 
   if (mode === 'tuner') renderTuner(pitch, reading);
   else if (reading.state === 'stable') onStableNote(reading);
-  else if (mode === 'find' && reading.state === 'listening') {
-    document.getElementById('fHeard').textContent = 'hearing ' + C.hzToNote(reading.hz).name + '…';
-  } else if (mode === 'find' && reading.state === 'held' && q && reading.midi === q.midi
-             && now - lastProgressAt > 2500) {
-    const hEl = document.getElementById('fHeard');
-    hEl.textContent = 'that note is still ringing from before — mute the string, then play it again';
-  } else if (mode === 'find' && reading.state === 'idle') {
-    const hEl = document.getElementById('fHeard');
-    if (/^hearing /.test(hEl.textContent)) hEl.innerHTML = '&nbsp;';
+  else if (mode === 'find') {
+    /* No streamed "hearing X…" text here any more — raw detector output
+       flipping under the question 18×/second WAS the flicker the game
+       replaced. While a note settles, the hero gets a note bubble on the
+       canvas (no reflow, no text). The one sentence kept is committed,
+       rare and useful: the still-ringing-from-before nudge. */
+    if (reading.state === 'listening') {
+      GV.hearingUntil = now + 350;
+    } else if (reading.state === 'held' && q && reading.midi === q.midi
+               && now - lastProgressAt > 2500) {
+      document.getElementById('fHeard').textContent =
+        'that note is still ringing from before — mute the string, then play it again';
+    }
   }
 
   // Only measure drift against a note we KNOW was intended — the open string
@@ -269,11 +273,90 @@ function renderTuner(pitch, reading){
   centsEl.style.color = inTune ? 'var(--good)' : 'var(--root)';
 }
 
-/* ================= find it ================= */
+/* ================= find it — FRET QUEST =================
+   The note-memorisation mini game. The detection engine underneath is
+   unchanged (tracker → onStableNote → checkAnswer → recordAnswer), but the
+   screen is a game: a pixel hero, one monster at a time carrying the note
+   being asked for, and the bass as the only controller. Three difficulty
+   axes: WORLD (how much neck — the shared tier), PACE (time pressure and
+   hearts), and PROMPT (note names, bass-clef staff, or a mix). */
 let q = null, hintLevel = 0, qStart = 0, wrongThisQ = 0, lastProgressAt = 0, outOfTuneThisQ = false;
 /* `score` = questions you eventually found; `clean` = found on the first attempt,
    which is the one the stored accuracy is built from. */
 const sess = { find:{ score:0, clean:0, streak:0, asked:0 }, echo:{ score:0, streak:0 } };
+
+const GAME = window.BassGame;
+const GV_KEY = 'bassTrainer.game.v1';
+/* Everything the game owns beyond the question itself. XP is persistent —
+   a run ending costs hearts, never progress. */
+const GV = {
+  pace:'chill', prompt:'name', xp:0, best:{ steady:0, turbo:0 },
+  run:null,
+  promptKind:'name',     // what THIS question shows ('mix' resolves per question)
+  phase:'idle',          // idle | fight | zap | breach | over
+  spawnAt:0,             // when the monster appeared, for the pace clock
+  monster:null,          // { sp, taunt } — taunt is the last-miss timestamp
+  mx:230, my:0,          // where the monster was last drawn (zap fx start there)
+  zapT:0, breachT:0,
+  fx:[],                 // particles and floating toasts
+  hearingUntil:0,        // canvas note-bubble while a pluck settles
+  raf:null, lastFrame:0,
+};
+const REDUCED = typeof matchMedia === 'function'
+  && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function gvLoad(){
+  try {
+    const s = JSON.parse(localStorage.getItem(GV_KEY)) || {};
+    if (GAME.PACES[s.pace]) GV.pace = s.pace;
+    if (GAME.PROMPTS[s.prompt]) GV.prompt = s.prompt;
+    GV.xp = Math.max(0, s.xp | 0);
+    GV.best = Object.assign({ steady:0, turbo:0 }, s.best);
+  } catch(e){}
+}
+function gvSave(){
+  try { localStorage.setItem(GV_KEY, JSON.stringify({
+    pace:GV.pace, prompt:GV.prompt, xp:GV.xp, best:GV.best })); } catch(e){}
+}
+gvLoad();
+
+function gvNewRun(){
+  GV.run = GAME.createRun({ pace: GV.pace, xp: GV.xp });
+  GV.phase = 'idle';
+  const over = document.getElementById('gvOver');
+  if (over) over.classList.add('hidden');
+  renderHud();
+}
+/** Feed one judgement to the run and let every dependent surface follow. */
+function gvJudge(kind){
+  if (!GV.run) return null;
+  const r = GV.run.judge(kind);
+  if (r.ignored) return r;
+  GV.xp = GV.run.state.xp;
+  gvSave();
+  renderHud();
+  if (r.leveled) gvToast('LEVEL UP — ' + GAME.levelTitle(r.level).toUpperCase());
+  else if (r.gain > 0) gvToast('+' + r.gain + ' XP');
+  return r;
+}
+function renderHud(){
+  const s = GV.run && GV.run.state;
+  const hearts = document.getElementById('gvHearts');
+  if (hearts) hearts.innerHTML = (!s || s.hearts == null) ? '' :
+    Array.from({ length: s.maxHearts }, (_, i) =>
+      '<i' + (i < s.hearts ? '' : ' class="lost"') + '></i>').join('');
+  const level = GAME.levelFor(GV.xp);
+  const lv = document.getElementById('gvLevel');
+  if (lv) lv.textContent = 'LV ' + level + ' · ' + GAME.levelTitle(level).toUpperCase();
+  const combo = document.getElementById('gvCombo');
+  if (combo){
+    const c = s ? s.combo : 0;
+    combo.classList.toggle('hidden', c < 2);
+    combo.textContent = 'COMBO ×' + c;
+  }
+  const bar = document.getElementById('gvXpBar');
+  if (bar) bar.style.width = Math.round(GAME.levelProgress(GV.xp).frac * 100) + '%';
+}
 
 function tierNow(){ return TIERS[tier]; }
 function pool(){
@@ -292,22 +375,43 @@ function pool(){
   }
   return out;
 }
+/** Per-position recent results, for the adaptive picker: the notes being
+    missed come back sooner, the parked ones fade back. Written by
+    recordAnswer into the shared stats. */
+function noteView(){
+  const nr = (loadShared().stats || {}).noteRecent || {};
+  return key => nr[key] ? { tries: nr[key].length, recent: nr[key] } : null;
+}
 function newQuestion(){
   const p = pool();
   if (!p.length){ q = null; return; }
-  let pick;
-  do { pick = p[Math.floor(Math.random() * p.length)]; }
-  while (p.length > 1 && q && pick.sn === q.sn && pick.f === q.f);
-  q = pick; hintLevel = 0; wrongThisQ = 0; outOfTuneThisQ = false; qStart = performance.now();
+  const lastKey = q ? q.sn + ':' + q.f : null;
+  q = GAME.weightedPick(p, noteView(), lastKey, Math.random);
+  hintLevel = 0; wrongThisQ = 0; outOfTuneThisQ = false; qStart = performance.now();
   lastProgressAt = qStart;
   tracker.reset();   // clears the settle clock only — a ringing note stays consumed
-  document.getElementById('fQ').innerHTML = 'Play <b>' + q.name + '</b> on the <b>' + q.sn + '</b> string';
-  document.getElementById('fSub').textContent = 'Find it on the neck and play it.';
+  GV.promptKind = GAME.resolvePrompt(GV.prompt, Math.random);
+  renderPrompt();
   const v = document.getElementById('fVerdict');
   v.innerHTML = '&nbsp;'; v.className = 'verdict';
   document.getElementById('fHeard').innerHTML = '&nbsp;';
   document.getElementById('fBoard').innerHTML = '';
+  gvSpawn();
   updateFindStats();
+}
+function renderPrompt(){
+  const wrap = document.getElementById('gvStaffWrap');
+  if (!q){ if (wrap) wrap.classList.add('hidden'); return; }
+  if (GV.promptKind === 'staff'){
+    document.getElementById('fQ').innerHTML = 'Play this note on the <b>' + q.sn + '</b> string';
+    document.getElementById('fSub').textContent = 'Read it off the staff, find it on the neck, play it.';
+    drawStaff(document.getElementById('gvStaff'), q.midi, { showName:false });
+    wrap.classList.remove('hidden');
+  } else {
+    document.getElementById('fQ').innerHTML = 'Play <b>' + q.name + '</b> on the <b>' + q.sn + '</b> string';
+    document.getElementById('fSub').textContent = 'Find it on the neck and play it.';
+    wrap.classList.add('hidden');
+  }
 }
 function showHint(){
   if (!q) return;
@@ -321,6 +425,11 @@ function showHint(){
   }
   hintLevel = Math.min(2, hintLevel + 1);
   lastProgressAt = performance.now();
+  // In reading mode the first help is the note's NAME — that alone converts
+  // the question into one the player may already know how to answer.
+  if (GV.promptKind === 'staff'){
+    document.getElementById('fQ').innerHTML = 'Play <b>' + q.name + '</b> on the <b>' + q.sn + '</b> string';
+  }
   if (hintLevel === 1){
     const lo = Math.max(0, q.f - 2), hi = Math.min(tierNow().maxFret, q.f + 2);
     document.getElementById('fSub').textContent = 'Hint: it is somewhere between fret ' + lo + ' and fret ' + hi + '.';
@@ -329,6 +438,393 @@ function showHint(){
     document.getElementById('fSub').textContent = 'It is right here — play it, then it moves on.';
     drawBoard({ reveal:true });
   }
+}
+
+/* ---- the game's turn results ---- */
+function gvSpawn(){
+  if (GV.run && GV.run.state.over) return;   // the over screen owns the scene
+  const kinds = MONSTERS.slice(0, Math.min(tier + 1, MONSTERS.length));
+  GV.monster = { sp: kinds[Math.floor(Math.random() * kinds.length)], taunt:0 };
+  GV.phase = 'fight';
+  GV.spawnAt = performance.now();
+}
+function gvZap(){
+  GV.phase = 'zap';
+  GV.zapT = performance.now();
+  if (!REDUCED) gvBurst(GV.mx + 12, GV.my + 10, '#B58BF5');
+  if (GV.promptKind === 'staff') drawStaff(document.getElementById('gvStaff'), q.midi, { showName:true });
+}
+/** The pace clock ran out: the monster reaches the hero. A failed recall,
+    banked exactly like a first-attempt miss (unless a miss already did). */
+function gvBreach(){
+  if (!q) return;
+  GV.phase = 'breach';
+  GV.breachT = performance.now();
+  if (wrongThisQ === 0){
+    sess.find.streak = 0; sess.find.asked++;
+    recordAnswer(false, q, performance.now() - qStart);
+  }
+  wrongThisQ++;          // the eventual find (next question) must not count clean
+  const r = gvJudge('breach');
+  const v = document.getElementById('fVerdict');
+  v.textContent = 'It broke through! That was ' + q.name + ' — ' + q.sn + ' string, fret ' + q.f + '.';
+  v.className = 'verdict warn';
+  updateFindStats();
+  if (r && r.over){ gvGameOver(); return; }
+  setTimeout(newQuestion, 1400);
+}
+function gvGameOver(){
+  GV.phase = 'over';
+  const s = GV.run.state;
+  if (s.zaps > (GV.best[GV.pace] || 0)){ GV.best[GV.pace] = s.zaps; gvSave(); }
+  const txt = document.getElementById('gvOverText');
+  if (txt) txt.textContent = s.zaps + ' zapped this run · best on ' +
+    GAME.PACES[GV.pace].label + ': ' + GV.best[GV.pace] +
+    ' · your XP is kept — still ' + GAME.levelTitle(GAME.levelFor(GV.xp)) + '.';
+  const over = document.getElementById('gvOver');
+  if (over) over.classList.remove('hidden');
+  document.getElementById('fQ').textContent = 'Run over — play again?';
+  document.getElementById('fSub').textContent =
+    'Chill pace has no hearts, if you would rather practise without the clock.';
+  const wrap = document.getElementById('gvStaffWrap');
+  if (wrap) wrap.classList.add('hidden');
+}
+
+/* ---- pixel scene ----
+   One low-resolution canvas, scaled up by CSS with image-rendering:pixelated.
+   Sprites are string grids — a char per pixel — so there are no assets to
+   load and no build step. Drawn only while Find it is on screen. */
+function sprite(map, rows){ return { rows, map, h: rows.length }; }
+function blit(ctx, sp, x, y, s){
+  for (let r = 0; r < sp.rows.length; r++){
+    const row = sp.rows[r];
+    for (let c = 0; c < row.length; c++){
+      const col = sp.map[row[c]];
+      if (!col) continue;
+      ctx.fillStyle = col;
+      ctx.fillRect(x + c * s, y + r * s, s, s);
+    }
+  }
+}
+const HERO = sprite(
+  { h:'#5C4630', s:'#E8B98C', e:'#14110F', j:'#4A5C6E', J:'#5D7285',
+    p:'#33383E', x:'#20232A', b:'#F2A93B', B:'#C77F1F', n:'#C9C3B8' },
+  ['....hhhh....',
+   '...hhhhhh...',
+   '...ssssss...',
+   '...sseess...',
+   '...ssssss...',
+   '....ssss....',
+   '...jJJJJj...',
+   '..jjJJJJjj..',
+   '.ssjjjjjjs..',
+   '..jjbbnnnn..',
+   '..jbBbbn....',
+   '..jbbBb.....',
+   '...pppp.....',
+   '...pp.pp....',
+   '...pp.pp....',
+   '..xxx.xxx...']);
+const MONSTERS = [
+  // World 1 — slime
+  sprite({ g:'#45C486', G:'#2E8F5F', w:'#F6F2EC', p:'#14110F', m:'#14110F' },
+  ['...gggggg...',
+   '..gggggggg..',
+   '.gggggggggg.',
+   '.ggwwggwwgg.',
+   '.ggwpggwpgg.',
+   'gggggggggggg',
+   'ggGGmmmmGGgg',
+   '.gGGGGGGGGg.',
+   '..GGGGGGGG..']),
+  // World 2 — bat
+  sprite({ w:'#6E5B8E', b:'#4A3B66', e:'#F2A93B', f:'#F6F2EC' },
+  ['ww....bb....ww',
+   'www..bbbb..www',
+   'wwwwbbbbbbwwww',
+   '.wwbbebbebbww.',
+   '..wbbbbbbbbw..',
+   '...bbbbbbbb...',
+   '....bfbbfb....',
+   '.....b..b.....']),
+  // World 3 — skeleton
+  sprite({ w:'#E8E2D4', d:'#8C8478', e:'#14110F' },
+  ['....wwww....',
+   '...wwwwww...',
+   '...wewwew...',
+   '...wwwwww...',
+   '....wddw....',
+   '....wwww....',
+   '.....ww.....',
+   '...wwwwww...',
+   '..w.wwww.w..',
+   '..w.wddw.w..',
+   '....wwww....',
+   '.....ww.....',
+   '....w..w....',
+   '....w..w....',
+   '...ww..ww...']),
+  // World 4 — ghost
+  sprite({ v:'#BFD3E6', d:'#8FA6BD', e:'#14110F', m:'#14110F' },
+  ['....vvvv....',
+   '..vvvvvvvv..',
+   '.vvvvvvvvvv.',
+   '.vveevveevv.',
+   '.vvvvvvvvvv.',
+   '.vvvvmmvvvv.',
+   '.vvvvvvvvvv.',
+   '.vvvvvvvvvv.',
+   '.vdvvdvvdvv.',
+   '.v.vv.vv.v..']),
+  // World 5 — imp
+  sprite({ r:'#E4675C', d:'#A33F36', h:'#F2A93B', e:'#14110F', w:'#F6F2EC' },
+  ['.h........h.',
+   '.hh..rr..hh.',
+   '..rrrrrrrr..',
+   '.rrrrrrrrrr.',
+   '.rreerreerr.',
+   '.rrrrrrrrrr.',
+   '..rrwwwwrr..',
+   '...rrrrrr...',
+   '..rrrddrrr..',
+   '..rr.dd.rr..',
+   '..d..dd..d..',
+   '.....dd.....']),
+];
+const WORLDS = [
+  { name:'Meadow',           sky:'#1E2A24', far:'#243B2E', ground:'#2E4634', lip:'#3A5940' },
+  { name:'Cavern',           sky:'#1A2028', far:'#232B36', ground:'#2A3340', lip:'#364253' },
+  { name:'Catacombs',        sky:'#241F1B', far:'#2E2721', ground:'#3A322A', lip:'#4A4034' },
+  { name:'Deep Keep',        sky:'#201A2E', far:'#291F3D', ground:'#33294D', lip:'#41345F' },
+  { name:'Chromatic Castle', sky:'#2A1A16', far:'#38221B', ground:'#452A20', lip:'#573528' },
+];
+function gvBurst(x, y, color){
+  for (let i = 0; i < 12; i++){
+    const a = (i / 12) * Math.PI * 2;
+    GV.fx.push({ kind:'p', x, y, vx:Math.cos(a) * (18 + Math.random() * 26),
+                 vy:Math.sin(a) * (18 + Math.random() * 26) - 20,
+                 born:performance.now(), color });
+  }
+}
+function gvToast(text){
+  GV.fx.push({ kind:'t', text, born:performance.now() });
+}
+function gvFrame(t){
+  GV.raf = null;
+  if (mode !== 'find') return;    // the loop dies with the tab; setMode restarts it
+  drawScene(t);
+  if (GV.phase === 'fight' && GV.run && !GV.run.state.over){
+    const ms = GAME.approachMs(GV.pace, GAME.levelFor(GV.xp));
+    if (ms != null && performance.now() - GV.spawnAt >= ms) gvBreach();
+  }
+  GV.raf = requestAnimationFrame(gvFrame);
+}
+function gvLoop(on){
+  if (on && !GV.raf) GV.raf = requestAnimationFrame(gvFrame);
+  if (!on && GV.raf){ cancelAnimationFrame(GV.raf); GV.raf = null; }
+}
+function drawScene(t){
+  const cv = document.getElementById('gvScene');
+  if (!cv) return;
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height, GY = 122;
+  const world = WORLDS[Math.min(tier, WORLDS.length - 1)];
+  const now = performance.now();
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = world.sky;  ctx.fillRect(0, 0, W, GY);
+  // fixed "stars"/dust — deterministic, so nothing twinkles or crawls
+  ctx.fillStyle = world.lip;
+  for (let i = 0; i < 14; i++) ctx.fillRect((i * 53 + 17) % W, (i * 31 + 9) % 52, 2, 2);
+  ctx.fillStyle = world.far;
+  for (let i = 0; i < 7; i++){
+    const bw = 34 + (i * 29) % 22, bh = 18 + (i * 41) % 26;
+    ctx.fillRect(i * 50 - 8, GY - bh, bw, bh);
+  }
+  ctx.fillStyle = world.ground; ctx.fillRect(0, GY, W, H - GY);
+  ctx.fillStyle = world.lip;    ctx.fillRect(0, GY, W, 3);
+
+  // hero, breathing gently (still under reduced motion)
+  const bob = REDUCED ? 0 : Math.round(Math.sin(t / 420) * 1.5);
+  blit(ctx, HERO, 28, GY - 32 + bob, 2);
+  // a pluck settling: a note bubble over the hero — canvas, not layout
+  if (now < GV.hearingUntil){
+    ctx.fillStyle = '#B58BF5';
+    ctx.font = 'bold 12px monospace'; ctx.textAlign = 'center';
+    ctx.fillText('♪', 40, GY - 40 + bob);
+  }
+
+  // monster position for this frame
+  const m = GV.monster;
+  if (m && GV.phase !== 'over'){
+    const sp = m.sp, mh = sp.h * 2;
+    let mx;
+    const ms = GAME.approachMs(GV.pace, GAME.levelFor(GV.xp));
+    if (GV.phase === 'breach'){
+      // it runs past the hero and off the screen
+      const p = Math.min(1, (now - GV.breachT) / 500);
+      mx = GV.mx - (GV.mx + 40) * p;
+    } else if (ms == null){
+      // chill: walk in, then loiter at a polite distance
+      const entry = Math.min(1, (now - GV.spawnAt) / 700);
+      mx = 300 - 80 * entry + (REDUCED ? 0 : Math.round(Math.sin(t / 380) * 2));
+    } else {
+      const p = Math.min(1, (now - GV.spawnAt) / ms);
+      mx = 300 - (300 - 70) * p;
+    }
+    // a miss makes it lunge and flash — feedback without any text flipping
+    let dx = 0;
+    if (m.taunt && now - m.taunt < 300 && !REDUCED){
+      dx = -Math.round(Math.sin(((now - m.taunt) / 300) * Math.PI) * 6);
+      ctx.fillStyle = 'rgba(228,103,92,.18)';
+      ctx.fillRect(mx - 6, GY - mh - 26, sp.rows[0].length * 2 + 12, mh + 26);
+    }
+    const zapAge = GV.phase === 'zap' ? now - GV.zapT : -1;
+    if (GV.phase !== 'zap' || zapAge < 160){
+      const mbob = REDUCED ? 0 : Math.round(Math.sin(t / 300) * 1.5);
+      blit(ctx, sp, mx + dx, GY - mh + mbob, 2);
+      GV.mx = mx; GV.my = GY - mh;
+      // the sign it carries: the note name, or a quaver for reading mode
+      const label = GV.promptKind === 'staff' ? '♪?' : (q ? q.name : '');
+      if (label){
+        const sw = 30, sx = mx + sp.rows[0].length - sw / 2 + dx, sy = GY - mh - 24;
+        ctx.fillStyle = '#3A2A12'; ctx.fillRect(sx, sy, sw, 17);
+        ctx.fillStyle = '#F2A93B'; ctx.fillRect(sx, sy, sw, 2);
+        ctx.font = 'bold 12px monospace'; ctx.textAlign = 'center';
+        ctx.fillStyle = '#F2A93B';
+        ctx.fillText(label, sx + sw / 2, sy + 13);
+      }
+    }
+    // the zap bolt: hero → monster in the animation's first 160ms
+    if (zapAge >= 0 && zapAge < 160){
+      const p = zapAge / 160;
+      const bx = 54 + (GV.mx - 54) * p, by = GY - 22 - Math.sin(p * Math.PI) * 26;
+      ctx.fillStyle = '#E5D6FF'; ctx.fillRect(bx, by, 4, 4);
+      ctx.fillStyle = '#B58BF5'; ctx.fillRect(bx - 4, by + 1, 4, 2);
+    }
+  }
+
+  // particles and toasts
+  const keep = [];
+  for (const f of GV.fx){
+    const age = now - f.born;
+    if (f.kind === 'p' && age < 550){
+      const s = age / 1000;
+      ctx.fillStyle = f.color;
+      ctx.globalAlpha = 1 - age / 550;
+      ctx.fillRect(f.x + f.vx * s, f.y + f.vy * s + 40 * s * s, 3, 3);
+      ctx.globalAlpha = 1;
+      keep.push(f);
+    } else if (f.kind === 't' && age < 1300){
+      ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
+      ctx.globalAlpha = Math.min(1, 2 - (age / 650));
+      ctx.fillStyle = '#F2A93B';
+      ctx.fillText(f.text, W / 2, 30 - (REDUCED ? 0 : age / 80));
+      ctx.globalAlpha = 1;
+      keep.push(f);
+    }
+  }
+  GV.fx = keep;
+}
+
+/* ---- bass-clef staff (the reading mode) ----
+   Drawn pixel-style on its own canvas. Bass guitar is written an octave
+   above where it sounds; BassGame.staffSpec owns that arithmetic. */
+const STAFF_INK = '#E8E2D4';
+function staffGeo(cv){
+  // hs = half a line-space; baseY = the bottom line (written G2)
+  return { hs:6, baseY:90, x0:40, x1:cv.width - 12 };
+}
+/* The F-clef as a sprite: the head dot ON the F line, the arc bulging right,
+   the tail sweeping down-left — 12×22 at scale 2 spans the staff like the
+   engraved glyph does. Drawn from a grid so it reads as ONE shape. */
+const CLEF = sprite({ c:STAFF_INK },
+  ['...ccccc....',
+   '..ccccccc...',
+   '.cc.....cc..',
+   'cc.......cc.',
+   '..........cc',
+   '..........cc',
+   '..........cc',
+   'ccc.......cc',
+   'cccc......cc',
+   'ccc.......cc',
+   '..........cc',
+   '.........cc.',
+   '.........cc.',
+   '........cc..',
+   '.......ccc..',
+   '......ccc...',
+   '.....ccc....',
+   '....ccc.....',
+   '...ccc......',
+   '..ccc.......',
+   '.cc.........',
+   'cc..........']);
+function paintStaff(ctx, g){
+  ctx.fillStyle = STAFF_INK;
+  for (let pos = 0; pos <= 8; pos += 2)
+    ctx.fillRect(g.x0, g.baseY - pos * g.hs - 1, g.x1 - g.x0, 2);
+  // Head row 8 of the sprite must sit on the F line (pos 6).
+  const fy = g.baseY - 6 * g.hs;
+  blit(ctx, CLEF, g.x0 - 32, fy - 16, 2);
+  // The two dots that bracket the F line, right of the clef body.
+  ctx.fillStyle = STAFF_INK;
+  ctx.fillRect(g.x0 - 4, g.baseY - 7 * g.hs - 1, 3, 3);
+  ctx.fillRect(g.x0 - 4, g.baseY - 5 * g.hs - 1, 3, 3);
+}
+function paintNote(ctx, g, midi, nx, opts){
+  const spec = GAME.staffSpec(midi);
+  const ny = g.baseY - spec.pos * g.hs;
+  ctx.fillStyle = STAFF_INK;
+  for (const lp of spec.ledgers)
+    ctx.fillRect(nx - 10, g.baseY - lp * g.hs - 1, 20, 2);
+  // note head: a chunky pixel ellipse
+  ctx.fillStyle = (opts && opts.color) || '#F2A93B';
+  ctx.fillRect(nx - 4, ny - 3, 8, 2);
+  ctx.fillRect(nx - 6, ny - 1, 12, 3);
+  ctx.fillRect(nx - 4, ny + 2, 8, 2);
+  // stem: up from low notes, down from high ones, like engraving does
+  if (spec.pos < 4) ctx.fillRect(nx + 4, ny - 22, 2, 21);
+  else ctx.fillRect(nx - 6, ny + 2, 2, 21);
+  if (spec.acc === '#'){
+    const ax = nx - 17, ay = ny - 6;
+    ctx.fillRect(ax + 1, ay, 2, 13);
+    ctx.fillRect(ax + 6, ay, 2, 13);
+    ctx.fillRect(ax - 2, ay + 3, 12, 2);
+    ctx.fillRect(ax - 2, ay + 8, 12, 2);
+  }
+  return spec;
+}
+function drawStaff(cv, midi, opts){
+  if (!cv) return;
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  const g = staffGeo(cv);
+  paintStaff(ctx, g);
+  const nx = Math.round((g.x0 + g.x1) / 2) + 6;
+  paintNote(ctx, g, midi, nx, {});
+  if (opts && opts.showName && q){
+    ctx.font = 'bold 12px monospace'; ctx.textAlign = 'right';
+    ctx.fillStyle = '#B58BF5';
+    ctx.fillText(q.name, cv.width - 6, cv.height - 6);
+  }
+}
+/** The reference card: the five open strings on one staff, named. */
+function drawClefRef(){
+  const cv = document.getElementById('gvClefRef');
+  if (!cv) return;
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  const g = staffGeo(cv);
+  paintStaff(ctx, g);
+  const opens = [[23,'B'], [28,'E'], [33,'A'], [38,'D'], [43,'G']];
+  ctx.font = 'bold 11px monospace';
+  opens.forEach(([midi, name], i) => {
+    const nx = g.x0 + 28 + i * Math.floor((g.x1 - g.x0 - 44) / (opens.length - 1));
+    paintNote(ctx, g, midi, nx, {});
+    ctx.fillStyle = '#A79F94'; ctx.textAlign = 'center';
+    ctx.fillText(name, nx, cv.height - 4);
+  });
 }
 function drawBoard(opts){
   const t = tierNow(), host = document.getElementById('fBoard');
@@ -366,12 +862,22 @@ function onStableNote(reading){
   const heardName = C.hzToNote(reading.hz).name;
   if (mode === 'find'){
     if (!q) return;
+    /* Committed turns: while a zap or a breach animation is settling, the
+       verdict on screen is the verdict — a stray attack in that window is
+       neither judged against the dying question nor allowed to flip the
+       banner. The window is ~1.2s; the next question re-opens judging. */
+    if (GV.phase === 'zap' || GV.phase === 'breach') return;
+    if (GV.run && GV.run.state.over) return;   // the restart button owns the screen
     const verdict = C.checkAnswer(reading, q.midi);
     const vEl = document.getElementById('fVerdict'), hEl = document.getElementById('fHeard');
     hEl.textContent = 'heard ' + heardName + C.hzToNote(reading.hz).octave +
       ' (' + reading.hz.toFixed(1) + ' Hz, ' + (reading.cents>0?'+':'') + Math.round(reading.cents) + ' cents)';
     if (verdict === 'correct'){
-      vEl.textContent = ['Yes!','Nailed it.','Correct!','That’s the one.'][Math.floor(Math.random()*4)];
+      const clean = wrongThisQ === 0;
+      vEl.textContent = clean
+        ? ['ZAP! ' + q.name + ' — first try.', q.name + ' — clean hit!',
+           'Direct hit. That was ' + q.name + '.', q.name + '! Monster dispatched.'][Math.floor(Math.random()*4)]
+        : 'There it is — ' + q.name + '. The hunt got there.';
       vEl.className = 'verdict ok';
       sess.find.score++;
       /* One stored answer per QUESTION, graded on the first attempt — the rule the
@@ -379,28 +885,27 @@ function onStableNote(reading){
          used to bank a wrong AND then a correct, so four questions all answered
          right came out as 50% of 8. countWrong() has already banked this
          question if the first attempt missed; banking again would double it. */
-      if (wrongThisQ === 0){
+      if (clean){
         sess.find.clean++; sess.find.streak++; sess.find.asked++;
         recordAnswer(true, q, performance.now() - qStart);
       }
+      gvJudge(clean ? 'clean' : 'dirty');
+      gvZap();
       updateFindStats();
-      drawBoard({ reveal:true });
-      setTimeout(newQuestion, 1100);
+      setTimeout(newQuestion, 1150);
     } else if (verdict === 'out-of-tune'){
       vEl.textContent = 'Right note! But it is ' + Math.abs(Math.round(reading.cents)) + ' cents ' +
         (reading.cents < 0 ? 'flat' : 'sharp') + ' — that string needs tuning.';
       vEl.className = 'verdict warn';
       outOfTuneThisQ = true;   // let the stall timer escalate to the tuner
     } else if (verdict === 'wrong-octave'){
-      const dir = reading.midi > q.midi ? 'higher up' : 'lower down';
       const article = /^[AEF]$/.test(heardName) ? 'an' : 'a';
       vEl.textContent = 'That’s ' + article + ' ' + heardName + ' — right note, wrong octave. You want the one 12 frets ' +
         (reading.midi > q.midi ? 'lower' : 'higher') + ', on the ' + q.sn + ' string.';
-      void dir;
       vEl.className = 'verdict no';
       countWrong();
     } else {
-      vEl.textContent = 'That’s ' + heardName + ' — keep looking for ' + q.name + '.';
+      vEl.textContent = 'That was ' + heardName + ' — the monster wants ' + q.name + '.';
       vEl.className = 'verdict no';
       countWrong();
     }
@@ -439,6 +944,8 @@ function onStableNote(reading){
 function countWrong(){
   wrongThisQ++;
   lastProgressAt = performance.now();
+  if (GV.monster) GV.monster.taunt = performance.now();   // it lunges; no text flips
+  gvJudge('wrong');                                       // the combo breaks
   if (wrongThisQ === 1){
     sess.find.streak = 0; sess.find.asked++;
     recordAnswer(false, q, performance.now() - qStart);
@@ -470,6 +977,13 @@ function recordAnswer(ok, question, elapsedMs){
       const key = question.sn + ':' + question.f;
       st.heat[key] = (st.heat[key] || 0) + 1;
     }
+    /* Rolling last-6 per POSITION, for the game's adaptive picker: the notes
+       being missed come back sooner. Bounded: ≤65 positions × 6 entries. */
+    st.noteRecent = st.noteRecent || {};
+    const nr = st.noteRecent[question.sn + ':' + question.f] ||
+               (st.noteRecent[question.sn + ':' + question.f] = []);
+    nr.push(ok ? 1 : 0);
+    if (nr.length > 6) nr.shift();
     if (ok && sess.find.streak > (st.bestStreak || 0)) st.bestStreak = sess.find.streak;
     st.tierRecent = st.tierRecent || {};
     const tr = st.tierRecent[tier] || (st.tierRecent[tier] = []);
@@ -555,11 +1069,11 @@ function setMode(m){
   document.getElementById('secDrill').classList.toggle('hidden', m !== 'drill');
   document.getElementById('secSongs').classList.toggle('hidden', m !== 'songs');
   const dc = document.getElementById('difficultyCard');
-  // Tiers/focus belong to Find it and Ear training; a drill or a song carries its own scope.
-  dc.classList.toggle('hidden', m === 'tuner' || m === 'drill' || m === 'songs');
-  // keep it below whichever exercise is showing, so it never jumps
-  const sec = document.getElementById(m === 'echo' ? 'secEcho' : 'secFind');
-  if ((m === 'find' || m === 'echo') && sec && sec.nextSibling !== dc) sec.parentNode.insertBefore(dc, sec.nextSibling);
+  // The tier/focus card serves Ear training only now: Fret Quest carries its
+  // own settings card inside #secFind. A drill or a song has its own scope.
+  dc.classList.toggle('hidden', m !== 'echo');
+  const sec = document.getElementById('secEcho');
+  if (m === 'echo' && sec && sec.nextSibling !== dc) sec.parentNode.insertBefore(dc, sec.nextSibling);
   // Say what this mode actually writes to, naming tabs the player can actually
   // click: the two apps were merged, so "the Theory Trainer" named nothing.
   // Drills keep their own record, so claiming they feed the quiz would be false.
@@ -585,6 +1099,10 @@ function setMode(m){
   const pre = pendingPreset;
   pendingPreset = null;
   if (m === 'find' && !q) newQuestion();
+  /* The scene animates only while it is on screen; the pace clock lives in
+     the same loop, so leaving the tab also freezes the monster honestly. */
+  gvLoop(m === 'find');
+  if (m === 'find') GV.spawnAt = performance.now();   // returning ≠ time served
   if (m === 'echo') newEcho();
   /* Same honesty as suspend(): checking the tuner mid-drill stops the click,
      so the run must give up its claim on it — otherwise the notes played
@@ -679,6 +1197,47 @@ function renderTierUI(){
   document.getElementById('tStrings').textContent = TUNING.names.join(' ');
   const t2 = document.getElementById('tStrings2');
   if (t2) t2.textContent = TUNING.names.join(' ');
+  renderGameUI();   // tier and focus are shared state; both UIs must agree
+}
+/** The game's settings card: world (the shared tier), pace, prompt, strings. */
+function renderGameUI(){
+  const ws = document.getElementById('gvWorld');
+  if (!ws) return;
+  ws.innerHTML = TIERS.map((t,i) =>
+    '<option value="' + i + '"' + (i===tier?' selected':'') + '>World ' + (i+1) + ' · ' +
+    WORLDS[i].name + ' — ' + t.label.replace(/^\d+ · /,'') + '</option>').join('');
+  const ps = document.getElementById('gvPaceSeg');
+  ps.innerHTML = GAME.PACE_ORDER.map(p =>
+    '<button data-p="' + p + '"' + (p===GV.pace?' class="on"':'') + '>' +
+    GAME.PACES[p].label + '</button>').join('');
+  ps.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+    if (b.dataset.p === GV.pace) return;
+    GV.pace = b.dataset.p; gvSave();
+    renderGameUI();
+    gvNewRun();          // hearts are a per-run idea; a new pace is a new run
+    newQuestion();
+  }));
+  document.getElementById('gvPaceNote').textContent = GAME.PACES[GV.pace].detail;
+  const rs = document.getElementById('gvPromptSeg');
+  rs.innerHTML = GAME.PROMPT_ORDER.map(p =>
+    '<button data-r="' + p + '"' + (p===GV.prompt?' class="on"':'') + '>' +
+    GAME.PROMPTS[p].label + '</button>').join('');
+  rs.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+    if (b.dataset.r === GV.prompt) return;
+    GV.prompt = b.dataset.r; gvSave();
+    renderGameUI();
+    // Re-pose the CURRENT question in the new writing; the answer stands.
+    if (q){ GV.promptKind = GAME.resolvePrompt(GV.prompt, Math.random); renderPrompt(); }
+  }));
+  const gs = document.getElementById('gvFocusSeg');
+  const strs = tierNow().strings;
+  gs.innerHTML = '<button data-f="">All strings</button>' +
+    strs.map(s => '<button data-f="' + s + '">' + s + ' only</button>').join('');
+  gs.querySelectorAll('button').forEach(b => {
+    b.classList.toggle('on', (b.dataset.f || null) === focus);
+    b.addEventListener('click', () => { focus = b.dataset.f || null; renderTierUI(); newQuestion(); });
+  });
+  drawClefRef();
 }
 
 /* One button, one click: it grants the mic AND starts what you came for. The
@@ -696,8 +1255,19 @@ document.getElementById('deviceSel').addEventListener('change', e => startListen
 document.getElementById('tierSel').addEventListener('change', e => {
   tier = +e.target.value; focus = null; persistTier(); renderTierUI(); newQuestion();
 });
+document.getElementById('gvWorld').addEventListener('change', e => {
+  tier = +e.target.value; focus = null; persistTier(); renderTierUI(); newQuestion();
+});
 document.getElementById('fHint').addEventListener('click', showHint);
-document.getElementById('fSkip').addEventListener('click', newQuestion);
+document.getElementById('fSkip').addEventListener('click', () => {
+  if (GV.run && GV.run.state.over) return;   // Play again is the only door now
+  gvJudge('skip');                           // walks away; the combo goes too
+  newQuestion();
+});
+document.getElementById('gvRestart').addEventListener('click', () => {
+  gvNewRun();
+  newQuestion();
+});
 document.getElementById('ePlay').addEventListener('click', () => { if (echoTarget != null) playNote(echoTarget); });
 document.getElementById('eNext').addEventListener('click', newEcho);
 document.getElementById('eShow').addEventListener('click', () => {
@@ -709,12 +1279,16 @@ document.getElementById('eShow').addEventListener('click', () => {
   playNote(echoTarget);
 });
 renderTierUI();
+gvNewRun();   // XP loaded, hearts full, before the first question can spawn
 
 // Offer help when the player stops making progress — whether that is silence,
 // or being stuck holding one wrong note (which fires only a single verdict).
 // Once they've already missed, help arrives sooner.
 setInterval(() => {
   if (mode !== 'find' || !q || hintLevel >= 2) return;
+  // Not while a verdict settles, and never over the game-over screen.
+  if (GV.phase === 'zap' || GV.phase === 'breach') return;
+  if (GV.run && GV.run.state.over) return;
   const stalledFor = performance.now() - lastProgressAt;
   if (stalledFor > (wrongThisQ > 0 ? 4500 : 10000)) showHint();
 }, 700);
@@ -2839,6 +3413,8 @@ function gateFor(m){
     run away while off-screen and come back pointing at the wrong section. */
 function suspend(){
   if (A.timer){ clearInterval(A.timer); A.timer = null; }
+  // The game scene must not animate (or run its pace clock) behind a Learn tab.
+  gvLoop(false);
   // A set run's clock is wall-time like a song's: off-screen it would run away
   // and come back pointing at the wrong song, so it stops honestly instead.
   if (ST.run && ST.t0 != null && !ST.finished){ setFinish('stopped'); return; }
@@ -2859,6 +3435,9 @@ function resume(){
      already failed on a note the player never aimed at it. */
   tracker = C.createTracker({ stableMs:150 });
   if (DR.phase === 'running') DR.lastAdvanceAt = performance.now();
+  /* Coming back to the game: the monster's clock must not count the time
+     spent away — that would be a heart lost to a tab switch. */
+  if (mode === 'find'){ GV.spawnAt = performance.now(); gvLoop(true); }
 }
 
 /** Enter a Live mode. Gates on the first one ever asked for, and never again. */
