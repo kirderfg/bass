@@ -3506,6 +3506,7 @@ window.setMode = setMode;
 window.showHint = showHint;
 window.renderTierUI = renderTierUI;
 window.A = A;
+window.GV = GV;   // scene state, so a harness can pin an exact animation frame
 /* trainer/test/shell.test.js asks what happened to the click, the drill run and
    the song clock when the screen went to a Learn tab. Those are the objects that
    hold the answer, and timingReport/timingLine are how a run's verdict is
