@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main, claude/bass-training-app-9rsqe9]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
