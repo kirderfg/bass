@@ -321,9 +321,6 @@ let saidFiveThisQ = false, tickedFuseThisQ = false;
    Name mode stays sharps: its labels and pool are name-based. */
 let qFlat = false;
 const FLAT_DISP = { 'C#':'D♭', 'D#':'E♭', 'F#':'G♭', 'G#':'A♭', 'A#':'B♭' };
-/* The first time a hint draws the fretboard, the hint line points at it —
-   beginners kept missing that the board exists below the fold. */
-let boardTipped = false;
 /* `score` = questions you eventually found; `clean` = found on the first attempt,
    which is the one the stored accuracy is built from. */
 const sess = { find:{ score:0, clean:0, streak:0, asked:0 }, echo:{ score:0, streak:0 } };
@@ -630,18 +627,12 @@ function fretWinPositions(range){
   }
   return n;
 }
-/** A settings change starts a new run: bring the scene back into view, or the
-    fresh fuse burns off-screen above the settings card the player is still
-    looking at. The CARD top scrolls into view (its scroll-margin-top clears
-    the sticky header), so the HUD row — stage lights, level, XP — is visible
-    too, not just the scene's bottom edge. Soundcheck skips the jump entirely:
-    no fuse burns there, so nothing urgent is happening off-screen. */
-function gvScrollScene(){
-  if (mode !== 'find') return;
-  if (GV.pace === 'chill') return;
-  const el = document.querySelector('#secFind .gv-card');
-  if (el && el.scrollIntoView) el.scrollIntoView({ block:'start', behavior: REDUCED ? 'auto' : 'smooth' });
-}
+/* There is no gvScrollScene any more. It existed because a settings change
+   started a new run under a console that had already been pushed off the
+   screen by the settings card itself — the fix for a layout that overflowed.
+   The console is fixed-height and always on screen now, so scrolling the page
+   on the player's behalf would only ever take something away from them. The
+   game scrolls NOTHING: no new run, no hint, no verdict, no lights-out. */
 function pool(){
   const t = tierNow();
   let strs = t.strings;
@@ -720,9 +711,20 @@ function newQuestion(){
   const v = document.getElementById('fVerdict');
   v.innerHTML = '&nbsp;'; v.className = 'verdict';
   document.getElementById('fHeard').innerHTML = '&nbsp;';
-  document.getElementById('fBoard').innerHTML = '';
+  // (the coach slot is renderPrompt's: the staff, or the unmarked strip)
   gvSpawn();
   updateFindStats();
+}
+/** Show or hide the question staff. The coach slot holds ONE thing at a time
+    — the staff, or the hint strip — and the slot's height is reserved either
+    way, so swapping them costs the layout nothing. */
+function gvShowStaff(on){
+  const wrap = document.getElementById('gvStaffWrap');
+  if (wrap) wrap.classList.toggle('hidden', !on);
+  if (on){
+    const board = document.getElementById('fBoard');
+    if (board) board.innerHTML = '';
+  }
 }
 function renderPrompt(){
   const wrap = document.getElementById('gvStaffWrap');
@@ -736,17 +738,19 @@ function renderPrompt(){
        instruction re-announced it over every question. */
     subWriteIfChanged(staffAnswered
       ? 'Read it off the staff, find it on the neck, play it.'
-      : 'Read it off the staff, find it on the neck, play it. New to the staff? ' +
-        '<a href="#" class="gv-staffhelp-link">Open ‘Reading the staff — bass clef in one minute’</a>.',
+      : 'Read it off the staff and play it. New to this? ' +
+        '<a href="#" class="gv-staffhelp-link">The one-minute staff guide</a>.',
       'staff');
     drawStaff(document.getElementById('gvStaff'), q.midi, { showName:false, flat:qFlat });
-    wrap.classList.remove('hidden');
+    gvShowStaff(true);
   } else {
     // The note letter is the thing being learned — it gets the root amber;
     // the string letter stays chrome-violet.
     document.getElementById('fQ').innerHTML = 'Play <b class="gv-note">' + disp(q.name) + '</b> on the <b>' + q.sn + '</b> string';
     subWriteIfChanged('Find it on the neck and play it.', 'name');
-    wrap.classList.add('hidden');
+    /* The coach slot opens on the string being hunted, unmarked: a picture the
+       hint can land on rather than a box the hint has to fill. */
+    drawBoard({ idle:true });
   }
 }
 /** `auto === true` marks the stall/miss ladder's own calls: the auto-ladder
@@ -765,9 +769,10 @@ function showHint(auto){
        so this branch wins WHATEVER rung the ladder is on. Both hypotheses
        stay open: a finger a few mm off pulls the same cents as a slack
        string, and "it is your tuning" sent players off to retune a bass
-       that was fine. */
-    subWrite('You are finding the right note, but it rings off — check <b>your fretting hand ' +
-      'or that string’s tuning</b>. If the open string is off too, the Tuner tab will show it.');
+       that was fine. Two lines, because the coaching line is a fixed slot
+       now: the Tuner sentence was the third and said the least. */
+    subWrite('Right note, but it rings off — check <b>your fretting hand, or that ' +
+      'string’s tuning</b>.');
     lastProgressAt = performance.now();
     outOfTuneThisQ = false;
     return;
@@ -789,22 +794,9 @@ function showHint(auto){
      already waived it (the tuning waiver) — pricing either is a false bill. */
   const cost = firstUse && wrongThisQ === 0 && !tuneWaivedThisQ
     ? ' (a hint waives first-try credit)' : '';
-  /* The first hint that draws the fretboard points at it — the board sits
-     below the stats, and beginners kept not finding it. Once is enough.
-     The tail slots in BEFORE the sentence's period (no period-then-dash
-     stitching): "…between fret 1 and 3 — see the board below." */
-  const boardTip = () => {
-    const tail = boardTipped ? '' : ' — see the board below';
-    boardTipped = true;
-    return tail;
-  };
-  /* Scrolled AFTER the hint line is written: the text above the board wraps
-     and shifts layout, and scrolling first left the board's bottom rows
-     under the fixed tab bar (#fBoard's scroll-margin-bottom clears it). */
-  const scrollBoard = () => {
-    const board = document.getElementById('fBoard');
-    if (board && board.scrollIntoView) board.scrollIntoView({ block:'nearest' });
-  };
+  /* No "see the board below" any more, and nothing is scrolled to: the strip
+     draws in the coach slot the player is already looking at, one row under
+     this sentence. Pointing at it would be pointing at itself. */
   /* Reading mode gets a three-rung ladder: NAME → range → reveal. The name
      alone converts the question into one the player may already know how to
      answer — so that rung gives nothing else away. Name mode: range → reveal. */
@@ -826,16 +818,13 @@ function showHint(auto){
     lo = Math.max(0, Math.min(lo, mf - span, q.f));
     const hi = Math.min(mf, lo + span);
     drawBoard({ range:[lo, hi] });
-    subWrite('Hint: it’s between fret ' + lo + ' and ' + hi + boardTip() + '.' + cost);
-    scrollBoard();
+    subWrite('Hint: it’s between fret ' + lo + ' and ' + hi + '.' + cost);
   } else {
     revealedThisQ = true;   // a shown answer — the correct that follows is not a recall
     drawBoard({ reveal:true });
     /* The reveal SPEAKS the location too: a screen-reader player cannot read
-       the highlighted board, and "right here" points at nothing they can hear. */
-    subWrite('It is right here — fret ' + q.f + ' on the ' + q.sn +
-      ' string' + boardTip() + '. Play it, then it moves on.' + cost);
-    scrollBoard();
+       the highlighted strip, and "right here" points at nothing they can hear. */
+    subWrite('It is right here — fret ' + q.f + ' on the ' + q.sn + ' string.' + cost);
   }
 }
 
@@ -859,7 +848,12 @@ function gvZap(){
   GV.phase = 'zap';
   GV.zapT = performance.now();
   GV.zapHit = false;   // the spark burst waits for the ball to LAND (drawScene)
-  if (GV.promptKind === 'staff') drawStaff(document.getElementById('gvStaff'), q.midi, { showName:true, flat:qFlat });
+  if (GV.promptKind === 'staff'){
+    drawStaff(document.getElementById('gvStaff'), q.midi, { showName:true, flat:qFlat });
+    /* The named staff comes back over any hint strip: the answer is in, so
+       the picture the player should leave with is the one on the page. */
+    gvShowStaff(true);
+  }
 }
 /** The fuse burnt out before the note came. A failed recall, banked
     exactly like a first-attempt miss (unless a miss already did). */
@@ -889,6 +883,9 @@ function gvBreach(){
     pageRead = ' — written ' + GAME.staffPosName(
       GAME.staffSpec(q.midi, qFlat ? { prefer:'flat' } : undefined).pos);
     drawStaff(document.getElementById('gvStaff'), q.midi, { showName:true, flat:qFlat });
+    /* The named staff comes back over any hint strip: the answer is in, so
+       the picture the player should leave with is the one on the page. */
+    gvShowStaff(true);
   }
   v.textContent = 'The fuse burnt out — that was ' + dispQ() + ', ' +
     q.sn + ' string, fret ' + q.f + pageRead + lights + '.';
@@ -947,17 +944,17 @@ function gvGameOver(lastNote){
   subWrite('');
   const v = document.getElementById('fVerdict');
   v.innerHTML = '&nbsp;'; v.className = 'verdict';
-  const wrap = document.getElementById('gvStaffWrap');
-  if (wrap) wrap.classList.add('hidden');
+  // The coach slot empties with the question it belonged to.
+  gvShowStaff(false);
+  document.getElementById('fBoard').innerHTML = '';
   // Dead controls read as dead: Hint and Skip disable until the restart.
   document.getElementById('fHint').disabled = true;
   document.getElementById('fSkip').disabled = true;
   updateBestNote();
-  /* Bring LIGHTS OUT into view BEFORE moving focus: the over screen replaced
-     a scene the player may have scrolled away from, and a focus() first would
-     scroll on its own terms and clip the title under the sticky header. */
-  const scr = document.querySelector('#secFind .gv-screen');
-  if (scr && scr.scrollIntoView) scr.scrollIntoView({ block:'center', behavior: REDUCED ? 'auto' : 'smooth' });
+  /* LIGHTS OUT is drawn inside a stage that has not moved since the run
+     started, so there is nothing to bring into view — the scrollIntoView that
+     used to sit here was compensating for a console the settings card had
+     already pushed off the screen. */
   const restart = document.getElementById('gvRestart');
   /* Deferred ~400ms: focusing immediately made some screen readers interrupt
      the queued "Lights out —" announcement with the button's name. */
@@ -1161,40 +1158,102 @@ document.addEventListener('visibilitychange', () => {
     GV.hiddenAt = null;
   }
 });
-/** Integer pixel scaling BOTH axes: snap the scene's display size to a whole
-    multiple of its 320×150 backing store so every game pixel is exactly N
-    screen pixels. Width alone was not enough — height:auto rounded through
-    the border box to 151.06px and duplicated one row on every phone, so the
-    height is now set explicitly. The wrapper is sized (auto-centred by CSS)
-    so the over-screen overlay stays congruent. */
+/* ---- fitting the console to the screen ----
+   The console's height must be CONSTANT while playing, and it must fit
+   between the sticky header and the bottom nav (which is a left rail on a
+   desktop, hence --nav-h:0 there). Two numbers are free to answer the
+   VIEWPORT — never the game state — and this is where both are chosen:
+
+     · the scene's integer pixel scale (1× / 2× / 3× of the 320×150 backing
+       store: every game pixel must be a whole number of screen pixels, so
+       the choice is which whole number, not whether);
+     · --gv-media-h, the coach slot, on viewports too short to hold a
+       full-size staff.
+
+   Width alone used to pick the scale, which is how a 1280×800 laptop ended
+   up with a 962×452 stage and a console 792px tall before a hint had even
+   been asked for. Height is the other half of the answer now: walk a ladder
+   of (coach slot, scene size) pairs, best first, and take the first rung
+   whose whole console fits between the header and the nav. */
+const GV_MEDIA_STEPS = [154, 138, 122, 106, 96, 84];
+const GV_INFO_MIN = 300;    // the read column never squeezes below this
+function gvNavH(){
+  const v = parseFloat(getComputedStyle(document.documentElement)
+    .getPropertyValue('--nav-h'));
+  return isNaN(v) ? 0 : v;
+}
 function gvFitScene(){
   const cv = document.getElementById('gvScene');
   const wrap = cv && cv.parentElement;
-  if (!wrap) return;
-  wrap.style.width = '';
-  const w = wrap.clientWidth;
-  if (!w) return;   // section hidden — setMode('find') calls again on entry
-  const scale = Math.floor((w - 2) / 320);                // 2 = the 1px borders
-  // The HUD row and the fuse bar cap to the snapped scene width too — on a
-  // desktop card they otherwise run 1000px wide over a 644px scene.
-  const hud = document.querySelector('#secFind .gv-hud');
-  const fuse = document.querySelector('#secFind .gv-fusewrap');
-  if (scale < 1){
-    /* A container narrower than the backing store (sub-360px phones): the
-       canvas falls back to max-width:100% — a sub-1× scale cannot be integer
-       anyway, and overflowing the card is worse than a soft blit. */
-    cv.style.width = '100%';
-    cv.style.height = 'auto';
-    for (const el of [hud, fuse]) if (el){ el.style.maxWidth = ''; el.style.margin = ''; }
-    return;
-  }
-  cv.style.width = (320 * scale) + 'px';
-  cv.style.height = (150 * scale) + 'px';
-  wrap.style.width = (320 * scale + 2) + 'px';
-  for (const el of [hud, fuse]) if (el){
-    el.style.maxWidth = (320 * scale + 2) + 'px';
-    el.style.marginLeft = 'auto'; el.style.marginRight = 'auto';
-  }
+  const card = document.querySelector('#secFind .gv-card');
+  const sec = document.getElementById('secFind');
+  if (!wrap || !card || !sec) return;
+  const cardW = card.clientWidth;
+  if (!cardW) return;   // section hidden — setMode('find') calls again on entry
+  const cs = getComputedStyle(card);
+  const inner = cardW - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const wide = window.matchMedia('(min-width:1000px)').matches;
+  /* On a desktop the stage shares the card with the read column, so the width
+     it may claim is what is left after that column and the gap. */
+  const forStage = wide ? inner - GV_INFO_MIN - parseFloat(cs.columnGap || 20) : inner;
+  const maxScale = Math.floor((forStage - 2) / 320);      // 2 = the 1px borders
+
+  /* A scene size is a whole multiple of the 320×150 backing store — every
+     game pixel is exactly N screen pixels — except on screens too short to
+     hold even 1×, where the last two rungs give up integer scaling rather
+     than give up the console. `null` = fall back to the card's width, which
+     is what a sub-320px phone has always done. */
+  const setScene = (c) => {
+    if (!c){
+      cv.style.width = '100%'; cv.style.height = 'auto';
+      wrap.style.width = ''; sec.style.removeProperty('--gv-stage-w');
+      return;
+    }
+    cv.style.width = c.w + 'px';
+    cv.style.height = c.h + 'px';
+    wrap.style.width = (c.w + 2) + 'px';
+    // The HUD and the fuse are the stage's own instruments: the column they
+    // share is exactly the scene's width, so they line up with its edges.
+    sec.style.setProperty('--gv-stage-w', (c.w + 2) + 'px');
+  };
+  const setMedia = (h) => sec.style.setProperty('--gv-media-h', h + 'px');
+  /* Fits = it sits above the bottom nav. Measured in DOCUMENT coordinates,
+     because "fits" must mean "fits with the page at the top" — the whole point
+     is that the page never has to move. Two targets: the whole console, and —
+     for a screen too short for that — the PLAY area, HUD through the buttons.
+     The session figures below them are a lookback, not part of the loop, and
+     they are the one thing allowed off the bottom of a small phone. */
+  const limit = () => window.innerHeight - gvNavH() - 4;
+  const bottomOf = (el) => el.getBoundingClientRect().bottom + (window.scrollY || 0);
+  const ctl = document.querySelector('#secFind .gv-controls');
+  const fitsCard = () => bottomOf(card) <= limit();
+  const fitsPlay = () => !ctl || bottomOf(ctl) <= limit();
+
+  /* The ladder, best rung first. Full-size coach slot before a big scene — the
+     staff's legibility is a floor, the scene's size is a preference — and both
+     of those before giving up integer scaling, which is why the ladder is run
+     twice: once over whole-numbered scenes, and only if not even the PLAY area
+     (HUD through the buttons) can be shown that way, again over two fractional
+     sizes. A phone that has to choose keeps its pixels square and lets the
+     session figures sit below the fold; a phone too short even for that gets a
+     softer stage instead of a console it has to chase down the page. */
+  const ladder = (scenes) => {
+    let play = null;
+    for (const h of GV_MEDIA_STEPS){
+      for (const c of scenes){
+        setMedia(h); setScene(c);
+        if (fitsCard()) return 'card';
+        if (!play && fitsPlay()) play = [h, c];
+      }
+    }
+    if (play){ setMedia(play[0]); setScene(play[1]); return 'play'; }
+    return null;
+  };
+  const whole = [];
+  for (let s = maxScale; s >= 1; s--) whole.push({ w:320 * s, h:150 * s });
+  if (!whole.length) whole.push(null);      // narrower than 1×: card-width fit
+  if (ladder(whole)) return;
+  ladder([120, 96].map(px => ({ w: Math.round(px * 320 / 150), h: px })));
 }
 window.addEventListener('resize', gvFitScene);
 /** A circle built from 2px blocks, optionally rim-only — bubbles, pixel-style. */
@@ -2091,30 +2150,71 @@ function drawClefRef(){
     ctx.fillText(name, nx, cv.height - 4);
   });
 }
+/** The hint picture: ONE string — the one the question already named — with
+    the answer's neighbourhood framed on it.
+
+    It used to be the whole 5×13 fretboard: 146px on a phone, 400px on a
+    desktop, arriving mid-question and pushing the stage off the screen. Most
+    of it was answering a question nobody asked, because the question names the
+    string. So the strip draws the target string only (`strings:[q.sn]`, which
+    is why every marker indexes si:0) and spends its height on marker size
+    instead of rows. It lives in the console's reserved coach slot, so drawing
+    it moves nothing.
+
+    `bare` (svg only, no label column and no scroll box): the strip is sized to
+    fit its column, and CSS scales the SVG — vector, so nothing blurs and
+    nothing scrolls — while the string's name is one DOM chip beside it.
+
+    `idle` draws the same strip with nothing marked on it, which is what a
+    name-mode question shows from the moment it is posed: the slot is never an
+    empty box, the player can see the string they are hunting on, and a hint
+    then lands its window on a picture that is ALREADY THERE — the difference
+    between the two states is the answer, not the furniture. */
 function drawBoard(opts){
   const t = tierNow(), host = document.getElementById('fBoard');
   if (!q){ host.innerHTML = ''; return; }
-  const names = TUNING.names;
-  const dimStrings = [];
-  for (let si = 0; si < names.length; si++) if (!t.strings.includes(names[si])) dimStrings.push(si);
-
   const markers = [];
-  if (opts.reveal){
-    markers.push({ si:q.si, fret:q.f, kind:'correct', label:dispQ() });
-  } else if (opts.range){
-    // Mark the search area on the target string without giving away the fret.
+  let win, label;
+  if (opts.idle){
+    /* The whole string is "the window" while nothing has been hinted: same
+       geometry as a hint, so the strip is the same picture in both states and
+       the hint reads as the viewfinder CLOSING IN on the answer rather than as
+       a new object arriving. */
+    win = [0, t.maxFret]; label = false;
+  } else if (opts.reveal){
+    markers.push({ si:0, fret:q.f, kind:'correct', label:dispQ() });
+    win = [q.f, q.f];
+    /* No pill on the reveal: a one-fret window is narrower than its own label,
+       so the badge on the answer's dot ended up printed over the words. The
+       named dot and the framed fret number are the label. */
+    label = false;
+  } else {
+    // The search area, framed and question-marked — where, not which.
     for (let f = opts.range[0]; f <= opts.range[1]; f++){
-      markers.push({ si:q.si, fret:f, kind:'asked', label:'?' });
+      markers.push({ si:0, fret:f, kind:'asked', label:'?' });
     }
+    win = opts.range;
+    /* No pill here either: at the strip's scale the label's badge sits on top
+       of the ? markers it is labelling. The frame, the question marks and the
+       fret numbers under them say "somewhere in here" without it — and the
+       sentence above says it in words. */
+    label = false;
   }
-  const wide = window.matchMedia('(min-width:1000px)').matches;
   BassNeck.render(host, {
-    strings: names, fromFret:0, toFret:t.maxFret, scale: wide ? 'desk' : 'read',
-    markers, dimStrings,
-    title: opts.reveal ? (dispQ() + ' is on the ' + q.sn + ' string, fret ' + q.f)
-                       : 'the ' + q.sn + ' string, frets ' + (opts.range ? opts.range.join(' to ') : ''),
-    scrollToFret: q.f,
+    strings: [q.sn], fromFret:0, toFret:t.maxFret, scale:'strip', bare:true,
+    markers, window: win, windowLabel: label,
+    title: opts.idle ? ('the ' + q.sn + ' string, frets 0 to ' + t.maxFret)
+         : opts.reveal ? (dispQ() + ' is on the ' + q.sn + ' string, fret ' + q.f)
+         : 'the ' + q.sn + ' string, frets ' + opts.range.join(' to '),
   });
+  /* The string's name, beside the strip the way the board's label column
+     names its rows — a lone strip of wood does not say which string it is. */
+  const chip = document.createElement('span');
+  chip.className = 'gv-strip-str neck-label' +
+    (q.sn === TUNING.names[0] ? ' is-lowest' : '');
+  chip.textContent = q.sn;
+  host.insertBefore(chip, host.firstChild);
+  gvShowStaff(false);   // one occupant per slot: the strip has it now
 }
 function updateFindStats(){
   document.getElementById('fScore').textContent = sess.find.score;
@@ -2611,7 +2711,7 @@ function renderTierUI(){
     const on = (b.dataset.f || null) === focus;
     b.classList.toggle('on', on);
     b.setAttribute('aria-pressed', String(on));
-    b.addEventListener('click', () => { focus = b.dataset.f || null; renderTierUI(); gvNewRun(); newQuestion(); gvScrollScene(); });
+    b.addEventListener('click', () => { focus = b.dataset.f || null; renderTierUI(); gvNewRun(); newQuestion(); });
   });
   document.getElementById('tStrings').textContent = TUNING.names.join(' ');
   const t2 = document.getElementById('tStrings2');
@@ -2630,6 +2730,19 @@ function updateBestNote(){
   if (!el) return;
   el.textContent = 'Best ' + GAME.PACES[GV.pace].label + ' set at this difficulty: ' +
     (GV.best[gvBestKey()] || 0) + ' 1st-try finds';
+}
+/** The whole setup in one line, on the closed settings summary: the panel is
+    shut during play, so what you are playing has to be readable without
+    opening it. Stage · pace · how the note is written · which strings · which
+    frets — the five things that change what the game asks of you. */
+function updateSetupNow(){
+  const el = document.getElementById('gvSetupNow');
+  if (!el) return;
+  const bits = ['Stage ' + (tier + 1), GAME.PACES[GV.pace].label,
+                GAME.PROMPTS[GV.prompt].label,
+                focus ? focus + ' string only' : 'all strings'];
+  if (GV.frets !== 'all') bits.push('frets ' + FRET_WINS[GV.frets].label);
+  el.textContent = bits.join(' · ');
 }
 /** Sync one segment's pressed state IN PLACE — rebuilding buttons with
     innerHTML on every change dropped keyboard focus mid-settings. */
@@ -2668,7 +2781,6 @@ function renderGameUI(){
       renderGameUI();
       gvNewRun();          // stage lights are a per-set idea; a new pace is a new set
       newQuestion();
-      gvScrollScene();     // the fresh fuse must not burn off-screen
     }));
   }
   syncSeg(ps, 'data-p', k => k === GV.pace);
@@ -2686,7 +2798,6 @@ function renderGameUI(){
       // same way the pace handler does — no mid-run key drift.
       gvNewRun();
       newQuestion();
-      gvScrollScene();
     }));
   }
   syncSeg(rs, 'data-r', k => k === GV.prompt);
@@ -2703,7 +2814,7 @@ function renderGameUI(){
       gs.innerHTML = '<button data-f="">All strings</button>' +
         strs.map(s => '<button data-f="' + s + '">' + s + ' only</button>').join('');
       gs.querySelectorAll('button').forEach(b =>
-        b.addEventListener('click', () => { focus = b.dataset.f || null; renderTierUI(); gvNewRun(); newQuestion(); gvScrollScene(); }));
+        b.addEventListener('click', () => { focus = b.dataset.f || null; renderTierUI(); gvNewRun(); newQuestion(); }));
       if (hadFocus != null){
         const back = gs.querySelector('button[data-f="' + hadFocus + '"]') || gs.firstElementChild;
         if (back) back.focus();
@@ -2728,7 +2839,6 @@ function renderGameUI(){
         // banked under its own best-run key.
         gvNewRun();
         newQuestion();
-        gvScrollScene();
       }));
     }
     /* A window is dead when it intersects fewer than 4 positions on this
@@ -2796,6 +2906,7 @@ function renderGameUI(){
     }));
   }
   syncSeg(hs, 'data-h', k => k === GV.hints);
+  updateSetupNow();
   updateBestNote();
   drawClefRef();
   gvFitScene();   // entering/re-rendering the game: keep the pixels integer
@@ -2821,10 +2932,10 @@ document.getElementById('deviceSel').addEventListener('change', e => startListen
    control) starts a new run, exactly like the pace handler — the best-run
    key was snapshotted at run start and must never drift mid-run. */
 document.getElementById('tierSel').addEventListener('change', e => {
-  tier = +e.target.value; focus = null; persistTier(); renderTierUI(); gvNewRun(); newQuestion(); gvScrollScene();
+  tier = +e.target.value; focus = null; persistTier(); renderTierUI(); gvNewRun(); newQuestion();
 });
 document.getElementById('gvWorld').addEventListener('change', e => {
-  tier = +e.target.value; focus = null; persistTier(); renderTierUI(); gvNewRun(); newQuestion(); gvScrollScene();
+  tier = +e.target.value; focus = null; persistTier(); renderTierUI(); gvNewRun(); newQuestion();
 });
 document.getElementById('fHint').addEventListener('click', showHint);
 document.getElementById('fSkip').addEventListener('click', () => {
@@ -2843,6 +2954,9 @@ document.getElementById('fSkip').addEventListener('click', () => {
     skipPage = ' — written ' + GAME.staffPosName(
       GAME.staffSpec(q.midi, qFlat ? { prefer:'flat' } : undefined).pos);
     drawStaff(document.getElementById('gvStaff'), q.midi, { showName:true, flat:qFlat });
+    /* The named staff comes back over any hint strip: the answer is in, so
+       the picture the player should leave with is the one on the page. */
+    gvShowStaff(true);
   }
   /* A skip must not refill the fuse: whatever was left is what the next
      question starts with (gvSpawn consumes the carry) — MINUS a ~1s toll,
@@ -5132,6 +5246,11 @@ window.BassLive = { mount, showMode, armMic: startListening, suspend, resume, pr
 window.setMode = setMode;
 window.showHint = showHint;
 window.renderTierUI = renderTierUI;
+/* The console's height must not move when a verdict paints, and the longest
+   verdict the game can write is a burnt fuse's correction — three facts and a
+   lights count. Waiting a real fuse out per case would make that test minutes
+   long; this poses the same painted state directly. */
+window.gvBreach = gvBreach;
 window.A = A;
 window.GV = GV;   // scene state, so a harness can pin an exact animation frame
 /* trainer/test/shell.test.js asks what happened to the click, the drill run and

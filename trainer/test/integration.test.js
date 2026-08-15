@@ -2,7 +2,7 @@
    assert the app reacts correctly. Run with `npm run test:e2e`. */
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { openApp, openWithNote, until } = require('./harness.js');
+const { openApp, openWithNote, until, openSettings } = require('./harness.js');
 
 // Equal-temperament reference pitches (A4 = 440).
 const E1 = 41.203, G2 = 97.999, A1 = 55.000, G3 = 195.998;
@@ -262,32 +262,70 @@ test('the tuner does not contradict itself on a badly slack string', async () =>
   } finally { await app.close(); }
 });
 
-test('the string labels stay visible when the fretboard scrolls to a hint', async () => {
-  // Regression: scrolling the board to reveal a high fret painted the cells
-  // over the sticky string labels, so the reveal showed an unlabelled grid.
+test('a reveal hint lands on screen, legible, without the page moving', async () => {
+  // Replaces "the string labels stay visible when the fretboard scrolls to a
+  // hint". That test guarded a 5×13 board that had to be SCROLLED to — the
+  // scroll is exactly what the player complained about ("it scrolls down and I
+  // lose sight of the main part"), and the board it scrolled to is gone.
+  //
+  // Same intent, stronger: the hint must be on screen where it is drawn, big
+  // enough to read at arm's length, and it must cost the page no movement at
+  // all — nothing about the console may shift when it appears.
   const app = await openWithNote(G2);
   try {
     await app.page.evaluate(() => {
       setMode('find');
       tier = 4; focus = null; renderTierUI();
       q = { si: 2, f: 11, midi: 66, sn: 'A', name: 'F#' };
-      hintLevel = 1; showHint();          // jump to the full reveal
-      // The game scene sits above the board now, so on a phone viewport the
-      // reveal starts below the fold; elementFromPoint needs it on screen.
-      document.getElementById('fBoard').scrollIntoView({ block: 'center' });
     });
-    await app.page.waitForTimeout(400);
+    await app.page.waitForTimeout(200);
+    const before = await app.page.evaluate(() => ({
+      scrollTop: document.scrollingElement.scrollTop,
+      card: Math.round(document.querySelector('.gv-card').getBoundingClientRect().height),
+      screen: Math.round(document.querySelector('.gv-screen').getBoundingClientRect().top),
+    }));
 
-    const labelsVisible = await app.page.evaluate(() => {
-      const labels = [...document.querySelectorAll('#fBoard .neck-label')];
-      if (!labels.length) return 'no labels rendered';
-      return labels.every(l => {
-        const r = l.getBoundingClientRect();
-        const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-        return top === l || l.contains(top);
-      });
+    await app.page.evaluate(() => { hintLevel = 1; showHint(); });   // the full reveal
+    await app.page.waitForTimeout(300);
+
+    const r = await app.page.evaluate(() => {
+      const svg = document.querySelector('#fBoard .neck-svg');
+      const dot = document.querySelector('#fBoard .neck-marker.is-correct .neck-dot');
+      const label = document.querySelector('#fBoard .neck-marker.is-correct .neck-dot-label');
+      const str = document.querySelector('#fBoard .gv-strip-str');
+      const vis = el => {
+        if (!el) return null;
+        const b = el.getBoundingClientRect();
+        const navH = parseFloat(getComputedStyle(document.documentElement)
+          .getPropertyValue('--nav-h')) || 0;
+        const head = document.querySelector('header').getBoundingClientRect().bottom;
+        return { w: Math.round(b.width), h: Math.round(b.height),
+                 onScreen: b.top >= head - 1 && b.bottom <= innerHeight - navH + 1 &&
+                           b.left >= 0 && b.right <= innerWidth };
+      };
+      return {
+        strip: vis(svg), dot: vis(dot), string: str && str.textContent,
+        labelText: label && label.textContent,
+        sub: document.getElementById('fSub').textContent,
+        scrollTop: document.scrollingElement.scrollTop,
+        card: Math.round(document.querySelector('.gv-card').getBoundingClientRect().height),
+        screen: Math.round(document.querySelector('.gv-screen').getBoundingClientRect().top),
+      };
     });
-    assert.equal(labelsVisible, true, 'fretboard cells are covering the string labels');
+
+    assert.ok(r.strip, 'the hint drew no strip at all');
+    assert.equal(r.strip.onScreen, true,
+      'the hint is off screen (or under the header/nav) where it was drawn');
+    assert.ok(r.strip.h >= 40, `the hint strip is ${r.strip.h}px tall — unreadable`);
+    assert.ok(r.dot && r.dot.w >= 16,
+      `the answer marker is ${r.dot && r.dot.w}px across — unreadable`);
+    assert.equal(r.labelText, 'F♯', 'the marker does not name the note it reveals');
+    assert.equal(r.string, 'A', 'the strip does not say which string it is');
+    assert.match(r.sub, /right here — fret 11 on the A string/,
+      'the reveal must still SAY the position, for a player who cannot see it');
+    assert.equal(r.scrollTop, before.scrollTop, 'the page scrolled when the hint appeared');
+    assert.equal(r.card, before.card, 'the console changed height when the hint appeared');
+    assert.equal(r.screen, before.screen, 'the stage moved when the hint appeared');
   } finally { await app.close(); }
 });
 
@@ -334,6 +372,7 @@ test('sheet-music mode poses the question on a bass-clef staff, and the hint nam
       hintLevel = 0; wrongThisQ = 0; qStart = performance.now();
       tracker.reset();
     });
+    await openSettings(page);   // the difficulty panel is closed during play
     await page.click('#gvPromptSeg button[data-r="staff"]');
     await page.waitForSelector('#gvStaffWrap:not(.hidden)', { timeout: 3000 });
     // The prompt is a difficulty axis: switching it starts a NEW run and a

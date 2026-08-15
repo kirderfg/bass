@@ -28,6 +28,12 @@
     deskwide:{ openCol:92, nut:11, col:108, row:84, dot:23, inlay:10.5, fretNum:34, label:21, gaugeMul:1.9, finger:true },
     /* read-scale board, sized for a desktop card rather than a phone hint */
     readbig:{ openCol:38, nut:7, col:46, row:40, dot:12, inlay:5.5, fretNum:20, label:13, gaugeMul:0.9, finger:false },
+    /* ONE string, drawn as a strip: a whole 12-fret neck fits a ~390px column,
+       so a "where along this string?" hint can live in a console slot instead
+       of a scrolling board. `row` is what a single string spends on height —
+       nothing here is per-string, so it buys marker size (dot 11) and air
+       around the window frame rather than rows. */
+    strip: { openCol:24, nut:5, col:30, row:34, dot:11, inlay:4.5, fretNum:17, label:12, gaugeMul:0.9, finger:false },
   };
   // Relative gauges of a real 5-string set (.130 → .045). The low B has to
   // look like the low B; this is the detail that sells the instrument.

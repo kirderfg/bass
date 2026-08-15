@@ -65,10 +65,12 @@
     </div>
 
     <div id="app" class="hidden">
-    <!-- Compact on purpose: this card sits above every Live mode on a phone,
-         so it is one listening row (dot + level inline) and a slim select.
+    <!-- Compact on purpose: this card sits above every Live mode, so it is ONE
+         slim row — dot, status word, level and the input picker side by side.
+         It used to stack the picker under the row and cost 86px of the screen
+         the game needs; the errors below it are the only things that wrap.
          The explanatory sentence lives in the select's title. -->
-    <div class="card mic-card" style="padding:8px 12px">
+    <div class="card mic-card">
       <div class="listening mic-row"><span class="dot" id="liveDot"></span><span id="liveTxt">listening…</span>
         <div class="level"><i id="levelBar"></i></div>
       </div>
@@ -130,132 +132,168 @@
          swapping as the note decayed) and read as flicker. -->
     <section id="secFind" class="hidden">
       <h2>Find it</h2>
+      <!-- THE CONSOLE. One card, one constant height, two columns on a desktop
+           (stage left, everything you read right) and one column on a phone.
+           Every slot below reserves its height whether or not it has content —
+           a hint, a staff, a verdict or a fuse numeral SWAPS into space that
+           was already there. Nothing the game does can move anything, so the
+           page never scrolls during play and the stage is never lost. -->
       <div class="card gv-card">
-        <div class="gv-hud">
-          <span class="gv-hearts" id="gvHearts" role="img" aria-label="stage lights left"></span>
-          <span class="t-data gv-level" id="gvLevel">LV 1 · GARAGE ROADIE</span>
-          <span class="t-data gv-combo hidden" id="gvCombo">COMBO ×2</span>
-          <span class="t-data gv-xplabel" aria-hidden="true">XP</span>
-          <!-- Bar and its numbers wrap as ONE flex unit, so "90/120" always
-               sits beside the bar instead of orphaning onto its own row. -->
-          <span class="gv-xpwrap"><span class="gv-xp" title="XP to the next level" role="progressbar" aria-label="XP into the current level"
-                aria-valuemin="0" aria-valuemax="120" aria-valuenow="0"><i id="gvXpBar"></i></span><!--
-            The bar's actual numbers — the progressbar's aria-valuetext
-            already speaks them, so this is eyes-only.
-          --><span class="t-data gv-xpnum" id="gvXpNum" aria-hidden="true"></span></span>
-        </div>
-        <div class="gv-screen">
-          <canvas id="gvScene" width="320" height="150" aria-hidden="true"></canvas>
-          <div class="gv-over hidden" id="gvOver">
-            <b class="gv-over-title">LIGHTS OUT</b>
-            <!-- Two facts only ("14 notes · best 21 clean") — the XP-survives
-                 sentence sits below the button at caption size, so the overlay
-                 fits inside the scene frame at phone width. -->
-            <!-- NOT a live region: the sequenced srAnnounce in #gvLive is the
-                 spoken channel — role="status" here double-spoke game over. -->
-            <p class="t-caption gv-over-facts" id="gvOverText"></p>
-            <button class="btn primary" id="gvRestart">Back on stage</button>
-            <p class="t-caption gv-over-xp" id="gvOverXp"></p>
+        <div class="gv-stage">
+          <div class="gv-hud">
+            <span class="gv-hearts" id="gvHearts" role="img" aria-label="stage lights left"></span>
+            <span class="t-data gv-level" id="gvLevel">LV 1 · GARAGE ROADIE</span>
+            <span class="t-data gv-combo hidden" id="gvCombo">COMBO ×2</span>
+            <span class="t-data gv-xplabel" aria-hidden="true">XP</span>
+            <!-- Bar and its numbers wrap as ONE flex unit, so "90/120" always
+                 sits beside the bar instead of orphaning onto its own row. -->
+            <span class="gv-xpwrap"><span class="gv-xp" title="XP to the next level" role="progressbar" aria-label="XP into the current level"
+                  aria-valuemin="0" aria-valuemax="120" aria-valuenow="0"><i id="gvXpBar"></i></span><!--
+              The bar's actual numbers — the progressbar's aria-valuetext
+              already speaks them, so this is eyes-only.
+            --><span class="t-data gv-xpnum" id="gvXpNum" aria-hidden="true"></span></span>
           </div>
-        </div>
-        <!-- The readable fuse plus, in the last five seconds, a plain seconds
-             numeral — the bar alone is a guess at arm's length. -->
-        <div class="gv-fusewrap">
-          <div class="gv-fusebar hidden" id="gvFuseBar" role="progressbar" aria-label="fuse time left"
-               aria-valuemin="0"><i></i></div>
-          <span class="gv-fusesec hidden" id="gvFuseSec" aria-hidden="true"></span>
-        </div>
-        <!-- The game's screen-reader channel. #fQ is deliberately NOT live —
-             it mutates mid-question on hints; new questions, XP toasts and the
-             5-second warning are announced here instead. -->
-        <div class="sr-only" aria-live="polite" id="gvLive"></div>
-        <div class="q" id="fQ">—</div>
-        <div class="gv-staffwrap hidden" id="gvStaffWrap">
-          <canvas id="gvStaff" width="170" height="150" role="img" aria-label="sight-reading exercise: a note drawn on a bass clef staff — the Hint button reveals its name"></canvas>
-        </div>
-        <div class="qsub" id="fSub" aria-live="polite">Find it on the neck and play it.</div>
-        <div class="verdict" id="fVerdict" aria-live="polite">&nbsp;</div>
-        <div class="heard" id="fHeard">&nbsp;</div>
-        <div class="row" style="justify-content:center; margin-top:8px">
-          <button class="btn small" id="fHint">Hint</button>
-          <button class="btn small" id="fSkip">Skip <span aria-hidden="true">→</span></button>
-        </div>
+          <div class="gv-screen">
+            <canvas id="gvScene" width="320" height="150" aria-hidden="true"></canvas>
+            <div class="gv-over hidden" id="gvOver">
+              <b class="gv-over-title">LIGHTS OUT</b>
+              <!-- Two facts only ("14 notes · best 21 clean") — the XP-survives
+                   sentence sits below the button at caption size, so the overlay
+                   fits inside the scene frame at phone width. -->
+              <!-- NOT a live region: the sequenced srAnnounce in #gvLive is the
+                   spoken channel — role="status" here double-spoke game over. -->
+              <p class="t-caption gv-over-facts" id="gvOverText"></p>
+              <button class="btn primary" id="gvRestart">Back on stage</button>
+              <p class="t-caption gv-over-xp" id="gvOverXp"></p>
+            </div>
+          </div>
+          <!-- The readable fuse plus, in the last five seconds, a plain seconds
+               numeral — the bar alone is a guess at arm's length. -->
+          <div class="gv-fusewrap">
+            <div class="gv-fusebar hidden" id="gvFuseBar" role="progressbar" aria-label="fuse time left"
+                 aria-valuemin="0"><i></i></div>
+            <span class="gv-fusesec hidden" id="gvFuseSec" aria-hidden="true"></span>
+          </div>
+        </div><!-- /.gv-stage -->
+
+        <div class="gv-info">
+          <!-- The game's screen-reader channel. #fQ is deliberately NOT live —
+               it mutates mid-question on hints; new questions, XP toasts and the
+               5-second warning are announced here instead. -->
+          <div class="sr-only" aria-live="polite" id="gvLive"></div>
+          <!-- Every line of the console lives in a SLOT of reserved height and is
+               centred inside it. The slot is the wrapper, never the element
+               itself: a flex box eats the whitespace between inline children, and
+               "Play <b>G</b> on the <b>E</b> string" would lose its spaces. -->
+          <div class="gv-slot gv-slot-q"><div class="q" id="fQ">—</div></div>
+          <div class="gv-slot gv-slot-sub"><div class="qsub" id="fSub" aria-live="polite">Find it on the neck and play it.</div></div>
+          <!-- THE COACH SLOT. One reserved box, one occupant: the staff a reading
+               question is written on, OR the single-string hint strip, OR nothing.
+               They never stack — the strip only ever appears once a hint has
+               already given the note's name away, and the verdict puts the named
+               staff back. Reserving it means a hint costs the layout nothing. -->
+          <div class="gv-media">
+            <div class="gv-staffwrap hidden" id="gvStaffWrap">
+              <canvas id="gvStaff" width="170" height="150" role="img" aria-label="sight-reading exercise: a note drawn on a bass clef staff — the Hint button reveals its name"></canvas>
+            </div>
+            <div id="fBoard"></div>
+          </div>
+          <div class="gv-feedback">
+            <div class="gv-slot gv-slot-verdict"><div class="verdict" id="fVerdict" aria-live="polite">&nbsp;</div></div>
+            <div class="gv-slot gv-slot-heard"><div class="heard" id="fHeard">&nbsp;</div></div>
+          </div>
+          <div class="row gv-controls">
+            <button class="btn small" id="fHint">Hint</button>
+            <button class="btn small" id="fSkip">Skip <span aria-hidden="true">→</span></button>
+          </div>
+        </div><!-- /.gv-info -->
+
+        <!-- The session bar runs the full width of the console on a desktop:
+             four figures and their scope read as one status line under both
+             columns, instead of squeezing into the narrow one.
+             These four counters reset with the page — the label says so, and it
+             LEADS the row so one compact line carries both facts.
+             "correct / streak / asked" read as one rule and was two: hunting for
+             a note bumped "asked" as well as the eventual find, so four questions
+             answered right showed "4 correct, 8 asked". Found and first-time are
+             different facts and are now labelled as such. -->
         <div class="stat-row">
-          <!-- "correct / streak / asked" read as one rule and was two: hunting for
-               a note bumped "asked" as well as the eventual find, so four questions
-               answered right showed "4 correct, 8 asked". Found and first-time are
-               different facts and are now labelled as such. -->
+          <span class="t-caption gv-sesslabel">this session</span>
           <div class="stat"><b id="fScore">0</b><span>found</span></div>
           <div class="stat"><b id="fClean">0</b><span>1st try</span></div>
           <div class="stat"><b id="fStreak">0</b><span>streak</span></div>
           <div class="stat"><b id="fAsked">0</b><span>questions</span></div>
         </div>
-        <!-- These four counters reset with the page — say so. -->
-        <p class="t-caption gv-sesslabel">this session</p>
-        <!-- Below the stat row on purpose: a hint diagram appearing here must
-             never shift Hint/Skip or the stats (the controls sit above). -->
-        <div id="fBoard"></div>
       </div>
 
       <!-- The game's three difficulty axes: how much neck, how much time
            pressure, and how the note is written. Kept apart from Ear
-           training's tier card — a game run owns its own settings. -->
-      <div class="card tight" id="gvSettings">
-        <div class="t-eyebrow" style="margin-bottom:6px">Difficulty</div>
-        <label style="display:block">
-          <span class="t-caption">Stage — how much of the neck is in play</span>
-          <select id="gvWorld" style="margin-top:4px"></select>
-        </label>
-        <!-- The stage's band name, out of the select where phones truncate it. -->
-        <p class="t-caption" id="gvStageNow" style="margin:4px 0 0">Now playing: High Voltage</p>
-        <div class="row" style="margin-top:var(--sp3); gap:var(--sp5); flex-wrap:wrap; align-items:flex-start">
-          <div>
+           training's tier card — a game run owns its own settings.
+           CLOSED by default and out of the play flow: 1,196px of controls
+           under the console is what pushed the game off the screen. The
+           summary keeps the current setup permanently readable, so nothing
+           has to be opened to know what you are playing. -->
+      <details class="card tight gv-setup" id="gvSettings">
+        <summary>
+          <span class="t-title3">Difficulty &amp; options</span>
+          <span class="t-data gv-setupnow" id="gvSetupNow">Stage 1 · Soundcheck · Names · all strings</span>
+        </summary>
+        <!-- One group per axis, so a wide screen can lay them out in columns
+             instead of a 1,200px scroll of settings. -->
+        <div class="gv-setupbody">
+          <div class="gv-setgroup">
+            <label style="display:block">
+              <span class="t-caption">Stage — how much of the neck is in play</span>
+              <select id="gvWorld" style="margin-top:4px"></select>
+            </label>
+            <!-- The stage's band name, out of the select where phones truncate it. -->
+            <p class="t-caption" id="gvStageNow" style="margin:4px 0 0">Now playing: High Voltage</p>
+          </div>
+          <div class="gv-setgroup">
             <span class="t-caption">Pace</span>
             <div class="seg compact" id="gvPaceSeg" role="group" aria-label="Pace" style="margin-top:4px"></div>
+            <p class="t-caption" id="gvPaceNote" style="margin:var(--sp2) 0 0"></p>
           </div>
-          <div>
+          <div class="gv-setgroup">
             <span class="t-caption">The note is shown as</span>
             <div class="seg compact" id="gvPromptSeg" role="group" aria-label="The note is shown as" style="margin-top:4px"></div>
             <p class="t-caption gv-segcap">Mixed flips a coin between names and sheet music each question.</p>
           </div>
-        </div>
-        <p class="t-caption" id="gvPaceNote" style="margin:var(--sp2) 0 0"></p>
-        <!-- The XP premium is real and was undisclosed: say it once, plainly. -->
-        <p class="t-caption" id="gvXpNote" style="margin:var(--sp2) 0 0">Bigger stages, sheet music and faster paces pay more XP.</p>
-        <!-- Two counters wear similar names on one screen: say which is which. -->
-        <p class="t-caption" id="gvComboNote" style="margin:var(--sp2) 0 0">COMBO = 1st-try finds in a row this set; the streak tile under the question is your whole session.</p>
-        <div class="row" style="margin-top:var(--sp3); gap:var(--sp5); flex-wrap:wrap; align-items:flex-start">
-          <div>
+          <div class="gv-setgroup">
             <span class="t-caption">Strings</span>
             <div class="seg compact" id="gvFocusSeg" role="group" aria-label="Strings" style="margin-top:4px"></div>
           </div>
-          <div>
+          <div class="gv-setgroup">
             <span class="t-caption">Frets</span>
             <div class="seg compact" id="gvFretSeg" role="group" aria-label="Frets" style="margin-top:4px"></div>
             <!-- Why a window is off — visible text, because title tooltips
                  do not exist on touch; the dead buttons point here. -->
             <p class="t-caption gv-segcap hidden" id="gvFretNote"></p>
           </div>
-        </div>
-        <div class="row" style="margin-top:var(--sp3); gap:var(--sp5); flex-wrap:wrap; align-items:flex-start">
-          <div>
+          <div class="gv-setgroup">
             <span class="t-caption">Effects</span>
             <div class="seg compact" id="gvFxSeg" role="group" aria-label="Effects" style="margin-top:4px"></div>
             <p class="t-caption gv-segcap">Calm = less flashing and motion.</p>
           </div>
-          <div>
+          <div class="gv-setgroup">
             <span class="t-caption">Sound</span>
             <div class="seg compact" id="gvSndSeg" role="group" aria-label="Sound" style="margin-top:4px"></div>
             <p class="t-caption gv-segcap">Little cues for hits, misses and the fuse.</p>
           </div>
-          <div>
+          <div class="gv-setgroup">
             <span class="t-caption">Hints</span>
             <div class="seg compact" id="gvHintSeg" role="group" aria-label="Hints" style="margin-top:4px"></div>
             <p class="t-caption gv-segcap">Manual = a hint only when you tap Hint.</p>
           </div>
+          <div class="gv-setgroup gv-setnotes">
+            <!-- The XP premium is real and was undisclosed: say it once, plainly. -->
+            <p class="t-caption" id="gvXpNote" style="margin:0">Bigger stages, sheet music and faster paces pay more XP.</p>
+            <!-- Two counters wear similar names on one screen: say which is which. -->
+            <p class="t-caption" id="gvComboNote" style="margin:var(--sp2) 0 0">COMBO = 1st-try finds in a row this set; the streak tile under the question is your whole session.</p>
+            <p class="t-caption" id="gvBestNote" style="margin:var(--sp2) 0 0">Best on this setup: 0</p>
+          </div>
         </div>
-        <p class="t-caption" id="gvBestNote" style="margin:var(--sp3) 0 0">Best on this setup: 0</p>
-      </div>
+      </details>
 
       <!-- The reading mode's teaching support: what the staff is, and where
            the four anchor notes sit. Collapsed — reference, not homework. -->

@@ -27,11 +27,20 @@
 .level i{display:block; height:100%; width:0%; background:var(--good); border-radius:99px; transition:width .08s linear;}
 .listening{display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--dim);}
 /* ---- the compact mic input card ----
-   One row: dot, status word, level bar inline — it sits above every Live
-   mode on a phone and must not eat a fifth of the screen. */
-.mic-row{margin:0;}
-.mic-row .level{flex:1 1 90px; margin:0;}
-.mic-card select{margin-top:6px; padding-top:6px; padding-bottom:6px;}
+   ONE row, at every width: dot, status word, level bar AND the input picker
+   side by side. It sits above every Live mode, so the 86px it used to cost
+   (a stacked select) came straight out of the game's screen. Only the two
+   error lines wrap to their own row, and only when they are shown. */
+/* body-prefixed: the desktop breakpoint in theme.css sets `body .card` padding
+   to 20px, which would otherwise re-inflate this row on the wide screens it
+   was slimmed for. */
+body .mic-card{display:flex; flex-wrap:wrap; align-items:center; gap:10px;
+  padding:5px 12px; margin:var(--sp3) 0;}
+.mic-row{margin:0; flex:0 1 auto; min-width:0; margin-right:auto; white-space:nowrap;}
+.mic-row .level{flex:0 1 200px; min-width:30px; margin:0;}
+.mic-card select{flex:1 1 100px; max-width:230px; width:auto; min-width:0; min-height:34px;
+  padding-top:5px; padding-bottom:5px; font-size:13.5px;}
+.mic-card > p{flex:1 1 100%; margin:0 !important;}
 .dot{width:9px; height:9px; border-radius:50%; background:var(--bad);}
 .dot.on{background:var(--good); box-shadow:0 0 8px var(--good);}
 /* ---- tuner ---- */
@@ -77,22 +86,88 @@
 .verdict.ok{color:var(--good);} .verdict.no{color:var(--bad);} .verdict.warn{color:var(--root);}
 .heard{text-align:center; font-size:13px; color:var(--dim); min-height:20px;}
 
-/* ---- Fret Quest (Find it) ----
+/* ---- Fret Quest (Find it): THE CONSOLE ----
    The game's canvases are drawn at a low internal resolution and scaled up:
    image-rendering keeps the pixels square instead of smearing them. The JS
-   snaps the scene wrapper to an integer multiple of 320px (gvFitScene), so
-   the wrapper centres itself and the canvas keeps square corners — a radius
-   would shave fractional pixels off a pixel-art edge. */
-/* scroll-margin-top on both scroll targets clears the sticky header (~48px):
-   gvScrollScene brings the card top (HUD included) into view on a new run,
-   and gvGameOver centres the screen — neither may land under the header. */
-.gv-card{scroll-margin-top:48px;}
-.gv-screen{position:relative; margin:2px auto 6px; scroll-margin-top:48px;}
+   snaps the scene to a whole multiple of 320×150 (gvFitScene), so the wrapper
+   centres itself and the canvas keeps square corners — a radius would shave
+   fractional pixels off a pixel-art edge.
+
+   A fixed-height instrument panel, not a document. Every slot below reserves
+   its height in a custom property, so a hint, a staff, a verdict or a fuse
+   numeral SWAPS into space the layout already gave it: the card is the same
+   height in every state of the game, at a given viewport, and nothing the
+   game does can scroll the page. (That is why there is no scroll-into-view
+   anywhere in the game code any more — there is nothing to scroll to.)
+
+   Only two numbers adapt, and only to the VIEWPORT, never to game state:
+   --gv-stage-w (with the scene's pixel scale, whole-numbered wherever the
+   screen allows it) and --gv-media-h, the coach slot, on viewports too short
+   to hold a full-size staff. gvFitScene picks both, once, on entry and on
+   resize — never in response to anything the player does inside the game. */
+#secFind{
+  --gv-gap:5px;
+  --gv-hud-h:18px;
+  --gv-fuse-h:24px;   /* the countdown numeral's own height */
+  --gv-q-h:32px;
+  --gv-sub-h:36px;
+  --gv-media-h:154px;
+  --gv-verdict-h:56px;   /* three lines: the burnt-fuse correction */
+  --gv-heard-h:18px;
+  --gv-stats-h:56px;   /* a phone wraps the four figures under their label */
+}
+@media (min-width:760px){
+  #secFind{ --gv-gap:8px; --gv-hud-h:20px; --gv-q-h:38px;
+    --gv-stats-h:32px; --gv-heard-h:19px; }
+}
+/* Short screens (a laptop with browser chrome, a landscape phone): the page
+   furniture gives its margins to the console. */
+@media (max-height:720px){
+  #secFind h2{margin:var(--sp2) 2px var(--sp1); font-size:20px;}
+  body .mic-card{margin:var(--sp2) 0;}
+  #secFind .gv-card{margin-top:var(--sp2);}
+}
+/* A phone spends its card padding on the game instead of on air. And its HUD
+   takes the whole card width rather than the scene's: on a screen narrow
+   enough that the stage had to shrink, tying the HUD to the stage's width
+   clipped the XP figures off the end of it. */
+@media (max-width:759px){
+  #secFind .gv-card{padding:12px;}
+  #secFind h2{margin:var(--sp3) 2px var(--sp1); font-size:21px;}
+  #secFind .gv-stage{width:100%;}
+}
+.gv-card{display:grid; gap:var(--gv-gap); align-content:start;}
+/* Wide enough for two columns: the stage takes the left one and everything you
+   READ takes the right one — the single stack put 450px of pixel art between
+   the player and their own question, and spent the screen's scarcest axis
+   (height) on a screen that has width to burn. The stage column is exactly the
+   snapped scene width. 760px, not 1000: a half-screen laptop window and a
+   landscape phone want this layout too, and both are short. */
+@media (min-width:760px){
+  .gv-card{grid-template-columns:var(--gv-stage-w, 642px) minmax(300px, 1fr);
+    gap:var(--sp5); align-items:stretch;}
+  .gv-stage{align-self:center;}
+  /* the read column spans the stage's height, so its first and last lines sit
+     on the stage's own top and bottom edges */
+  .gv-info{justify-content:space-between;}
+  /* the session bar runs under both columns */
+  #secFind .stat-row{grid-column:1 / -1;}
+}
+.gv-stage{display:grid; gap:var(--gv-gap); width:var(--gv-stage-w, 100%);
+  max-width:100%; margin:0 auto; min-width:0;}
+.gv-info{display:flex; flex-direction:column; gap:var(--gv-gap); min-width:0;}
+/* justify-self, NOT margin:auto — the stage is a GRID item now, and an auto
+   margin makes a grid item shrink-wrap its contents: with the canvas at
+   width:100% (the fallback on a phone narrower than the backing store) that
+   is circular, and the whole stage collapsed to nothing. */
+.gv-screen{position:relative; margin:0; justify-self:center; width:100%;
+  container-type:inline-size;}
 /* content-box, because gvFitScene sets the canvas to EXACT 320×150 multiples:
    border-box would shave the borders off the content and smear a column. */
 .gv-screen canvas{display:block; width:100%; height:auto; image-rendering:pixelated;
   box-sizing:content-box; border:1px solid var(--line); border-radius:0; background:var(--s0);}
-.gv-hud{display:flex; align-items:center; gap:10px; flex-wrap:wrap; min-height:18px; margin-bottom:6px;}
+.gv-hud{display:flex; align-items:center; gap:10px; flex-wrap:nowrap; height:var(--gv-hud-h);
+  overflow:hidden; margin:0;}
 .gv-hud .t-data{font-size:13px;}
 /* A seam between the streak and the XP caption — the two read as one
    run-on figure without it. */
@@ -106,8 +181,11 @@
   background-image:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 7 10' shape-rendering='crispEdges'><path fill='%23F2A93B' d='M3 0h3L4 4h2L1 10l1-4H1z'/><path fill='%23F6E27A' d='M4 1h1L4 3H3z'/></svg>");
   background-size:100% 100%;}
 .gv-hearts i.lost{background-image:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 7 10'><path fill='none' stroke='%23A79F94' stroke-width='0.9' d='M3 0h3L4 4h2L1 10l1-4H1z'/></svg>");}
-.gv-combo{color:var(--root); font-weight:700;}
-.gv-level{color:var(--t3);}
+.gv-combo{color:var(--root); font-weight:700; white-space:nowrap;}
+/* The HUD is one line that never wraps (a wrapping HUD is a moving console),
+   so the one elastic item — the level title — is the one that truncates. */
+.gv-level{color:var(--t3); flex:0 1 auto; min-width:0;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 /* The readable fuse: a DOM bar mirroring the canvas cord, because a 2px pixel
    rope is flavour, not a timer. .low = last two seconds. The fill is
    pixel-STEPPED (hard-stop repeating gradient), matching the scene's grammar —
@@ -116,8 +194,9 @@
    reserved slot at the bar's right the whole time the fuse burns (it empties
    outside the last five seconds and :empty hides its chrome), so the bar
    never jumps when the numeral arrives. */
-.gv-fusewrap{position:relative; display:flex; align-items:center; gap:8px;}
-.gv-fusebar{height:6px; flex:1 1 auto; margin:0 0 6px; background:var(--s2);
+.gv-fusewrap{position:relative; display:flex; align-items:center; gap:8px;
+  height:var(--gv-fuse-h); margin:0;}
+.gv-fusebar{height:6px; flex:1 1 auto; margin:0; background:var(--s2);
   border:1px solid var(--line); border-radius:2px; overflow:hidden;}
 .gv-fusebar i{display:block; height:100%; width:100%;
   background:repeating-linear-gradient(90deg,
@@ -131,7 +210,7 @@
    where a bass player's eyes are. It shows for the ENTIRE burn now: dim grey
    (.early) while >5s remain, full contrast in the last five, red with the
    bar's .low — the reserved slot fits two digits so nothing ever reflows. */
-.gv-fusesec{flex:0 0 auto; min-width:2.6em; text-align:center; margin-bottom:6px;
+.gv-fusesec{flex:0 0 auto; min-width:2.6em; text-align:center; margin:0;
   font-family:var(--mono); font-size:18px; font-weight:800; color:var(--t1);
   line-height:1; background:var(--s0); border:1px solid var(--line);
   border-radius:2px; padding:2px 5px; font-variant-numeric:tabular-nums;}
@@ -144,7 +223,7 @@
   #secFind:not(.calm) .gv-fusebar.low i{animation:gv-fuse-pulse .9s ease-in-out infinite;}
   @keyframes gv-fuse-pulse{0%,100%{opacity:1;} 50%{opacity:.55;}}
 }
-.gv-xp{flex:1 1 60px; min-width:60px; height:7px; background:var(--s2);
+.gv-xp{flex:1 1 60px; min-width:36px; height:7px; background:var(--s2);
   border:1px solid var(--line); border-radius:2px; overflow:hidden;}
 /* XP is stage heat, not app chrome: the bar warms from ember to amber so the
    whole HUD sits in the scene's palette. */
@@ -159,23 +238,87 @@
   text-shadow:0 0 14px rgba(242,169,59,.45);}
 .gv-over-facts{margin:0;}
 .gv-over-xp{margin:0; color:var(--t4);}
-/* Phone width: the scene frame is ~320-340px tall at 1×, so the overlay
-   shrinks to fit — title down to 17px, everything on the caption scale. */
+/* Phone width: the scene is ~320px wide at 1×, so the overlay shrinks to fit —
+   title down to 17px, everything on the caption scale. */
 @media (max-width:759px){
   .gv-over-title{font-size:17px; letter-spacing:.12em;}
   .gv-over{gap:4px; padding:8px;}
 }
-.gv-staffwrap{display:flex; justify-content:center; margin:4px 0 2px;}
+/* And on a screen so short that gvFitScene had to give up integer scaling, the
+   stage itself is only ~100px tall: LIGHTS OUT is sized against the SCENE, not
+   the viewport, so the overlay still fits inside the frame it darkens. */
+@container (max-width:280px){
+  .gv-over{gap:2px; padding:5px;}
+  .gv-over-title{font-size:13px; letter-spacing:.08em;}
+  .gv-over .t-caption{font-size:9.5px; line-height:1.25;}
+  .gv-over .btn{min-height:32px; padding:4px 10px; font-size:12px;}
+  .gv-over-xp{display:none;}
+}
+/* ---- the coach slot ----
+   A reserved compartment with exactly one occupant: the staff a reading
+   question is written on, or the single-string hint strip. Reserved because
+   this is the slot whose contents used to be 400px of fretboard arriving
+   mid-question and shoving the stage off the screen. The frame belongs to
+   whatever is IN it (see #fBoard), so an empty slot is quiet space rather
+   than an empty box. */
+.gv-media{height:var(--gv-media-h); display:flex; align-items:center;
+  justify-content:center; overflow:hidden;}
+.gv-staffwrap{display:flex; justify-content:center; margin:0; max-height:100%;}
 /* Fixed INTEGER widths (1× or 2× the backing store) — fractional scales smear
-   the staff lines. 170×150 → 340 on wide screens; the clef ref 300 → 600. */
+   the staff lines, so the 1× 170×150 is the size the question staff is drawn
+   at everywhere. Only a viewport too short for the full slot scales it down
+   (gvFitScene sets --gv-media-h), and a DOWN-scale is smoothed rather than
+   pixelated: dropping rows would take whole staff lines out. */
+.gv-media .gv-staffwrap canvas{width:auto; height:auto; max-width:100%;
+  max-height:calc(var(--gv-media-h) - 12px); image-rendering:auto;
+  background:var(--s2); border:1px solid var(--line); border-radius:var(--r-sm);}
 .gv-staffwrap canvas{width:170px; height:auto; image-rendering:pixelated;
   background:var(--s2); border:1px solid var(--line); border-radius:var(--r-sm);}
-@media (min-width:760px){ .gv-staffwrap canvas{width:340px;} }
 #gvClefHelp .gv-staffwrap canvas{width:300px;}
 @media (min-width:1000px){ #gvClefHelp .gv-staffwrap canvas{width:600px;} }
+/* ---- the hint strip ----
+   ONE string — the one the question already named — with the target fret's
+   window on it. The old hint was a 5×13 fretboard (400px tall on a desktop),
+   which answered a question nobody asked: WHICH string. The strip answers the
+   one that was asked, WHERE ALONG IT, in a sixth of the height. The SVG is
+   vector, so max-width scales it down on a narrow phone with no scrolling and
+   no loss — the fret numbers stay real text. */
+/* The frame belongs to the STRIP, not to the slot: an empty bordered box
+   (between runs, or while a staff question is up) reads as something missing. */
+#fBoard{display:flex; align-items:center; justify-content:center; gap:8px;
+  width:100%; max-width:100%; margin:0; padding:5px 9px;
+  background:var(--s0); border:1px solid var(--hair); border-radius:var(--r-sm);}
+#fBoard:empty{display:none;}
+/* The strip FILLS the slot it was given: a six-fret stage draws a big, plainly
+   readable neck rather than a 179px sliver adrift in a 400px box, and a
+   twelve-fret one scales down to fit. Vector, so both are crisp. */
+#fBoard .neck-svg{width:100%; height:auto; flex:0 1 auto;
+  max-height:calc(var(--gv-media-h) - 14px);}
+#fBoard .gv-strip-str{flex:0 0 auto; font-size:13px; font-weight:800; color:var(--t3);
+  letter-spacing:.02em;}
+#fBoard .gv-strip-str.is-lowest{color:var(--low-string);}
+/* ---- the read side of the console: question, coaching line, readout ----
+   Each one is a FIXED box its text is centred inside. The question grows a
+   hint's extra words, the instruction line swaps for a hint sentence and the
+   verdict swaps for a three-line correction — all inside space that was
+   already reserved, so none of them can move the stage. */
+.gv-slot{display:flex; align-items:center; justify-content:center; overflow:hidden;}
+.gv-slot > *{width:100%; margin:0;}
+.gv-slot-q{height:var(--gv-q-h);}
+.gv-slot-sub{height:var(--gv-sub-h);}
+.gv-slot-verdict{height:var(--gv-verdict-h);}
+.gv-slot-heard{height:var(--gv-heard-h);}
+#secFind .q{padding:0; font-size:20px; line-height:1.15; text-align:center;}
+@media (min-width:760px){ #secFind .q{font-size:23px;} }
+#secFind .qsub{font-size:13px; line-height:1.3; text-align:center;}
+/* The readout: verdict over heard-note. No frame — an empty bordered box reads
+   as something missing, where empty space reads as quiet. */
+.gv-feedback{padding:0;}
 /* Verdicts land as one committed banner per judged note — the pop replays
    because the class is re-applied per judgement, and nothing else moves. */
-#secFind .verdict{min-height:34px; font-size:17px;}
+#secFind .verdict{min-height:0; font-size:15.5px; line-height:1.18;}
+#secFind .heard{min-height:0; line-height:1.2;}
+.gv-controls{justify-content:center; margin:0; min-height:44px; flex-wrap:nowrap;}
 /* Idle dead-space gets a faint quaver instead of a blank band. CSS-generated
    on purpose: the e2e suite samples #fVerdict's TEXT for stability and
    emptiness, and a ::before leaves the text exactly as it was. Gated off
@@ -202,34 +345,54 @@
 #secFind .stat-row .stat{background:var(--s1); border:1px solid var(--line);
   box-shadow:inset 0 1px 0 rgba(246,242,236,.05), inset 0 -1px 0 rgba(0,0,0,.35);}
 #secFind .stat-row .stat span{font-family:var(--mono); letter-spacing:.04em;
-  text-transform:uppercase; font-size:13px;}
-/* Four tiles with 13px labels: tighter padding so they hold one row on a
-   380px phone; narrower than ~320px the row is allowed to wrap (see below). */
-#secFind .stat-row{gap:6px;}
-#secFind .stat-row .stat{padding:6px 8px; min-width:64px;}
+  text-transform:uppercase; font-size:11px; white-space:nowrap;}
+/* One compact line, not four tall tiles and a caption underneath: number and
+   label sit side by side, and "this session" leads the row instead of trailing
+   it. Same four figures, same meaning, a third of the height. */
+#secFind .stat-row{gap:6px; margin:0; height:var(--gv-stats-h); align-items:center;
+  align-content:center; justify-content:center; overflow:hidden;}
+#secFind .stat-row .stat{padding:3px 8px; min-width:0;
+  display:flex; align-items:baseline; gap:5px;}
+#secFind .stat-row .stat b{display:inline; font-size:15px; line-height:1.2;}
 /* The tiny XP numbers beside the bar — data, not chrome, so they stay small.
    Bar + numbers share one flex unit (.gv-xpwrap) so they wrap together. */
-.gv-xpwrap{display:flex; align-items:center; gap:6px; flex:1 1 90px; min-width:90px;}
+/* The BAR is what gives way when the HUD is short of room — never the
+   figures beside it, which used to be clipped to "0/12" on a 320px phone. */
+.gv-xpwrap{display:flex; align-items:center; gap:6px; flex:1 1 90px; min-width:0;}
 .gv-xpwrap .gv-xp{flex:1 1 60px;}
-.gv-hud .gv-xpnum{font-size:11px; color:var(--t4); white-space:nowrap;}
-/* 320px phones: four tiles wrap 2+2, never a lonely 3+1 — the basis forces
-   exactly two per row once the row cannot hold four. */
-@media (max-width:359px){
-  #secFind .stat-row .stat{flex:1 1 40%;}
+.gv-hud .gv-xpnum{flex:0 0 auto; font-size:11px; color:var(--t4); white-space:nowrap;}
+/* Phones: the four tiles wrap 2+2 under the label rather than shrinking their
+   figures — the row reserves two lines there (--gv-stats-h), so wrapping is
+   part of the fixed layout instead of a surprise. */
+@media (max-width:759px){
+  #secFind .stat-row{gap:4px;}
+  #secFind .stat-row .stat{flex:0 1 auto; padding:2px 6px;}
+  #secFind .stat-row .stat span{font-size:9.5px;}
+  #secFind .stat-row .stat b{font-size:14px;}
+  .gv-sesslabel{font-size:11px;}
 }
-/* The stat row measures THIS SITTING only — one quiet label says so.
-   margin:auto, because the desktop card caps every p at 66ch: without it the
-   caption centres inside a left-parked 66ch box, visibly off the tiles. */
-.gv-sesslabel{text-align:center; margin:2px auto 0; color:var(--t4);}
+/* The stat row measures THIS SITTING only — one quiet label says so, at the
+   head of the row it labels. */
+.gv-sesslabel{text-align:center; margin:0; color:var(--t4); font-size:12px;}
 /* One-line captions under the settings segs (Effects/Sound/Hints, and the
    fret-window reason) — the visible text that replaces touch-less tooltips. */
 .gv-segcap{margin:4px 0 0; color:var(--t4); max-width:22ch;}
 /* Dead fret windows: aria-disabled, NOT disabled — they keep focus so a
    screen reader can land on them and hear the reason (aria-describedby). */
 #gvFretSeg button[aria-disabled="true"]{opacity:.45; cursor:default;}
-/* The hint board must scroll clear of the fixed bottom tab bar: reserve the
-   nav's height (plus air) whenever the board is scrolled into view. */
-#fBoard{scroll-margin-bottom:calc(var(--nav-h) + 16px);}
+/* ---- settings, out of the play flow ----
+   A disclosure that is CLOSED by default and never moves the console (it sits
+   below it). The summary carries the whole setup as a always-visible status
+   line, so the panel only has to be opened to CHANGE something, never to know
+   something. Opened, it lays out in columns on a wide screen. */
+.gv-setup > summary{flex-wrap:wrap; row-gap:2px;}
+.gv-setup > summary .t-title3{margin-right:auto;}
+.gv-setupnow{color:var(--t3); font-size:12px;}
+.gv-setupbody{display:grid; gap:var(--sp4); margin-top:var(--sp3);
+  grid-template-columns:repeat(auto-fit, minmax(230px, 1fr));}
+.gv-setgroup{min-width:0;}
+.gv-setnotes{grid-column:1 / -1;}
+@media (min-width:1000px){ .gv-setnotes{columns:2; column-gap:var(--sp5);} }
 /* Squarer, mono, pixel-flavoured — the DOM buttons on the stage stop
    pretending they belong to a different app than the canvas above them. */
 #secFind #fHint, #secFind #fSkip{font-family:var(--mono); background:var(--s1);

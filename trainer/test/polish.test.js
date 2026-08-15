@@ -6,7 +6,7 @@
    Every test here is a defect that shipped. Run with `npm run test:e2e`. */
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { openApp, until } = require('./harness.js');
+const { openApp, until, openSettings } = require('./harness.js');
 
 const SILENT = 987.767;            // above the detector's 420 Hz ceiling
 const DESK = { width: 1440, height: 900 };
@@ -428,6 +428,162 @@ test('leaving Ear mode takes its "playing the note" pill with it', async () => {
     assert.doesNotMatch(r.txt, /playing the note/,
       'the Tuner still claims to be playing Ear\'s note');
     assert.ok(r.muteLeft <= 0, 'the mute window survived the tab switch');
+    assert.deepEqual(app.errors, [], 'page errors');
+  } finally { await app.close(); }
+});
+
+/* ------------------------------------------------------------------
+   THE CONSOLE. Find-it's card is an instrument panel, not a document:
+   at a given viewport it is the SAME HEIGHT in every state of the game,
+   it sits between the sticky header and the nav without scrolling, and
+   nothing the game does — a hint, a new question, a verdict, a settings
+   change — is allowed to move the page. This is the defect that shipped:
+   a reveal hint drew a 400px fretboard and the page auto-scrolled 152px,
+   so the player lost sight of the stage at the exact moment they were
+   being taught something.
+   ------------------------------------------------------------------ */
+const CONSOLE_VIEWPORTS = [
+  { width: 1280, height: 800 },    // the desktop this is played on
+  { width: 1366, height: 768 },    // the tight laptop
+  { width: 1440, height: 900 },
+  { width: 380, height: 800 },     // and it must not have broken the phone
+];
+
+/** Every measurement the console's promises are made of, in ONE reflow. */
+const CONSOLE_PROBE = () => {
+  const doc = document.scrollingElement;
+  const bot = el => el.getBoundingClientRect().bottom + doc.scrollTop;
+  const top = el => el.getBoundingClientRect().top + doc.scrollTop;
+  const card = document.querySelector('#secFind .gv-card');
+  const navH = parseFloat(getComputedStyle(document.documentElement)
+    .getPropertyValue('--nav-h')) || 0;
+  return {
+    cardH: +card.getBoundingClientRect().height.toFixed(1),
+    cardBot: bot(card),
+    hudTop: top(document.querySelector('#secFind .gv-hud')),
+    ctlBot: bot(document.querySelector('#secFind .gv-controls')),
+    headBot: document.querySelector('header').getBoundingClientRect().bottom,
+    floor: window.innerHeight - navH,
+    scrollTop: doc.scrollTop,
+  };
+};
+
+test('the game console is one fixed height that fits the screen, in every state', async () => {
+  for (const vp of CONSOLE_VIEWPORTS) {
+    const app = await openApp(SILENT, '/index.html#find', vp);
+    try {
+      const { page } = app;
+      await page.click('#startBtn');
+      await page.waitForSelector('#secFind:not(.hidden)', { timeout: 5000 });
+      await page.waitForTimeout(400);
+      const at = vp.width + '×' + vp.height + ': ';
+      const seen = [];
+      const look = async (state) => {
+        const m = await page.evaluate(CONSOLE_PROBE);
+        seen.push({ state, ...m });
+        return m;
+      };
+
+      /* --- A: every combination of prompt × hint rung × verdict, at two paces,
+             and the whole play area is on screen in all of them. --- */
+      for (const pace of ['chill', 'steady']) {
+        for (const prompt of ['name', 'staff']) {
+          await page.evaluate(([p, r]) => {
+            document.querySelector(`#gvPaceSeg button[data-p="${p}"]`).click();
+            document.querySelector(`#gvPromptSeg button[data-r="${r}"]`).click();
+          }, [pace, prompt]);
+          await page.waitForTimeout(150);
+          for (const rungs of [0, 1, 2, 3]) {
+            // a fresh question, then climb the hint ladder that far
+            await page.evaluate(() => document.getElementById('gvRestart').click());
+            for (let i = 0; i < rungs; i++) await page.evaluate(() => showHint());
+            await page.waitForTimeout(100);
+            await look(`${pace}/${prompt}/hint${rungs}`);
+            // …and the same state with a verdict painted (the longest one)
+            await page.evaluate(() => gvBreach());
+            await page.waitForTimeout(100);
+            await look(`${pace}/${prompt}/hint${rungs}+verdict`);
+          }
+        }
+      }
+      for (const m of seen) {
+        assert.ok(m.hudTop >= m.headBot - 1,
+          at + m.state + ': the HUD is under the sticky header');
+        assert.ok(m.ctlBot <= m.floor,
+          at + m.state + ': the console runs past the nav — ' +
+          `Hint/Skip end at ${m.ctlBot}, the screen ends at ${m.floor}`);
+      }
+
+      /* --- B: nothing the game does moves the page. --- */
+      const moved = seen.filter(m => m.scrollTop !== seen[0].scrollTop);
+      assert.deepEqual(moved.map(m => m.state), [],
+        at + 'the page scrolled by itself during play');
+
+      /* --- C: one height, every state. --- */
+      const hs = [...new Set(seen.map(m => m.cardH))];
+      assert.ok(Math.max(...hs) - Math.min(...hs) <= 2,
+        at + 'the console changes height between states: ' + hs.join(' / '));
+
+      /* --- B again, for the settings: opening the panel may scroll (the
+             player asked for it); CHANGING a setting may not. --- */
+      await page.click('#gvSettings > summary');
+      await page.waitForSelector('#gvPromptSeg button', { state: 'visible' });
+      await page.waitForTimeout(150);
+      const base = await page.evaluate(CONSOLE_PROBE);
+      /* Clicked in the page, not through Playwright: Playwright scrolls a
+         control into view before clicking it, and the question here is whether
+         the APP scrolls — the handler is the same one either way. */
+      const change = async (label, fn, arg) => {
+        const was = await page.evaluate(() => document.scrollingElement.scrollTop);
+        await page.evaluate(fn, arg);
+        await page.waitForTimeout(180);
+        const m = await page.evaluate(CONSOLE_PROBE);
+        assert.equal(m.scrollTop, was, at + 'changing ' + label + ' scrolled the page');
+        assert.ok(Math.abs(m.cardH - base.cardH) <= 2,
+          at + 'changing ' + label + ' changed the console height');
+      };
+      for (const sel of ['#gvPaceSeg button[data-p="turbo"]',
+                         '#gvPromptSeg button[data-r="mix"]',
+                         '#gvFretSeg button[data-fr="all"]',
+                         '#gvFocusSeg button[data-f="E"]']) {
+        await change(sel, s => document.querySelector(s).click(), sel);
+      }
+      await change('the stage', () => {
+        const sel = document.getElementById('gvWorld');
+        sel.value = '4';
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      assert.deepEqual(app.errors, [], 'page errors');
+    } finally { await app.close(); }
+  }
+});
+
+test('the difficulty panel is closed during play, and says what it is hiding', async () => {
+  // 1,196px of settings under the console is what pushed the game off the
+  // screen. They are a disclosure now — so the summary has to carry the setup,
+  // or the player cannot know what they are playing without opening it.
+  const app = await openApp(SILENT, '/index.html#find', DESK);
+  try {
+    const { page } = app;
+    await page.click('#startBtn');
+    await page.waitForSelector('#secFind:not(.hidden)', { timeout: 5000 });
+    assert.equal(await page.evaluate(() => document.getElementById('gvSettings').open), false,
+      'the difficulty panel is open before the player asked for it');
+    assert.equal(await page.isVisible('#gvPaceSeg button'), false,
+      'the settings controls are in the play flow');
+    const now = () => page.textContent('#gvSetupNow');
+    assert.match(await now(), /Stage \d+ · Soundcheck · Names · all strings/,
+      'the closed panel does not say what is set');
+    assert.ok(await page.isVisible('#gvSetupNow'), 'the setup line is not visible');
+    await openSettings(page);
+    await page.click('#gvPaceSeg button[data-p="steady"]');
+    await page.click('#gvPromptSeg button[data-r="staff"]');
+    await page.click('#gvFocusSeg button[data-f="A"]');
+    assert.match(await now(), /Stage \d+ · Gig · Sheet music · A string only/,
+      'the setup line does not follow the settings');
+    // The clef card stays collapsed reference material, below the settings.
+    assert.equal(await page.evaluate(() => document.getElementById('gvClefHelp').open), false,
+      'the staff reference opens itself');
     assert.deepEqual(app.errors, [], 'page errors');
   } finally { await app.close(); }
 });

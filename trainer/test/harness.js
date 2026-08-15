@@ -177,6 +177,19 @@ async function openWithNote(hz, wavOpts) {
   return app;
 }
 
+/**
+ * Open Find-it's difficulty panel and wait for its controls to be clickable.
+ *
+ * The panel is a <details> that is CLOSED during play — the console owns the
+ * screen and the settings are out of the play flow — so a test that clicks a
+ * segment has to open it first, exactly as a player does. (Opening it is also
+ * the one thing in this screen that is ALLOWED to move the page.)
+ */
+async function openSettings(page) {
+  await page.click('#gvSettings > summary');
+  await page.waitForSelector('#gvPromptSeg button', { state: 'visible', timeout: 3000 });
+}
+
 /** Poll until `fn` (run in the page) returns a truthy value, or time out.
     The default allows for the looping WAV's re-attack cadence: the app judges
     only fresh attacks now, so the first verdict can be a loop away. */
@@ -191,4 +204,4 @@ async function until(page, fn, arg, timeout = 10000) {
   return last;
 }
 
-module.exports = { openApp, openWithNote, until, writeNoteWav, writeSequenceWav };
+module.exports = { openApp, openWithNote, until, openSettings, writeNoteWav, writeSequenceWav };
