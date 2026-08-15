@@ -358,3 +358,47 @@ test('mixed prompts flip between staff and names; fixed modes never do', () => {
   assert.equal(G.resolvePrompt('name', () => 0.2), 'name');
   assert.equal(G.resolvePrompt('staff', () => 0.8), 'staff');
 });
+
+/* ================= fuse-hold budget ================= */
+
+test('wrong-verdict fuse freezes cap at ~3s per question', () => {
+  // A reviewer held a 7-second fuse at 6990ms for 15 seconds by spamming
+  // wrong notes: every 'no' verdict renewed a 1s freeze. The budget grants
+  // 3000ms of 'wrong' hold per question and then nothing.
+  const b = G.createFuseBudget();
+  let held = 0;
+  for (let i = 0; i < 100; i++) held += b.consume('wrong', 250);   // 25s asked for
+  assert.equal(held, 3000, 'the fuse was held ' + held + 'ms by wrong-note spam');
+  assert.equal(b.consume('wrong', 250), 0, 'a spent budget grants nothing');
+  assert.equal(b.left('wrong'), 0);
+});
+
+test('the out-of-tune hold expires after ~4s, and the two budgets are separate', () => {
+  const b = G.createFuseBudget();
+  let tune = 0;
+  for (let i = 0; i < 100; i++) tune += b.consume('tune', 250);
+  assert.equal(tune, 4000, 'the out-of-tune hold must expire, then the fuse resumes');
+  // Spending the tune hold must not eat the wrong-verdict allowance.
+  assert.equal(b.left('wrong'), 3000, 'the budgets are per-kind, not shared');
+  assert.equal(b.consume('wrong', 500), 500);
+  assert.equal(b.state.wrong, 500);
+});
+
+test('a partial grant never overshoots the cap', () => {
+  const b = G.createFuseBudget();
+  assert.equal(b.consume('wrong', 2900), 2900);
+  assert.equal(b.consume('wrong', 250), 100, 'the last grant is clipped to what is left');
+  assert.equal(b.consume('wrong', 250), 0);
+});
+
+/* ================= octave counting in words ================= */
+
+test('octave slips are counted honestly — a +24 gap is two octaves, not one', () => {
+  // A reviewer played the same note 24 semitones up and was told "an octave".
+  assert.equal(G.octaveWords(12), 'an octave');
+  assert.equal(G.octaveWords(-12), 'an octave');
+  assert.equal(G.octaveWords(24), 'two octaves');
+  assert.equal(G.octaveWords(-24), 'two octaves');
+  assert.equal(G.octaveWords(36), 'three octaves');
+  assert.equal(G.octaveWords(48), '4 octaves');
+});

@@ -108,8 +108,12 @@
    rope is flavour, not a timer. .low = last two seconds. The fill is
    pixel-STEPPED (hard-stop repeating gradient), matching the scene's grammar —
    a smooth gradient was the one anti-aliased thing on a pixel stage. */
-.gv-fusewrap{position:relative;}
-.gv-fusebar{height:6px; margin:0 auto 6px; background:var(--s2);
+/* The bar and its countdown numeral share a flex row: the numeral owns a
+   reserved slot at the bar's right the whole time the fuse burns (it empties
+   outside the last five seconds and :empty hides its chrome), so the bar
+   never jumps when the numeral arrives. */
+.gv-fusewrap{position:relative; display:flex; align-items:center; gap:8px;}
+.gv-fusebar{height:6px; flex:1 1 auto; margin:0 0 6px; background:var(--s2);
   border:1px solid var(--line); border-radius:2px; overflow:hidden;}
 .gv-fusebar i{display:block; height:100%; width:100%;
   background:repeating-linear-gradient(90deg,
@@ -118,11 +122,14 @@
    against the track; the deep #A6281A is only the thin seam between steps. */
 .gv-fusebar.low i{background:repeating-linear-gradient(90deg,
     var(--bad) 0 9px, #A6281A 9px 12px);}
-/* The last-five-seconds numeral: mono, high contrast, beside the bar. */
-.gv-fusesec{position:absolute; right:0; top:-7px; font-family:var(--mono);
-  font-size:12px; font-weight:800; color:var(--t1); line-height:1;
-  background:var(--s0); border:1px solid var(--line); border-radius:2px;
-  padding:2px 4px; font-variant-numeric:tabular-nums;}
+/* The last-five-seconds numeral: 18px, high contrast, room of its own —
+   the old 12px chip overlapped the bar's corner and read as lint at arm's
+   length, which is where a bass player's eyes are. */
+.gv-fusesec{flex:0 0 auto; min-width:2.2em; text-align:center; margin-bottom:6px;
+  font-family:var(--mono); font-size:18px; font-weight:800; color:var(--t1);
+  line-height:1; background:var(--s0); border:1px solid var(--line);
+  border-radius:2px; padding:2px 5px; font-variant-numeric:tabular-nums;}
+.gv-fusesec:empty{visibility:hidden;}
 .gv-fusebar.low ~ .gv-fusesec{color:var(--bad); border-color:var(--bad);}
 /* Gated on BOTH reduced-motion signals: the OS media query, and the game's
    own "Effects: Calm" toggle (the .calm class on #secFind). */
@@ -162,8 +169,10 @@
 #secFind .verdict{min-height:34px; font-size:17px;}
 /* Idle dead-space gets a faint quaver instead of a blank band. CSS-generated
    on purpose: the e2e suite samples #fVerdict's TEXT for stability and
-   emptiness, and a ::before leaves the text exactly as it was. */
-#secFind .verdict:not(.ok):not(.no):not(.warn)::before{
+   emptiness, and a ::before leaves the text exactly as it was. Gated off
+   while the game-over overlay is up (.gv-overon, set by gvGameOver): a
+   decorative quaver under LIGHTS OUT read as a stuck note. */
+#secFind:not(.gv-overon) .verdict:not(.ok):not(.no):not(.warn)::before{
   content:'♪'; color:var(--t4); opacity:.5; font-weight:400;}
 @media (prefers-reduced-motion: no-preference){
   #secFind:not(.calm) .verdict.ok, #secFind:not(.calm) .verdict.no,
@@ -189,8 +198,19 @@
    380px phone; narrower than ~320px the row is allowed to wrap (see below). */
 #secFind .stat-row{gap:6px;}
 #secFind .stat-row .stat{padding:6px 8px; min-width:64px;}
-/* The stat row measures THIS SITTING only — one quiet label says so. */
-.gv-sesslabel{text-align:center; margin:2px 0 0; color:var(--t4);}
+/* The stat row measures THIS SITTING only — one quiet label says so.
+   margin:auto, because the desktop card caps every p at 66ch: without it the
+   caption centres inside a left-parked 66ch box, visibly off the tiles. */
+.gv-sesslabel{text-align:center; margin:2px auto 0; color:var(--t4);}
+/* One-line captions under the settings segs (Effects/Sound/Hints, and the
+   fret-window reason) — the visible text that replaces touch-less tooltips. */
+.gv-segcap{margin:4px 0 0; color:var(--t4); max-width:22ch;}
+/* Dead fret windows: aria-disabled, NOT disabled — they keep focus so a
+   screen reader can land on them and hear the reason (aria-describedby). */
+#gvFretSeg button[aria-disabled="true"]{opacity:.45; cursor:default;}
+/* The hint board must scroll clear of the fixed bottom tab bar: reserve the
+   nav's height (plus air) whenever the board is scrolled into view. */
+#fBoard{scroll-margin-bottom:calc(var(--nav-h) + 16px);}
 /* Squarer, mono, pixel-flavoured — the DOM buttons on the stage stop
    pretending they belong to a different app than the canvas above them. */
 #secFind #fHint, #secFind #fSkip{font-family:var(--mono); background:var(--s1);

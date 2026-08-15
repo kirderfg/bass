@@ -18,7 +18,7 @@
   const PACES = {
     chill:  { label: 'Soundcheck', detail: 'No fuse, no pressure — find every note at your own pace.',
               approachMs: null,  hearts: null },
-    steady: { label: 'Gig',        detail: 'The cannon fuse burns slow. Burnt out = one of your three stage lights goes dark. The fuse tightens a touch as you level.',
+    steady: { label: 'Gig',        detail: 'The cannon fuse burns slow. Burnt out = one of your three stage lights (the ⚡ bolts up top) goes dark. The fuse tightens a touch as you level.',
               approachMs: 14000, hearts: 3 },
     turbo:  { label: 'Encore',     detail: 'A short fuse. For those about to rock. Same three stage lights as Gig — and the fuse tightens a touch as you level.',
               approachMs: 7000,  hearts: 3 },
@@ -152,6 +152,40 @@
       judge,
       get state() { return s; },
     };
+  }
+
+  /* ================= fuse-hold budget =================
+     Fairness holds on the fuse are bounded PER QUESTION, or they become an
+     exploit: a reviewer held a 7-second fuse at 6990ms for 15 seconds by
+     spamming wrong notes (each 'no' verdict renewed a 1s freeze), and the
+     out-of-tune hold could stall it forever. One budget object per question:
+     'wrong' holds cap at ~3s, the out-of-tune hold at ~4s — after that,
+     consume() grants nothing and the fuse burns on. */
+  function createFuseBudget(caps) {
+    const cap = Object.assign({ wrong: 3000, tune: 4000 }, caps);
+    const spent = { wrong: 0, tune: 0 };
+    return {
+      /** Ask to hold the fuse for `ms` more milliseconds of `kind`
+          ('wrong' | 'tune'). Returns the ms actually granted. */
+      consume(kind, ms) {
+        const c = cap[kind] || 0;
+        const grant = Math.max(0, Math.min(ms || 0, c - (spent[kind] || 0)));
+        spent[kind] = (spent[kind] || 0) + grant;
+        return grant;
+      },
+      /** How much of `kind`'s budget is left. */
+      left(kind) { return Math.max(0, (cap[kind] || 0) - (spent[kind] || 0)); },
+      get state() { return { wrong: spent.wrong, tune: spent.tune }; },
+    };
+  }
+
+  /* ================= octave counting, in words =================
+     A +24-semitone slip is "two octaves", not "an octave" — corrections that
+     count wrong tell the player their ear is wrong when it was right. */
+  function octaveWords(semis) {
+    const n = Math.max(1, Math.round(Math.abs(semis) / 12));
+    return n === 1 ? 'an octave' : n === 2 ? 'two octaves'
+         : n === 3 ? 'three octaves' : n + ' octaves';
   }
 
   /* ================= adaptive question picker =================
@@ -307,5 +341,6 @@
     PACES, PACE_ORDER, PROMPTS, PROMPT_ORDER, resolvePrompt,
     XP_PER_LEVEL, LEVEL_TITLES, levelFor, levelTitle, levelProgress, approachMs,
     createRun, weightFor, weightedPick, createReviewQueue, staffSpec, staffPosName,
+    createFuseBudget, octaveWords,
   };
 });

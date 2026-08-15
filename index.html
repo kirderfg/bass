@@ -134,7 +134,7 @@
         <div class="gv-hud">
           <span class="gv-hearts" id="gvHearts" role="img" aria-label="stage lights left"></span>
           <span class="t-data gv-level" id="gvLevel">LV 1 · GARAGE ROADIE</span>
-          <span class="t-data gv-combo hidden" id="gvCombo">STREAK ×2</span>
+          <span class="t-data gv-combo hidden" id="gvCombo">COMBO ×2</span>
           <span class="t-data gv-xplabel" aria-hidden="true">XP</span>
           <span class="gv-xp" title="XP to the next level" role="progressbar" aria-label="XP into the current level"
                 aria-valuemin="0" aria-valuemax="120" aria-valuenow="0"><i id="gvXpBar"></i></span>
@@ -146,7 +146,9 @@
             <!-- Two facts only ("14 notes · best 21 clean") — the XP-survives
                  sentence sits below the button at caption size, so the overlay
                  fits inside the scene frame at phone width. -->
-            <p class="t-caption gv-over-facts" id="gvOverText" role="status"></p>
+            <!-- NOT a live region: the sequenced srAnnounce in #gvLive is the
+                 spoken channel — role="status" here double-spoke game over. -->
+            <p class="t-caption gv-over-facts" id="gvOverText"></p>
             <button class="btn primary" id="gvRestart">Back on stage</button>
             <p class="t-caption gv-over-xp" id="gvOverXp"></p>
           </div>
@@ -164,7 +166,7 @@
         <div class="sr-only" aria-live="polite" id="gvLive"></div>
         <div class="q" id="fQ">—</div>
         <div class="gv-staffwrap hidden" id="gvStaffWrap">
-          <canvas id="gvStaff" width="170" height="150" aria-label="sight-reading exercise: a note drawn on a bass clef staff — the Hint button reveals its name"></canvas>
+          <canvas id="gvStaff" width="170" height="150" role="img" aria-label="sight-reading exercise: a note drawn on a bass clef staff — the Hint button reveals its name"></canvas>
         </div>
         <div class="qsub" id="fSub" aria-live="polite">Find it on the neck and play it.</div>
         <div class="verdict" id="fVerdict" aria-live="polite">&nbsp;</div>
@@ -213,7 +215,7 @@
         </div>
         <p class="t-caption" id="gvPaceNote" style="margin:var(--sp2) 0 0"></p>
         <!-- The XP premium is real and was undisclosed: say it once, plainly. -->
-        <p class="t-caption" id="gvXpNote" style="margin:var(--sp2) 0 0">Sheet music and faster paces pay more XP.</p>
+        <p class="t-caption" id="gvXpNote" style="margin:var(--sp2) 0 0">Bigger stages, sheet music and faster paces pay more XP.</p>
         <div class="row" style="margin-top:var(--sp3); gap:var(--sp5); flex-wrap:wrap; align-items:flex-start">
           <div>
             <span class="t-caption">Strings</span>
@@ -222,16 +224,26 @@
           <div>
             <span class="t-caption">Frets</span>
             <div class="seg compact" id="gvFretSeg" role="group" aria-label="Frets" style="margin-top:4px"></div>
+            <!-- Why a window is off — visible text, because title tooltips
+                 do not exist on touch; the dead buttons point here. -->
+            <p class="t-caption gv-segcap hidden" id="gvFretNote"></p>
           </div>
         </div>
         <div class="row" style="margin-top:var(--sp3); gap:var(--sp5); flex-wrap:wrap; align-items:flex-start">
           <div>
             <span class="t-caption">Effects</span>
             <div class="seg compact" id="gvFxSeg" role="group" aria-label="Effects" style="margin-top:4px"></div>
+            <p class="t-caption gv-segcap">Calm = less flashing and motion.</p>
           </div>
           <div>
             <span class="t-caption">Sound</span>
             <div class="seg compact" id="gvSndSeg" role="group" aria-label="Sound" style="margin-top:4px"></div>
+            <p class="t-caption gv-segcap">Little cues for hits, misses and the fuse.</p>
+          </div>
+          <div>
+            <span class="t-caption">Hints</span>
+            <div class="seg compact" id="gvHintSeg" role="group" aria-label="Hints" style="margin-top:4px"></div>
+            <p class="t-caption gv-segcap">Manual = a hint only when you tap Hint.</p>
           </div>
         </div>
         <p class="t-caption" id="gvBestNote" style="margin:var(--sp3) 0 0">Best on this setup: 0</p>
