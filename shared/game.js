@@ -13,14 +13,14 @@
 
   /* ================= paces =================
      The game's second difficulty axis, orthogonal to the neck scope
-     (the depth zone): how much time pressure a question carries. Drift is
-     the default and can never end a dive — air is a timed-mode idea. */
+     (the stage): how much time pressure a question carries. Soundcheck is
+     the default and can never end a set — the fuse is a timed-mode idea. */
   const PACES = {
-    chill:  { label: 'Drift',     detail: 'No clock, no air to lose — float and learn.',
+    chill:  { label: 'Soundcheck', detail: 'No fuse, no pressure — find every note at your own pace.',
               approachMs: null,  hearts: null },
-    steady: { label: 'Dive',      detail: 'The note bubble slowly rises. If it reaches the surface, one tank of air goes.',
+    steady: { label: 'Gig',        detail: 'The cannon fuse burns slow. If it burns out, one stage light goes dark.',
               approachMs: 14000, hearts: 3 },
-    turbo:  { label: 'Free-dive', detail: 'A quick current. For divers who already know the neck.',
+    turbo:  { label: 'Encore',     detail: 'A short fuse. For those about to rock.',
               approachMs: 7000,  hearts: 3 },
   };
   const PACE_ORDER = ['chill', 'steady', 'turbo'];
@@ -40,8 +40,8 @@
 
   /* ================= XP, combo, levels ================= */
   const XP_PER_LEVEL = 120;
-  const LEVEL_TITLES = ['Rock Pooler', 'Snorkeller', 'Reef Diver', 'Kelp Drifter',
-                        'Wreck Explorer', 'Twilight Diver', 'Abyss Diver', 'Deep-Sea Legend'];
+  const LEVEL_TITLES = ['Garage Roadie', 'Pub Rocker', 'Support Act', 'Riff Machine',
+                        'Headliner', 'Stadium Shaker', 'Rock Legend', 'Thunderstruck'];
   function levelFor(xp) { return 1 + Math.floor(Math.max(0, xp) / XP_PER_LEVEL); }
   function levelTitle(level) {
     return LEVEL_TITLES[Math.min(LEVEL_TITLES.length - 1, Math.max(0, level - 1))];
@@ -52,8 +52,8 @@
     return { into, span: XP_PER_LEVEL, frac: into / XP_PER_LEVEL };
   }
 
-  /** How long the note bubble takes to reach the surface. Higher levels
-      shave a little off, floored well above "impossible". */
+  /** How long the cannon fuse takes to burn down. Higher levels shave a
+      little off, floored well above "impossible". */
   function approachMs(pace, level) {
     const p = PACES[pace];
     if (!p || p.approachMs == null) return null;
@@ -67,9 +67,9 @@
    * over. Judgement kinds:
    *   'clean'   — right note, first attempt
    *   'dirty'   — right note after hunting
-   *   'wrong'   — a miss (streak breaks; air is NOT touched — only time
-   *               running out costs air, i.e. 'breach')
-   *   'breach'  — the clock ran out: the note bubble reached the surface
+   *   'wrong'   — a miss (streak breaks; stage lights are NOT touched —
+   *               only the fuse burning out costs one, i.e. 'breach')
+   *   'breach'  — the clock ran out: the cannon fuse burnt to nothing
    *   'skip'    — player asked for the next one
    */
   function createRun(opts) {
@@ -81,7 +81,7 @@
       maxHearts: PACES[pace].hearts,
       combo: 0, bestCombo: 0,
       xp: startXp,
-      zaps: 0,                          // notes found this dive
+      zaps: 0,                          // notes nailed this set
       over: false,
     };
     function judge(kind) {

@@ -75,10 +75,11 @@
 .gv-screen canvas{display:block; width:100%; height:auto; image-rendering:pixelated;
   border:1px solid var(--line); border-radius:var(--r-sm); background:var(--s0);}
 .gv-hud{display:flex; align-items:center; gap:10px; flex-wrap:wrap; min-height:18px; margin-bottom:6px;}
-/* Air, not hearts: each <i> is one pixel-art air bubble; losing one dims it. */
-.gv-hearts{display:flex; gap:3px;}
-.gv-hearts i{width:14px; height:14px; image-rendering:pixelated;
-  background-image:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 7 7' shape-rendering='crispEdges'><path fill='%236FC8D6' d='M2 0h3v1h1v1h1v3H6v1H5v1H2V6H1V5H0V2h1V1h1z'/><path fill='%23BFE9EF' d='M1 2h2v1H1zM1 3h1v1H1z'/><path fill='%23348A99' d='M5 4h1v1H5zM4 5h1v1H4z'/></svg>");
+/* Stage lights, not hearts: each <i> is one pixel lightning bolt — the
+   band's own mark. Losing one dims it. */
+.gv-hearts{display:flex; gap:4px;}
+.gv-hearts i{width:11px; height:16px; image-rendering:pixelated;
+  background-image:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 7 10' shape-rendering='crispEdges'><path fill='%23F2A93B' d='M3 0h3L4 4h2L1 10l1-4H1z'/><path fill='%23F6E27A' d='M4 1h1L4 3H3z'/></svg>");
   background-size:100% 100%;}
 .gv-hearts i.lost{filter:grayscale(1) brightness(.45);}
 .gv-combo{color:var(--root); font-weight:700;}
