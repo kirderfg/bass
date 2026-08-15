@@ -86,11 +86,15 @@
 .gv-level{color:var(--t3);}
 .gv-xp{flex:1 1 60px; min-width:60px; height:7px; background:var(--s2);
   border:1px solid var(--line); border-radius:2px; overflow:hidden;}
-.gv-xp i{display:block; height:100%; width:0%; background:var(--hl); transition:width var(--slow) var(--ease);}
+/* XP is stage heat, not app chrome: the bar warms from ember to amber so the
+   whole HUD sits in the scene's palette. */
+.gv-xp i{display:block; height:100%; width:0%;
+  background:linear-gradient(90deg, #C77F1F, var(--root)); transition:width var(--slow) var(--ease);}
 .gv-over{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center;
   justify-content:center; gap:6px; text-align:center; background:rgba(14,13,12,.82);
   border-radius:var(--r-sm); padding:10px;}
-.gv-over-title{font-family:var(--mono); font-size:22px; letter-spacing:.18em; color:var(--root);}
+.gv-over-title{font-family:var(--mono); font-size:22px; letter-spacing:.18em; color:var(--root);
+  text-shadow:0 0 14px rgba(242,169,59,.45);}
 .gv-staffwrap{display:flex; justify-content:center; margin:4px 0 2px;}
 .gv-staffwrap canvas{width:min(230px, 70%); height:auto; image-rendering:pixelated;
   background:var(--s2); border:1px solid var(--line); border-radius:var(--r-sm);}

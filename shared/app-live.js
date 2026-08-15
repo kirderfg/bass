@@ -298,7 +298,7 @@ const GV = {
   spawnAt:0,             // when the question arrived, for the fuse clock
   bell:null,             // { wobble } — wobble is the last-miss timestamp
   bx:230, by:28,         // where the bell was last drawn (ring fx start there)
-  zapT:0, breachT:0,
+  zapT:0, breachT:0, zapHit:false,
   fx:[],                 // particles and floating toasts
   hearingUntil:0,        // canvas quaver while a pluck settles
   raf:null, lastFrame:0,
@@ -451,7 +451,7 @@ function gvSpawn(){
 function gvZap(){
   GV.phase = 'zap';
   GV.zapT = performance.now();
-  if (!REDUCED) gvBurst(GV.bx, GV.by + 10, '#F6E27A');
+  GV.zapHit = false;   // the spark burst waits for the ball to LAND (drawScene)
   if (GV.promptKind === 'staff') drawStaff(document.getElementById('gvStaff'), q.midi, { showName:true });
 }
 /** The fuse burnt out before the note came. A failed recall, banked
@@ -508,37 +508,45 @@ function blit(ctx, sp, x, y, s){
 }
 /* Stage props — objects, not characters. The bell carries the question,
    the cannon answers it, and the fire is your streak made visible. */
-const BELL = sprite({ b:'#F2A93B', B:'#C77F1F', h:'#F6E27A', k:'#3A2A12' },
-  ['......kk......',
-   '.....bbbb.....',
-   '....bhbbbb....',
-   '....bhbbbb....',
-   '...bbhbbbbb...',
-   '...bbhbbbbb...',
-   '...bbbbbbbb...',
-   '...bbbbbbbB...',
-   '..bbbbbbbbbB..',
-   '.bbbbbbbbbbbB.',
-   '.BBBBBBBBBBBB.',
-   '......kk......']);
-const CANNON = sprite({ c:'#20232A', C:'#3A3F46', w:'#5C4630', W:'#3A2A12' },
-  ['...........cc...',
-   '..........cccc..',
-   '.........cccc...',
-   '........cccc....',
-   '..ccccccccc.....',
-   '.cCCCCCccc......',
-   '.ccccccccc......',
-   '..ccccccc.......',
-   '....www.........',
-   '...wWWWw........',
-   '...wWWWw........',
-   '....www.........']);
+/* The bell: hanger loop, straight shoulder, flared skirt, dark mouth, clapper.
+   The left highlight column and right shade edge give it the round read. */
+const BELL = sprite({ b:'#F2A93B', B:'#C77F1F', d:'#8A5A14', h:'#F6E27A', k:'#3A2A12' },
+  ['......Bhh.......',
+   '......B..h......',
+   '.....bbbbbb.....',
+   '....hbbbbbbB....',
+   '....hbbbbbbB....',
+   '....hbbbbbbB....',
+   '....hbbbbbbB....',
+   '....bbbbbbbB....',
+   '...bbbbbbbbbB...',
+   '...bbbbbbbbbB...',
+   '..hbbbbbbbbbbB..',
+   '.hbbbbbbbbbbbBB.',
+   '.dBBBBBBBBBBBBd.',
+   '....kkkkkkkk....',
+   '.......kk.......',
+   '......kkkk......']);
+/* The cannon: tapered barrel raised toward the bell, muzzle ring with a dark
+   bore, breech knob, and a spoked wheel on the near side. */
+const CANNON = sprite({ c:'#262A31', C:'#3A3F46', h:'#4E555E', s:'#0C0D10', w:'#5C4630', W:'#3A2A12' },
+  ['..............CC..',
+   '............hhCCs.',
+   '..........hhccCCs.',
+   '........hhccccCCs.',
+   '......hhccccccCC..',
+   '....hhccWWWcccCC..',
+   '.chhcccWcwcW......',
+   'ccccccWccw..W.....',
+   '.cccccWwwWwwW.....',
+   '..ccccW..w..W.....',
+   '..cc...W.w.W......',
+   '........WWW.......']);
 /* The five stages — one per tier, each an era of the back catalogue.
    Deeper into the set list, darker the stage, harder the neck. */
 const WORLDS = [
-  { name:'High Voltage',    sky:'#1B1430', sky2:'#110C20', spot:true,  embers:false, bolt:false },
-  { name:'Powerage',        sky:'#141C26', sky2:'#0C1118', spot:true,  embers:false, bolt:false },
+  { name:'High Voltage',    sky:'#221743', sky2:'#140D2B', spot:true,  embers:false, bolt:false },
+  { name:'Powerage',        sky:'#152130', sky2:'#0C131C', spot:true,  embers:false, bolt:false },
   { name:'Highway to Hell', sky:'#451510', sky2:'#280C07', spot:false, embers:true,  bolt:false },
   { name:'Back in Black',   sky:'#0D0D11', sky2:'#060608', spot:false, embers:false, bolt:true  },
   { name:'For Those About to Rock', sky:'#221607', sky2:'#140D04', spot:true, embers:true, bolt:false, cannons:true },
@@ -577,15 +585,37 @@ function pxCircle(ctx, cx, cy, r, fill, rim){
               ctx.fillRect(cx + w - 2, cy + dy, 2, 2); }
   }
 }
-/** One pixel flame tongue: stacked 2px rows, ember red up to a pale tip. */
-function pxFlame(ctx, x, baseY, h, flick){
-  const COLS = ['#8E2A1F', '#E4675C', '#F2A93B', '#F6E27A'];
+/** One pixel flame tongue: stacked 2px rows, ember red up to a pale tip.
+    `wMax`/`cols` let one function draw both the deep back layer and the hot
+    front layer of the wall. Tall tongues get a pale core near the base. */
+const FLAME_HOT  = ['#6E1B12', '#A6281A', '#DE5226', '#F2A93B', '#F6E27A'];
+const FLAME_DEEP = ['#4A120C', '#6E1B12', '#8E2A1F', '#A83A24'];
+function pxFlame(ctx, x, baseY, h, flick, wMax, cols){
+  const C = cols || FLAME_HOT, wm = wMax || 12;
   for (let k = 0; k < h; k += 2){
     const f = k / Math.max(2, h);
-    const w = Math.max(2, Math.round(12 * (1 - f * f)));
+    const w = Math.max(2, Math.round(wm * (1 - f * f)));
     const wob = flick ? Math.round(Math.sin(flick + k) * (f * 2.5)) : 0;
-    ctx.fillStyle = COLS[Math.min(COLS.length - 1, Math.floor(f * COLS.length))];
-    ctx.fillRect(x - Math.floor(w / 2) + wob, baseY - k - 2, w, 2);
+    ctx.fillStyle = C[Math.min(C.length - 1, Math.floor(f * C.length))];
+    ctx.fillRect(x - (w >> 1) + wob, baseY - k - 2, w, 2);
+  }
+  if (!cols && h > 10){
+    const ch = Math.round(h * 0.45);
+    for (let k = 0; k < ch; k += 2){
+      const f = k / ch;
+      const w = Math.max(2, Math.round((wm * 0.45) * (1 - f)));
+      ctx.fillStyle = f < 0.55 ? '#F6E27A' : '#F2A93B';
+      ctx.fillRect(x - (w >> 1), baseY - k - 2, w, 2);
+    }
+  }
+}
+/** A stepped thick line out of 2px rows — the lightning bolt is built from these. */
+function pxLine(ctx, x0, y0, x1, y1, w, color){
+  const steps = Math.max(1, Math.ceil(Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) / 2));
+  ctx.fillStyle = color;
+  for (let i = 0; i <= steps; i++){
+    const x = Math.round(x0 + (x1 - x0) * i / steps), y = Math.round(y0 + (y1 - y0) * i / steps);
+    ctx.fillRect(x - (w >> 1), y, w, 2);
   }
 }
 function drawScene(t){
@@ -598,41 +628,75 @@ function drawScene(t){
   const drift = REDUCED ? 0 : 1;             // ambient motion switch
   ctx.clearRect(0, 0, W, H);
 
-  // backdrop: two flat bands per stage era
+  // backdrop: banded sky, darker toward the boards, a faint horizon seam
   ctx.fillStyle = world.sky;  ctx.fillRect(0, 0, W, FLOOR);
-  ctx.fillStyle = world.sky2; ctx.fillRect(0, 70, W, FLOOR - 70);
-  ctx.fillStyle = world.sky;  ctx.globalAlpha = .5; ctx.fillRect(0, 70, W, 8); ctx.globalAlpha = 1;
-
-  // the amp wall: two Marshall-ish stacks at the back
-  for (const ax of [64, 118]){
-    ctx.fillStyle = '#14110F'; ctx.fillRect(ax, FLOOR - 34, 30, 34);
-    ctx.fillStyle = '#241E18'; ctx.fillRect(ax + 2, FLOOR - 32, 26, 13);
-    ctx.fillRect(ax + 2, FLOOR - 16, 26, 13);
-    ctx.fillStyle = '#3A342E';
-    for (let g = 0; g < 4; g++){ ctx.fillRect(ax + 4 + g * 6, FLOOR - 30, 2, 9); ctx.fillRect(ax + 4 + g * 6, FLOOR - 14, 2, 9); }
+  ctx.fillStyle = world.sky2; ctx.fillRect(0, 52, W, FLOOR - 52);
+  ctx.fillStyle = world.sky;  ctx.globalAlpha = .5; ctx.fillRect(0, 52, W, 10); ctx.globalAlpha = 1;
+  ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(0, FLOOR - 18, W, 18);
+  // Highway to Hell: the sky itself burns low over the horizon
+  if (world.embers){
+    ctx.fillStyle = 'rgba(228,103,92,.14)'; ctx.fillRect(0, FLOOR - 34, W, 34);
+    ctx.fillStyle = 'rgba(242,169,59,.10)'; ctx.fillRect(0, FLOOR - 16, W, 16);
   }
-  // Back in Black: one white-hot bolt on the backdrop, still and huge
+  // Back in Black: one huge white-hot bolt on the backdrop, still, with a glow
   if (world.bolt){
-    ctx.fillStyle = 'rgba(232,226,212,.85)';
-    const bx0 = 150;
-    [[0,0],[ -3,8],[-6,16],[3,22],[0,30],[-3,38]].forEach(([dx, dy], i) => {
-      ctx.fillRect(bx0 + dx, 18 + dy, 5, 9);
-    });
+    const seg = [[184, 12], [172, 34], [180, 48], [158, 74], [168, 88], [142, 118]];
+    for (let i = 0; i < seg.length - 1; i++)
+      pxLine(ctx, seg[i][0], seg[i][1], seg[i + 1][0], seg[i + 1][1], 9, 'rgba(232,226,212,.10)');
+    for (let i = 0; i < seg.length - 1; i++)
+      pxLine(ctx, seg[i][0], seg[i][1], seg[i + 1][0], seg[i + 1][1], 4, '#E8E2D4');
+    pxLine(ctx, 172, 34, 190, 52, 5, 'rgba(232,226,212,.10)');
+    pxLine(ctx, 172, 34, 188, 50, 2, 'rgba(232,226,212,.75)');
   }
-  // spotlights from the rig on the club and stadium stages
+
+  // the amp wall: two Marshall-ish full stacks — head with knobs, two cabs
+  for (const ax of [62, 116]){
+    ctx.fillStyle = '#0B0A08'; ctx.fillRect(ax + 1, FLOOR - 1, 30, 2);      // ground shadow
+    ctx.fillStyle = '#14110F'; ctx.fillRect(ax, FLOOR - 37, 32, 37);
+    ctx.fillStyle = '#241E18'; ctx.fillRect(ax + 2, FLOOR - 35, 28, 6);     // head panel
+    ctx.fillStyle = '#F2A93B';
+    for (let g = 0; g < 4; g++) ctx.fillRect(ax + 5 + g * 6, FLOOR - 33, 2, 2);  // knobs
+    ctx.fillStyle = '#E4675C'; ctx.fillRect(ax + 27, FLOOR - 33, 2, 2);     // power lamp
+    for (const cy of [FLOOR - 27, FLOOR - 14]){                             // two cabs
+      ctx.fillStyle = '#1C1712'; ctx.fillRect(ax + 2, cy, 28, 11);
+      ctx.fillStyle = '#332C24';
+      for (let g = 0; g < 5; g++) ctx.fillRect(ax + 4 + g * 5, cy + 1, 2, 9);
+      ctx.fillStyle = '#3A342E';                                            // corner caps
+      ctx.fillRect(ax + 2, cy, 2, 2); ctx.fillRect(ax + 28, cy, 2, 2);
+      ctx.fillRect(ax + 2, cy + 9, 2, 2); ctx.fillRect(ax + 28, cy + 9, 2, 2);
+    }
+  }
+
+  // spotlights: soft nested cones off rig fixtures, pooling where they land.
+  // The second cone hangs dead over the bell — it IS the bell's light, so it
+  // gets no housing (the bell's own hanger occupies that spot) and no drift.
   if (world.spot){
-    ctx.fillStyle = 'rgba(242,169,59,.06)';
     for (let b = 0; b < 2; b++){
-      const x0 = 70 + b * 150 + (drift ? Math.sin(t / 3000 + b * 2) * 10 : 0);
-      for (let y = 8; y < FLOOR; y += 4) ctx.fillRect(x0 - (y - 8) * 0.35, y, 10 + (y - 8) * 0.7, 4);
+      const x0 = b ? 230 : Math.round(78 + (drift ? Math.sin(t / 3000) * 8 : 0));
+      if (!b){
+        ctx.fillStyle = '#14110F'; ctx.fillRect(x0 - 5, 11, 10, 6);         // the fixture
+        ctx.fillStyle = '#F6E27A'; ctx.fillRect(x0 - 2, 16, 4, 2);          // its lens
+      }
+      for (const [spread, a] of [[0.30, .04], [0.19, .05], [0.09, .06]]){
+        ctx.fillStyle = 'rgba(242,169,59,' + a + ')';
+        for (let y = 18; y < FLOOR; y += 3){
+          const half = 2 + Math.round((y - 18) * spread);
+          ctx.fillRect(x0 - half, y, half * 2, 3);
+        }
+      }
+      const half = 2 + Math.round((FLOOR - 18) * 0.30);                     // the pool
+      ctx.fillStyle = 'rgba(242,169,59,.10)'; ctx.fillRect(x0 - half, FLOOR, half * 2, 3);
+      ctx.fillStyle = 'rgba(246,226,122,.08)'; ctx.fillRect(x0 - (half >> 1), FLOOR, half, 2);
     }
   }
   // Highway to Hell (and the cannons' stage): embers climbing off the fire
   if (world.embers){
-    ctx.fillStyle = 'rgba(242,169,59,.55)';
-    for (let i = 0; i < 10; i++){
-      const ey = (i * 41 + (drift ? t / 60 : 0)) % (FLOOR - 12);
-      ctx.fillRect((i * 71 + 19) % W, FLOOR - 8 - ey, 2, 2);
+    for (let i = 0; i < 14; i++){
+      const ey = (i * 41 + (drift ? t / (48 + (i % 3) * 15) : 0)) % (FLOOR - 12);
+      const ex = (i * 71 + 19 + (drift ? Math.round(Math.sin(t / 700 + i) * 3) : 0)) % W;
+      ctx.fillStyle = 'rgba(242,169,59,' + (0.25 + (i % 3) * 0.15).toFixed(2) + ')';
+      const sz = i % 3 === 2 ? 1 : 2;
+      ctx.fillRect(ex, FLOOR - 8 - ey, sz, sz);
     }
   }
   // the rig beam the bell hangs from
@@ -643,12 +707,13 @@ function drawScene(t){
   ctx.fillStyle = '#2A1D17'; ctx.fillRect(0, FLOOR, W, H - FLOOR);
   ctx.fillStyle = '#1C1310';
   for (let x = 10; x < W; x += 26) ctx.fillRect(x, FLOOR + 2, 2, H - FLOOR - 2);
+  ctx.fillStyle = 'rgba(0,0,0,.30)'; ctx.fillRect(0, FLOOR + 1, W, 1);      // board shadow line
   ctx.fillStyle = 'rgba(246,242,236,.10)'; ctx.fillRect(0, FLOOR, W, 2);
 
   // For Those About to Rock: a rank of cannon silhouettes at the back
   if (world.cannons){
-    ctx.globalAlpha = .5;
-    for (const cx of [160, 196, 232]) blit(ctx, CANNON, cx, FLOOR - 22, 1.6);
+    ctx.globalAlpha = .45;
+    for (const cx of [156, 194, 232]) blit(ctx, CANNON, cx, FLOOR - 18, 1.5);
     ctx.globalAlpha = 1;
   }
 
@@ -661,12 +726,43 @@ function drawScene(t){
     // the heat haze behind the wall of fire, brighter the longer the streak
     ctx.fillStyle = 'rgba(242,169,59,' + Math.min(0.12, 0.025 * streak).toFixed(3) + ')';
     ctx.fillRect(48, H - fh - 12, W - 52, fh + 12);
+    // the glow the fire throws back across the boards
+    ctx.fillStyle = 'rgba(242,169,59,' + Math.min(0.10, 0.02 * streak).toFixed(3) + ')';
+    ctx.fillRect(48, FLOOR, W - 48, H - FLOOR);
   }
-  for (let j = 0; j < 17; j++){
-    const fx = 56 + j * 16;
-    const jh = Math.max(3, Math.round(fh * (0.72 + 0.28 * Math.sin(j * 2.7))
-               * (drift ? (0.86 + 0.14 * Math.sin(t / 130 + j * 1.9)) : 1)));
-    pxFlame(ctx, fx, H - 2, jh, drift ? t / 150 + j : 0);
+  if (streak === 0){
+    // cold stage: scattered embers glowing in the coals, no tongues yet
+    for (let j = 0; j < 22; j++){
+      const ex = 52 + j * 12 + ((j * 29) % 7);
+      const on = drift ? (Math.sin(t / 260 + j * 2.1) > -0.35) : (j % 3 !== 0);
+      ctx.fillStyle = on ? (j % 3 ? '#C7402F' : '#F2A93B') : '#6E1B12';
+      ctx.fillRect(ex, H - 4 + (j % 2), 2, 2);
+      if (on && j % 4 === 0){ ctx.fillStyle = 'rgba(242,169,59,.25)'; ctx.fillRect(ex - 1, H - 6, 4, 4); }
+    }
+  } else {
+    // back layer: deep-red wide tongues, then the hot layer over them
+    for (let j = 0; j < 13; j++){
+      const fx = 54 + j * 21 + ((j * 13) % 7);
+      const jh = Math.max(4, Math.round(fh * 1.12 * (0.7 + 0.3 * Math.sin(j * 3.9))
+                 * (drift ? (0.88 + 0.12 * Math.sin(t / 170 + j * 2.3)) : 1)));
+      pxFlame(ctx, fx, H - 2, jh, drift ? t / 190 + j * 2 : 0, 17, FLAME_DEEP);
+    }
+    for (let j = 0; j < 17; j++){
+      const fx = 52 + j * 16 + ((j * 13) % 9);
+      const jh = Math.max(3, Math.round(fh * (0.66 + 0.34 * Math.sin(j * 2.7))
+                 * (drift ? (0.84 + 0.16 * Math.sin(t / 130 + j * 1.9)) : 1)));
+      pxFlame(ctx, fx, H - 2, jh, drift ? t / 150 + j : 0, 9 + ((j * 11) % 5));
+    }
+    // sparks breaking off the top of the wall
+    if (drift){
+      const n = Math.min(3 + streak, 10);
+      for (let i = 0; i < n; i++){
+        const sx = 60 + (i * 97) % (W - 90) + Math.round(Math.sin(t / 300 + i * 5) * 3);
+        const sy = H - 4 - ((t / (34 + (i % 4) * 9) + i * 43) % (fh + 30));
+        ctx.fillStyle = 'rgba(246,226,122,' + (0.2 + 0.5 * ((sy - (H - 34 - fh)) / 34)).toFixed(2) + ')';
+        ctx.fillRect(sx, Math.round(sy), i % 3 === 0 ? 2 : 1, i % 3 === 0 ? 2 : 1);
+      }
+    }
   }
 
   // the cannon, stage left, waiting for the right note
@@ -687,48 +783,117 @@ function drawScene(t){
     const bx = 230;
     const zapAge = GV.phase === 'zap' ? now - GV.zapT : -1;
     let sway = drift ? Math.sin(t / 1500) * 2 : 0;
-    if (zapAge > 120 && !REDUCED)
-      sway += Math.sin((zapAge - 120) / 90) * 8 * Math.exp(-(zapAge - 120) / 500);
-    if (bell.wobble && now - bell.wobble < 340 && !REDUCED)
-      sway += Math.sin(((now - bell.wobble) / 340) * Math.PI * 3) * 3;
+    if (zapAge > 160 && !REDUCED)
+      sway += Math.sin((zapAge - 160) / 90) * 8 * Math.exp(-(zapAge - 160) / 500);
+    if (bell.wobble && now - bell.wobble < 340 && !REDUCED){
+      const wp = (now - bell.wobble) / 340;
+      sway += Math.sin(wp * Math.PI * 4) * 4 * (1 - wp);   // a hard rattle that dies out
+    }
     sway = Math.round(sway);
     const by = 14;
-    // chain from the beam down to the bell's hanger
-    ctx.fillStyle = '#3A342E';
-    ctx.fillRect(bx - 1 + Math.round(sway / 2), 12, 2, 6);
-    blit(ctx, BELL, bx - 14 + sway, by + 4, 2);
+    // one bright frame as the cannon goes off: the whole stage catches the flash
+    if (zapAge >= 0 && zapAge < 70){
+      ctx.fillStyle = 'rgba(246,226,122,.16)'; ctx.fillRect(0, 0, W, H);
+    }
+    // chain links from the beam down to the bell's hanger loop
+    const chx = bx - 1 + Math.round(sway / 2);
+    ctx.fillStyle = '#3A342E'; ctx.fillRect(chx, 12, 2, 4);
+    ctx.fillStyle = '#4E463C'; ctx.fillRect(chx, 13, 2, 1);
+    // the bell rings: a warm halo swells around it while the note lands
+    if (zapAge >= 160 && zapAge < 560 && !REDUCED){
+      const p = (zapAge - 160) / 400;
+      pxCircle(ctx, bx + sway, by + 18, 20 + Math.round(p * 8),
+        'rgba(246,226,122,' + (0.16 * (1 - p)).toFixed(3) + ')', null);
+    }
+    blit(ctx, BELL, bx - 16 + sway, by + 2, 2);
     const label = GV.promptKind === 'staff' ? '♪?' : (q ? q.name : '');
     if (label){
       ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
-      ctx.fillStyle = '#14110F';
-      ctx.fillText(label, bx + sway, by + 22);
+      // the label itself flashes hot for the first beat of the ring
+      ctx.fillStyle = (zapAge >= 60 && zapAge < 420) ? '#7E1F16' : '#14110F';
+      ctx.fillText(label, bx + sway, by + 24);
     }
-    GV.bx = bx; GV.by = by + 14;
+    GV.bx = bx; GV.by = by + 16;
 
-    // the cannonball on its way up: cannon muzzle → bell
+    // the cannonball on its way up: muzzle → bell, with a spark trail
     if (zapAge >= 0 && zapAge < 160){
       const p = zapAge / 160;
-      const cbx = 42 + (bx - 42) * p, cby = FLOOR - 22 - (FLOOR - 22 - (by + 18)) * p;
-      ctx.fillStyle = '#F6E27A'; ctx.fillRect(42, FLOOR - 26, 6, 6);   // muzzle flash
-      ctx.fillStyle = '#14110F'; ctx.fillRect(cbx, cby, 5, 5);
-      ctx.fillStyle = 'rgba(246,242,236,.6)'; ctx.fillRect(cbx + 1, cby + 1, 2, 2);
+      const cbx = 47 + (bx - 47) * p;
+      const cby = (FLOOR - 22) - (FLOOR - 22 - (by + 28)) * p - Math.sin(p * Math.PI) * 9;
+      for (let i = 1; i <= 4; i++){
+        const tp = Math.max(0, p - i * 0.06);
+        const tx = 47 + (bx - 47) * tp;
+        const ty = (FLOOR - 22) - (FLOOR - 22 - (by + 28)) * tp - Math.sin(tp * Math.PI) * 9;
+        ctx.fillStyle = 'rgba(246,226,122,' + (0.65 - i * 0.14).toFixed(2) + ')';
+        const ts = i < 3 ? 3 : 2;
+        ctx.fillRect(Math.round(tx) + 1, Math.round(ty) + 1, ts, ts);
+      }
+      ctx.fillStyle = '#14110F'; ctx.fillRect(Math.round(cbx) - 1, Math.round(cby) - 1, 6, 6);
+      ctx.fillStyle = '#4E555E'; ctx.fillRect(Math.round(cbx) - 1, Math.round(cby) - 1, 2, 2);
+      ctx.fillStyle = '#F6E27A'; ctx.fillRect(Math.round(cbx) + 1, Math.round(cby) + 1, 2, 2);
     }
-    // breach: the fuse died — a sorry puff of smoke at the muzzle
+    // muzzle flash: a hot star off the bore with a blast ring, slow-decay core
+    if (zapAge >= 0 && zapAge < 110){
+      const fa = 1 - (zapAge / 110) * (zapAge / 110);
+      pxCircle(ctx, 50, FLOOR - 22, 12, 'rgba(242,169,59,' + (0.35 * fa).toFixed(2) + ')', null);
+      pxCircle(ctx, 49, FLOOR - 22, 7, 'rgba(246,226,122,' + (0.95 * fa).toFixed(2) + ')', null);
+      ctx.fillStyle = 'rgba(246,226,122,' + (0.95 * fa).toFixed(2) + ')';
+      ctx.fillRect(42, FLOOR - 23, 17, 2); ctx.fillRect(49, FLOOR - 30, 2, 17);
+      ctx.fillRect(45, FLOOR - 27, 2, 2); ctx.fillRect(54, FLOOR - 27, 2, 2);
+      ctx.fillRect(45, FLOOR - 17, 2, 2); ctx.fillRect(54, FLOOR - 17, 2, 2);
+      if (!REDUCED){
+        const rp = zapAge / 110;
+        pxCircle(ctx, 50, FLOOR - 22, 6 + Math.round(rp * 12), null,
+          'rgba(242,169,59,' + (0.5 * fa).toFixed(2) + ')');
+      }
+    }
+    // impact: the ring blooms off the bell mouth exactly when the ball lands
+    if (zapAge >= 160 && !GV.zapHit){
+      GV.zapHit = true;
+      if (!REDUCED) gvBurst(bx + sway, by + 20, '#F6E27A');
+    }
+    if (zapAge >= 160 && zapAge < 380 && !REDUCED){
+      const p = (zapAge - 160) / 220;
+      pxCircle(ctx, bx + sway, by + 20, 5 + Math.round(p * 15), null,
+        'rgba(246,226,122,' + (0.8 * (1 - p)).toFixed(2) + ')');
+    }
+    // breach: the fuse died — three grey puffs crawl off the muzzle and thin out
     if (GV.phase === 'breach'){
-      const p = Math.min(1, (now - GV.breachT) / 500);
-      pxCircle(ctx, 46, FLOOR - 30 - p * 16, 5 + Math.round(p * 6),
-        'rgba(140,132,120,' + (0.4 * (1 - p)) + ')', null);
+      const age = now - GV.breachT;
+      for (let i = 0; i < 3; i++){
+        const a0 = age - i * 90;
+        if (a0 < 0) continue;
+        const p = Math.min(1, a0 / 620);
+        const r = 5 + Math.round(p * (8 + i * 2));
+        const cy = FLOOR - 32 - Math.round(p * (16 + i * 9)) - i * 4;
+        const cx = 51 + (i - 1) * 5 + Math.round(p * (i * 5 - 3));
+        pxCircle(ctx, cx, cy, r, 'rgba(152,144,132,' + (0.50 * (1 - p)).toFixed(3) + ')', null);
+        pxCircle(ctx, cx - (r >> 2), cy - (r >> 1), Math.max(3, r >> 1),
+          'rgba(186,178,166,' + (0.40 * (1 - p)).toFixed(3) + ')', null);
+      }
     }
-    // the fuse, burning right to left along the boards toward the cannon
+    // the fuse: a twisted rope burning right to left toward the cannon,
+    // ash where it has already burnt, a hot spark head spitting sparks
     const ms = GAME.approachMs(GV.pace, GAME.levelFor(GV.xp));
     if (ms != null && GV.phase === 'fight'){
       const p = Math.min(1, (now - GV.spawnAt) / ms);
-      const x0 = 46, x1 = 150;
-      const sparkX = x1 - (x1 - x0) * p;
-      ctx.fillStyle = '#5C4630';
-      ctx.fillRect(x0, FLOOR + 10, Math.max(0, sparkX - x0), 2);
-      ctx.fillStyle = '#F6E27A'; ctx.fillRect(sparkX - 1, FLOOR + 8, 3, 3);
-      if (drift && Math.floor(t / 90) % 2){ ctx.fillStyle = '#F2A93B'; ctx.fillRect(sparkX, FLOOR + 5, 2, 2); }
+      const x0 = 46, x1 = 150, fy = FLOOR + 9;
+      const sparkX = Math.round(x1 - (x1 - x0) * p);
+      ctx.fillStyle = 'rgba(0,0,0,.35)';                       // seats it on the boards
+      ctx.fillRect(x0, fy + 2, x1 - x0, 1);
+      for (let x = x0; x < sparkX; x += 2){                    // the rope's twist
+        ctx.fillStyle = ((x >> 1) & 1) ? '#6B5138' : '#4A3826';
+        ctx.fillRect(x, fy + ((x >> 2) & 1), 2, 2);
+      }
+      ctx.fillStyle = 'rgba(96,90,82,.55)';                    // the ash line left behind
+      for (let x = sparkX + 3; x < x1; x += 5) ctx.fillRect(x, fy + 1, 2, 1);
+      pxCircle(ctx, sparkX, fy, 5, 'rgba(242,169,59,.22)', null);
+      ctx.fillStyle = '#E4675C'; ctx.fillRect(sparkX - 2, fy - 1, 5, 4);
+      ctx.fillStyle = '#F6E27A'; ctx.fillRect(sparkX - 1, fy, 3, 2);
+      if (drift){                                              // it spits as it burns
+        if (Math.floor(t / 90) % 2){ ctx.fillStyle = '#F2A93B'; ctx.fillRect(sparkX + 1, fy - 4, 2, 2); }
+        if (Math.floor(t / 70) % 3 === 0){ ctx.fillStyle = '#F6E27A'; ctx.fillRect(sparkX - 3, fy - 6, 1, 1); }
+      }
     }
   }
 
@@ -760,8 +925,10 @@ function drawScene(t){
    above where it sounds; BassGame.staffSpec owns that arithmetic. */
 const STAFF_INK = '#E8E2D4';
 function staffGeo(cv){
-  // hs = half a line-space; baseY = the bottom line (written G2)
-  return { hs:6, baseY:90, x0:40, x1:cv.width - 12 };
+  // hs = half a line-space; baseY = the bottom line (written G2). The low B
+  // sits at pos -5 — 30px below the base line — so the bottom margin must
+  // hold that head plus, on the reference card, its name label under it.
+  return { hs:6, baseY:cv.height - 50, x0:40, x1:cv.width - 12 };
 }
 /* The F-clef as a sprite: the head dot ON the F line, the arc bulging right,
    the tail sweeping down-left — 12×22 at scale 2 spans the staff like the
