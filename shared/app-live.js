@@ -33,7 +33,7 @@ const TIERS = [
   { label:'2 · E + A strings, frets 0–12', strings:['E','A'], maxFret:12, accidentals:false },
   { label:'3 · add D + G strings', strings:['E','A','D','G'], maxFret:12, accidentals:false },
   { label:'4 · add the low B string', strings:['B','E','A','D','G'], maxFret:12, accidentals:false },
-  { label:'5 · everything + sharps/flats', strings:['B','E','A','D','G'], maxFret:12, accidentals:true }
+  { label:'5 · everything + sharps', strings:['B','E','A','D','G'], maxFret:12, accidentals:true }
 ];
 // Difficulty is shared with the Theory Trainer, so reaching tier 3 there
 // means starting at tier 3 here (and live answers land in that tier's stats).
@@ -156,8 +156,22 @@ function tick(){
   const reading = tracker.push(pitch ? pitch.hz : null, now);
 
   if (mode === 'tuner') renderTuner(pitch, reading);
-  else if (reading.state === 'stable') onStableNote(reading);
+  else if (reading.state === 'stable') {
+    /* Entry grace for the game only: a note (or hum) that was already sounding
+       when the Find-it screen arrived must not be judged as the player's first
+       answer. The gate lives HERE, not in onStableNote — manual test feeds
+       must bypass it. A stable landing inside the grace is PARKED, not judged:
+       if it stops before the grace runs out it was ambience and dies unjudged;
+       if it is still ringing afterwards the player is holding a real note,
+       and it gets its verdict then (see the held check below). */
+    if (mode === 'find' && now < GV.graceUntil) GV.graceNote = reading.midi;
+    else onStableNote(reading);
+  }
   else if (mode === 'find') {
+    if (GV.graceNote != null && now >= GV.graceUntil){
+      if (reading.state === 'held' && reading.midi === GV.graceNote) onStableNote(reading);
+      GV.graceNote = null;
+    }
     /* No streamed "hearing X…" text here any more — raw detector output
        flipping under the question 18×/second WAS the flicker the game
        replaced. While a note settles, a quiet quaver rises through the
@@ -282,16 +296,28 @@ function renderTuner(pitch, reading){
    neck — the shared tier), PACE (the cannon fuse and the stage lights),
    and PROMPT (note names, bass-clef staff, or a mix). */
 let q = null, hintLevel = 0, qStart = 0, wrongThisQ = 0, lastProgressAt = 0, outOfTuneThisQ = false;
+/* Has the FINAL hint rung — the one that shows the exact fret — been used on
+   this question? A correct answer after that is a shown answer, not a recall. */
+let revealedThisQ = false;
+/* The no-pressure pace points at the Hint button instead of auto-opening it;
+   once per question is plenty. */
+let nudgedThisQ = false;
+/* Question counter + the in-session review queue: a missed note books itself
+   a comeback a few questions out (see BassGame.createReviewQueue). */
+let qCount = 0;
+/* The first staff question of a page load points at the teaching card once. */
+let staffIntroShown = false;
 /* `score` = questions you eventually found; `clean` = found on the first attempt,
    which is the one the stored accuracy is built from. */
 const sess = { find:{ score:0, clean:0, streak:0, asked:0 }, echo:{ score:0, streak:0 } };
 
 const GAME = window.BassGame;
+const reviewQ = GAME.createReviewQueue();
 const GV_KEY = 'bassTrainer.game.v1';
 /* Everything the game owns beyond the question itself. XP is persistent —
    losing the stage lights ends a set, never progress. */
 const GV = {
-  pace:'chill', prompt:'name', xp:0, best:{ steady:0, turbo:0 },
+  pace:'chill', prompt:'name', xp:0, best:{},
   run:null,
   promptKind:'name',     // what THIS question shows ('mix' resolves per question)
   phase:'idle',          // idle | fight | zap | breach | over
@@ -301,10 +327,32 @@ const GV = {
   zapT:0, breachT:0, zapHit:false,
   fx:[],                 // particles and floating toasts
   hearingUntil:0,        // canvas quaver while a pluck settles
+  graceUntil:0,          // entry grace: a note already sounding when the
+                         // screen arrives is ambience, not an answer (tick only)
+  graceNote:null,        // a stable parked during the grace, judged only if
+                         // it is still ringing when the grace expires
   raf:null, lastFrame:0,
 };
-const REDUCED = typeof matchMedia === 'function'
+let REDUCED = typeof matchMedia === 'function'
   && matchMedia('(prefers-reduced-motion: reduce)').matches;
+if (typeof matchMedia === 'function'){
+  // Live, not a snapshot: flipping the OS setting mid-session must take.
+  const rmq = matchMedia('(prefers-reduced-motion: reduce)');
+  if (rmq.addEventListener) rmq.addEventListener('change', e => { REDUCED = e.matches; });
+}
+/** How many hint rungs this question's prompt has: reading mode gets three
+    (name → range → reveal), name mode two (range → reveal). */
+function maxHintRungs(){ return GV.promptKind === 'staff' ? 3 : 2; }
+/** Difficulty premium on XP: pace × stage × prompt. Hearts/combo never scale. */
+function gvMult(){
+  const paceM = GV.pace === 'turbo' ? 1.5 : GV.pace === 'steady' ? 1.25 : 1;
+  const stageM = 1 + tier * 0.1;
+  const promptM = GV.promptKind === 'staff' ? 1.2 : 1;
+  return paceM * stageM * promptM;
+}
+/** Best runs are per difficulty — pace, stage AND prompt — or a Soundcheck
+    name run would own the number an Encore staff run is chasing. */
+function gvBestKey(){ return GV.pace + '|' + tier + '|' + GV.prompt; }
 
 function gvLoad(){
   try {
@@ -312,7 +360,9 @@ function gvLoad(){
     if (GAME.PACES[s.pace]) GV.pace = s.pace;
     if (GAME.PROMPTS[s.prompt]) GV.prompt = s.prompt;
     GV.xp = Math.max(0, s.xp | 0);
-    GV.best = Object.assign({ steady:0, turbo:0 }, s.best);
+    // Keyed pace|tier|prompt since the multiplier landed; the old plain
+    // 'steady'/'turbo' keys ride along harmlessly and missing keys read as 0.
+    GV.best = Object.assign({}, s.best);
   } catch(e){}
 }
 function gvSave(){
@@ -331,7 +381,7 @@ function gvNewRun(){
 /** Feed one judgement to the run and let every dependent surface follow. */
 function gvJudge(kind){
   if (!GV.run) return null;
-  const r = GV.run.judge(kind);
+  const r = GV.run.judge(kind, gvMult());
   if (r.ignored) return r;
   GV.xp = GV.run.state.xp;
   gvSave();
@@ -343,9 +393,14 @@ function gvJudge(kind){
 function renderHud(){
   const s = GV.run && GV.run.state;
   const hearts = document.getElementById('gvHearts');
-  if (hearts) hearts.innerHTML = (!s || s.hearts == null) ? '' :
-    Array.from({ length: s.maxHearts }, (_, i) =>
-      '<i' + (i < s.hearts ? '' : ' class="lost"') + '></i>').join('');
+  if (hearts){
+    hearts.innerHTML = (!s || s.hearts == null) ? '' :
+      Array.from({ length: s.maxHearts }, (_, i) =>
+        '<i' + (i < s.hearts ? '' : ' class="lost"') + '></i>').join('');
+    hearts.setAttribute('aria-label', (!s || s.hearts == null)
+      ? 'no stage lights on this pace'
+      : s.hearts + ' of ' + s.maxHearts + ' stage lights lit');
+  }
   const level = GAME.levelFor(GV.xp);
   const lv = document.getElementById('gvLevel');
   if (lv) lv.textContent = 'LV ' + level + ' · ' + GAME.levelTitle(level).toUpperCase();
@@ -355,8 +410,14 @@ function renderHud(){
     combo.classList.toggle('hidden', c < 2);
     combo.textContent = 'STREAK ×' + c;
   }
+  const prog = GAME.levelProgress(GV.xp);
   const bar = document.getElementById('gvXpBar');
-  if (bar) bar.style.width = Math.round(GAME.levelProgress(GV.xp).frac * 100) + '%';
+  if (bar) bar.style.width = Math.round(prog.frac * 100) + '%';
+  const xpWrap = bar && bar.parentElement;
+  if (xpWrap && xpWrap.getAttribute('role') === 'progressbar'){
+    xpWrap.setAttribute('aria-valuenow', prog.into);
+    xpWrap.setAttribute('aria-valuemax', prog.span);
+  }
 }
 
 function tierNow(){ return TIERS[tier]; }
@@ -387,8 +448,14 @@ function newQuestion(){
   const p = pool();
   if (!p.length){ q = null; return; }
   const lastKey = q ? q.sn + ':' + q.f : null;
-  q = GAME.weightedPick(p, noteView(), lastKey, Math.random);
+  qCount++;
+  /* Missed notes booked a comeback? Serve them first — spaced repetition
+     inside the sitting. Keys the current pool cannot pose are left booked. */
+  const dueKey = reviewQ.next(qCount, lastKey, k => p.some(it => it.sn + ':' + it.f === k));
+  q = dueKey ? p.find(it => it.sn + ':' + it.f === dueKey)
+             : GAME.weightedPick(p, noteView(), lastKey, Math.random);
   hintLevel = 0; wrongThisQ = 0; outOfTuneThisQ = false; qStart = performance.now();
+  revealedThisQ = false; nudgedThisQ = false;
   lastProgressAt = qStart;
   tracker.reset();   // clears the settle clock only — a ringing note stays consumed
   GV.promptKind = GAME.resolvePrompt(GV.prompt, Math.random);
@@ -405,17 +472,24 @@ function renderPrompt(){
   if (!q){ if (wrap) wrap.classList.add('hidden'); return; }
   if (GV.promptKind === 'staff'){
     document.getElementById('fQ').innerHTML = 'Play this note on the <b>' + q.sn + '</b> string';
-    document.getElementById('fSub').textContent = 'Read it off the staff, find it on the neck, play it.';
+    // The first staff question of a session points at the teaching card below.
+    document.getElementById('fSub').textContent = staffIntroShown
+      ? 'Read it off the staff, find it on the neck, play it.'
+      : 'Read it off the staff, find it on the neck, play it. New to the staff? Open ‘Reading the staff — bass clef in one minute’ below.';
+    staffIntroShown = true;
     drawStaff(document.getElementById('gvStaff'), q.midi, { showName:false });
     wrap.classList.remove('hidden');
   } else {
-    document.getElementById('fQ').innerHTML = 'Play <b>' + q.name + '</b> on the <b>' + q.sn + '</b> string';
+    // The note letter is the thing being learned — it gets the root amber;
+    // the string letter stays chrome-violet.
+    document.getElementById('fQ').innerHTML = 'Play <b class="gv-note">' + q.name + '</b> on the <b>' + q.sn + '</b> string';
     document.getElementById('fSub').textContent = 'Find it on the neck and play it.';
     wrap.classList.add('hidden');
   }
 }
 function showHint(){
   if (!q) return;
+  if (GV.run && GV.run.state.over) return;   // LIGHTS OUT: the restart button owns the screen
   if (outOfTuneThisQ && hintLevel === 0){
     // They found the right note; the problem is the instrument, not the fret.
     document.getElementById('fSub').innerHTML =
@@ -424,18 +498,30 @@ function showHint(){
     outOfTuneThisQ = false;
     return;
   }
-  hintLevel = Math.min(2, hintLevel + 1);
+  const rungs = maxHintRungs();
+  hintLevel = Math.min(rungs, hintLevel + 1);
   lastProgressAt = performance.now();
-  // In reading mode the first help is the note's NAME — that alone converts
-  // the question into one the player may already know how to answer.
+  /* Reading mode gets a three-rung ladder: NAME → range → reveal. The name
+     alone converts the question into one the player may already know how to
+     answer — so that rung gives nothing else away. Name mode: range → reveal. */
   if (GV.promptKind === 'staff'){
-    document.getElementById('fQ').innerHTML = 'Play <b>' + q.name + '</b> on the <b>' + q.sn + '</b> string';
+    document.getElementById('fQ').innerHTML = 'Play <b class="gv-note">' + q.name + '</b> on the <b>' + q.sn + '</b> string';
+    if (hintLevel === 1){
+      document.getElementById('fSub').textContent = 'That’s its name — now find it on the neck yourself.';
+      return;
+    }
   }
-  if (hintLevel === 1){
-    const lo = Math.max(0, q.f - 2), hi = Math.min(tierNow().maxFret, q.f + 2);
+  if (hintLevel < rungs){
+    // A 5-fret window CONTAINING the answer, at a random offset — always
+    // q.f±2 taught players to aim dead-centre of every hint.
+    const mf = tierNow().maxFret;
+    let lo = q.f - Math.floor(Math.random() * 5);
+    lo = Math.max(0, Math.min(lo, mf - 4, q.f));
+    const hi = Math.min(mf, lo + 4);
     document.getElementById('fSub').textContent = 'Hint: it is somewhere between fret ' + lo + ' and fret ' + hi + '.';
     drawBoard({ range:[lo, hi] });
   } else {
+    revealedThisQ = true;   // a shown answer — the correct that follows is not a recall
     document.getElementById('fSub').textContent = 'It is right here — play it, then it moves on.';
     drawBoard({ reveal:true });
   }
@@ -460,6 +546,7 @@ function gvBreach(){
   if (!q) return;
   GV.phase = 'breach';
   GV.breachT = performance.now();
+  reviewQ.add(q.sn + ':' + q.f, qCount);   // a burnt fuse is a miss: book a comeback
   if (wrongThisQ === 0){
     sess.find.streak = 0; sess.find.asked++;
     recordAnswer(false, q, performance.now() - qStart);
@@ -471,23 +558,28 @@ function gvBreach(){
   v.className = 'verdict warn';
   updateFindStats();
   if (r && r.over){ gvGameOver(); return; }
-  setTimeout(newQuestion, 1400);
+  // Long enough to actually READ the correction — this line is the teaching.
+  setTimeout(newQuestion, 2600);
 }
 function gvGameOver(){
   GV.phase = 'over';
   const s = GV.run.state;
-  if (s.zaps > (GV.best[GV.pace] || 0)){ GV.best[GV.pace] = s.zaps; gvSave(); }
+  const bk = gvBestKey();
+  if (s.zaps > (GV.best[bk] || 0)){ GV.best[bk] = s.zaps; gvSave(); }
   const txt = document.getElementById('gvOverText');
   if (txt) txt.textContent = s.zaps + ' notes nailed this set · best on ' +
-    GAME.PACES[GV.pace].label + ': ' + GV.best[GV.pace] +
+    GAME.PACES[GV.pace].label + ' at this difficulty: ' + (GV.best[bk] || 0) +
     ' · your XP stays with you — still ' + GAME.levelTitle(GAME.levelFor(GV.xp)) + '.';
   const over = document.getElementById('gvOver');
   if (over) over.classList.remove('hidden');
-  document.getElementById('fQ').textContent = 'Lights out — back on stage?';
-  document.getElementById('fSub').textContent =
-    'Soundcheck pace has no fuse, if you would rather find the notes without the clock.';
+  // The overlay owns the message — a second banner underneath it read as two
+  // competing game-over screens.
+  document.getElementById('fQ').textContent = ' ';
+  document.getElementById('fSub').textContent = '';
   const wrap = document.getElementById('gvStaffWrap');
   if (wrap) wrap.classList.add('hidden');
+  const restart = document.getElementById('gvRestart');
+  if (restart) restart.focus();
 }
 
 /* ---- pixel scene ----
@@ -509,15 +601,17 @@ function blit(ctx, sp, x, y, s){
 /* Stage props — objects, not characters. The bell carries the question,
    the cannon answers it, and the fire is your streak made visible. */
 /* The bell: hanger loop, straight shoulder, flared skirt, dark mouth, clapper.
-   The left highlight column and right shade edge give it the round read. */
-const BELL = sprite({ b:'#F2A93B', B:'#C77F1F', d:'#8A5A14', h:'#F6E27A', k:'#3A2A12' },
+   The highlight is a HOOKED cluster following the shoulder's curve (a straight
+   column read as a scratch, not a sheen), and the clapper hangs visibly dark
+   below the mouth. */
+const BELL = sprite({ b:'#F2A93B', B:'#C77F1F', d:'#8A5A14', h:'#F6E27A', k:'#3A2A12', K:'#170D03' },
   ['......Bhh.......',
    '......B..h......',
-   '.....bbbbbb.....',
+   '.....hbbbbb.....',
+   '....hhbbbbbB....',
    '....hbbbbbbB....',
-   '....hbbbbbbB....',
-   '....hbbbbbbB....',
-   '....hbbbbbbB....',
+   '....bhbbbbbB....',
+   '....bbbbbbbB....',
    '....bbbbbbbB....',
    '...bbbbbbbbbB...',
    '...bbbbbbbbbB...',
@@ -525,8 +619,8 @@ const BELL = sprite({ b:'#F2A93B', B:'#C77F1F', d:'#8A5A14', h:'#F6E27A', k:'#3A
    '.hbbbbbbbbbbbBB.',
    '.dBBBBBBBBBBBBd.',
    '....kkkkkkkk....',
-   '.......kk.......',
-   '......kkkk......']);
+   '.......KK.......',
+   '......KKKK......']);
 /* The cannon: tapered barrel raised toward the bell, muzzle ring with a dark
    bore, breech knob, and a spoked wheel on the near side. */
 const CANNON = sprite({ c:'#262A31', C:'#3A3F46', h:'#4E555E', s:'#0C0D10', w:'#5C4630', W:'#3A2A12' },
@@ -543,13 +637,22 @@ const CANNON = sprite({ c:'#262A31', C:'#3A3F46', h:'#4E555E', s:'#0C0D10', w:'#
    '..cc...W.w.W......',
    '........WWW.......']);
 /* The five stages — one per tier, each an era of the back catalogue.
-   Deeper into the set list, darker the stage, harder the neck. */
+   Deeper into the set list, darker the stage, harder the neck. Beyond the
+   palette each stage carries ONE signature set-piece (props, no characters):
+   a leaning pylon, a giant plug, a burning horizon, the bolt, the cannon
+   rank — and its own amp-wall arrangement, so the five read structurally
+   different, not just recoloured. */
 const WORLDS = [
-  { name:'High Voltage',    sky:'#221743', sky2:'#140D2B', spot:true,  embers:false, bolt:false },
-  { name:'Powerage',        sky:'#152130', sky2:'#0C131C', spot:true,  embers:false, bolt:false },
-  { name:'Highway to Hell', sky:'#451510', sky2:'#280C07', spot:false, embers:true,  bolt:false },
-  { name:'Back in Black',   sky:'#0D0D11', sky2:'#060608', spot:false, embers:false, bolt:true  },
-  { name:'For Those About to Rock', sky:'#221607', sky2:'#140D04', spot:true, embers:true, bolt:false, cannons:true },
+  { name:'High Voltage',    sky:'#221743', sky2:'#140D2B', spot:true,  embers:false, bolt:false,
+    pylon:true,  amps:[62, 116] },
+  { name:'Powerage',        sky:'#152130', sky2:'#0C131C', spot:true,  embers:false, bolt:false,
+    plug:true,   amps:[46, 90, 134] },
+  { name:'Highway to Hell', sky:'#451510', sky2:'#280C07', spot:false, embers:true,  bolt:false,
+    burnhz:true, darkAmps:true, amps:[70, 114] },
+  { name:'Back in Black',   sky:'#0D0D11', sky2:'#060608', spot:false, embers:false, bolt:true,
+    amps:[40, 150] },
+  { name:'For Those About to Rock', sky:'#221607', sky2:'#140D04', spot:true, embers:true, bolt:false,
+    cannons:true, amps:[60, 100] },
 ];
 function gvBurst(x, y, color){
   for (let i = 0; i < 12; i++){
@@ -562,10 +665,35 @@ function gvBurst(x, y, color){
 function gvToast(text){
   GV.fx.push({ kind:'t', text, born:performance.now() });
 }
+/* The DOM fuse bar — the timer a player can actually read (the canvas cord is
+   flavour). Driven from the rAF loop but writes style at most ~5×/s, and the
+   aria seconds only when the whole second changes (1×/s). */
+const FUSE = { lastStyleAt:0, lastAriaSec:null };
+function updateFuseBar(){
+  const bar = document.getElementById('gvFuseBar');
+  if (!bar) return;
+  const ms = GAME.approachMs(GV.pace, GAME.levelFor(GV.xp));
+  const show = ms != null && GV.phase === 'fight' && GV.run && !GV.run.state.over;
+  if (bar.classList.contains('hidden') !== !show) bar.classList.toggle('hidden', !show);
+  if (!show){ FUSE.lastAriaSec = null; return; }
+  const now = performance.now();
+  if (now - FUSE.lastStyleAt < 200) return;
+  FUSE.lastStyleAt = now;
+  const left = Math.max(0, ms - (now - GV.spawnAt));
+  bar.firstElementChild.style.width = (left / ms * 100).toFixed(1) + '%';
+  bar.classList.toggle('low', left <= 2000);
+  const sec = Math.ceil(left / 1000);
+  if (sec !== FUSE.lastAriaSec){
+    FUSE.lastAriaSec = sec;
+    bar.setAttribute('aria-valuenow', sec);
+    bar.setAttribute('aria-valuemax', Math.ceil(ms / 1000));
+  }
+}
 function gvFrame(t){
   GV.raf = null;
   if (mode !== 'find') return;    // the loop dies with the tab; setMode restarts it
   drawScene(t);
+  updateFuseBar();
   if (GV.phase === 'fight' && GV.run && !GV.run.state.over){
     const ms = GAME.approachMs(GV.pace, GAME.levelFor(GV.xp));
     if (ms != null && performance.now() - GV.spawnAt >= ms) gvBreach();
@@ -576,6 +704,20 @@ function gvLoop(on){
   if (on && !GV.raf) GV.raf = requestAnimationFrame(gvFrame);
   if (!on && GV.raf){ cancelAnimationFrame(GV.raf); GV.raf = null; }
 }
+/** Integer pixel scaling: snap the scene's display width to a whole multiple
+    of its 320px backing store so every game pixel is exactly N screen pixels —
+    fractional scales smear one column and double the next. The wrapper is
+    sized (auto-centred by CSS) so the over-screen overlay stays congruent. */
+function gvFitScene(){
+  const cv = document.getElementById('gvScene');
+  const wrap = cv && cv.parentElement;
+  if (!wrap) return;
+  wrap.style.width = '';
+  const w = wrap.clientWidth;
+  if (!w) return;   // section hidden — setMode('find') calls again on entry
+  wrap.style.width = Math.max(320, Math.floor(w / 320) * 320) + 'px';
+}
+window.addEventListener('resize', gvFitScene);
 /** A circle built from 2px blocks, optionally rim-only — bubbles, pixel-style. */
 function pxCircle(ctx, cx, cy, r, fill, rim){
   for (let dy = -r; dy <= r; dy += 2){
@@ -589,8 +731,13 @@ function pxCircle(ctx, cx, cy, r, fill, rim){
     `wMax`/`cols` let one function draw both the deep back layer and the hot
     front layer of the wall. Tall tongues get a pale core near the base. */
 const FLAME_HOT  = ['#6E1B12', '#A6281A', '#DE5226', '#F2A93B', '#F6E27A'];
+/* Past the height cap the fire stops growing UP and starts burning WHITE:
+   two hotter ramps the streak climbs through from 8 to 15 (item: growth
+   must keep testifying even once the wall is as tall as it gets). */
+const FLAME_HOT2 = ['#6E1B12', '#A6281A', '#DE5226', '#F6E27A', '#FBEFC0'];
+const FLAME_HOT3 = ['#8E2A1F', '#DE5226', '#F2A93B', '#FBEFC0', '#FFFBEE'];
 const FLAME_DEEP = ['#4A120C', '#6E1B12', '#8E2A1F', '#A83A24'];
-function pxFlame(ctx, x, baseY, h, flick, wMax, cols){
+function pxFlame(ctx, x, baseY, h, flick, wMax, cols, core){
   const C = cols || FLAME_HOT, wm = wMax || 12;
   for (let k = 0; k < h; k += 2){
     const f = k / Math.max(2, h);
@@ -599,12 +746,13 @@ function pxFlame(ctx, x, baseY, h, flick, wMax, cols){
     ctx.fillStyle = C[Math.min(C.length - 1, Math.floor(f * C.length))];
     ctx.fillRect(x - (w >> 1) + wob, baseY - k - 2, w, 2);
   }
-  if (!cols && h > 10){
+  if ((!cols || core) && h > 10){
+    const cc = core || ['#F6E27A', '#F2A93B'];
     const ch = Math.round(h * 0.45);
     for (let k = 0; k < ch; k += 2){
       const f = k / ch;
       const w = Math.max(2, Math.round((wm * 0.45) * (1 - f)));
-      ctx.fillStyle = f < 0.55 ? '#F6E27A' : '#F2A93B';
+      ctx.fillStyle = f < 0.55 ? cc[0] : cc[1];
       ctx.fillRect(x - (w >> 1), baseY - k - 2, w, 2);
     }
   }
@@ -627,6 +775,10 @@ function drawScene(t){
   const now = performance.now();
   const drift = REDUCED ? 0 : 1;             // ambient motion switch
   ctx.clearRect(0, 0, W, H);
+  // one 1px screen-shake frame the instant the cannon goes off
+  const shake = !REDUCED && GV.phase === 'zap' && now - GV.zapT < 18;
+  ctx.save();
+  if (shake) ctx.translate(1, 0);
 
   // backdrop: banded sky, darker toward the boards, a faint horizon seam
   ctx.fillStyle = world.sky;  ctx.fillRect(0, 0, W, FLOOR);
@@ -638,19 +790,29 @@ function drawScene(t){
     ctx.fillStyle = 'rgba(228,103,92,.14)'; ctx.fillRect(0, FLOOR - 34, W, 34);
     ctx.fillStyle = 'rgba(242,169,59,.10)'; ctx.fillRect(0, FLOOR - 16, W, 16);
   }
-  // Back in Black: one huge white-hot bolt on the backdrop, still, with a glow
+  // Back in Black: one huge white-hot bolt on the backdrop — the stage's whole
+  // identity, so it GLOWS: a blue-grey band each side of the core, and (motion
+  // permitting) a two-frame gutter of alpha now and then, like an arc lamp.
   if (world.bolt){
     const seg = [[184, 12], [172, 34], [180, 48], [158, 74], [168, 88], [142, 118]];
+    const flicker = !REDUCED && Math.floor(t / 110) % 19 < 2;
     for (let i = 0; i < seg.length - 1; i++)
       pxLine(ctx, seg[i][0], seg[i][1], seg[i + 1][0], seg[i + 1][1], 9, 'rgba(232,226,212,.10)');
     for (let i = 0; i < seg.length - 1; i++)
+      pxLine(ctx, seg[i][0], seg[i][1], seg[i + 1][0], seg[i + 1][1], 6, 'rgba(148,170,205,.20)');
+    ctx.globalAlpha = flicker ? 0.72 : 1;
+    for (let i = 0; i < seg.length - 1; i++)
       pxLine(ctx, seg[i][0], seg[i][1], seg[i + 1][0], seg[i + 1][1], 4, '#E8E2D4');
+    ctx.globalAlpha = 1;
     pxLine(ctx, 172, 34, 190, 52, 5, 'rgba(232,226,212,.10)');
+    pxLine(ctx, 172, 34, 189, 51, 3, 'rgba(148,170,205,.20)');
     pxLine(ctx, 172, 34, 188, 50, 2, 'rgba(232,226,212,.75)');
   }
 
-  // the amp wall: two Marshall-ish full stacks — head with knobs, two cabs
-  for (const ax of [62, 116]){
+  // the amp wall: Marshall-ish full stacks — head with knobs, two cabs.
+  // Count and placement are per stage (see WORLDS), so the five backdrops
+  // differ structurally; Highway to Hell pushes its wall into the dark.
+  for (const ax of (world.amps || [62, 116])){
     ctx.fillStyle = '#0B0A08'; ctx.fillRect(ax + 1, FLOOR - 1, 30, 2);      // ground shadow
     ctx.fillStyle = '#14110F'; ctx.fillRect(ax, FLOOR - 37, 32, 37);
     ctx.fillStyle = '#241E18'; ctx.fillRect(ax + 2, FLOOR - 35, 28, 6);     // head panel
@@ -665,6 +827,58 @@ function drawScene(t){
       ctx.fillRect(ax + 2, cy, 2, 2); ctx.fillRect(ax + 28, cy, 2, 2);
       ctx.fillRect(ax + 2, cy + 9, 2, 2); ctx.fillRect(ax + 28, cy + 9, 2, 2);
     }
+    if (world.darkAmps){ ctx.fillStyle = 'rgba(0,0,0,.38)'; ctx.fillRect(ax, FLOOR - 37, 32, 37); }
+  }
+
+  // High Voltage: a leaning power pylon stage right, arc sparks jumping
+  // between its insulators (behind the bell; the bell is drawn later).
+  if (world.pylon){
+    const px0 = 291, lean = 6;                                   // leans stage-left
+    pxLine(ctx, px0 - 14, FLOOR, px0 - 4 - lean, 24, 3, '#332C24');
+    pxLine(ctx, px0 + 14, FLOOR, px0 + 4 - lean, 24, 3, '#332C24');
+    pxLine(ctx, px0 - 12, FLOOR - 16, px0 + 12, FLOOR - 32, 2, '#2A241E');  // lattice
+    pxLine(ctx, px0 + 12, FLOOR - 16, px0 - 12, FLOOR - 32, 2, '#2A241E');
+    pxLine(ctx, px0 - 10, FLOOR - 44, px0 + 10, FLOOR - 58, 2, '#2A241E');
+    pxLine(ctx, px0 + 10, FLOOR - 44, px0 - 10, FLOOR - 58, 2, '#2A241E');
+    ctx.fillStyle = '#332C24'; ctx.fillRect(px0 - 17 - lean, 29, 34, 3);    // crossarm
+    ctx.fillStyle = '#4E555E';
+    for (const ix of [-13, 0, 13]) ctx.fillRect(px0 + ix - lean - 1, 32, 3, 4);
+    if (drift){                                                  // the arcs spit
+      if (Math.floor(t / 130) % 6 === 0){
+        ctx.fillStyle = '#BFD6F2'; ctx.fillRect(px0 - 11 - lean, 33, 11, 1);
+      }
+      if (Math.floor(t / 170) % 7 === 0){
+        ctx.fillStyle = '#BFD6F2'; ctx.fillRect(px0 + 1 - lean, 34, 11, 1);
+      }
+    } else { ctx.fillStyle = 'rgba(191,214,242,.45)'; ctx.fillRect(px0 - 11 - lean, 33, 8, 1); }
+  }
+
+  // Powerage: the giant plug not quite home in its socket, its slack cable
+  // sagging right across the backdrop.
+  if (world.plug){
+    ctx.fillStyle = '#1B2836'; ctx.fillRect(206, 56, 26, 32);               // socket plate
+    ctx.fillStyle = '#2E3F52'; ctx.fillRect(208, 58, 22, 28);
+    ctx.fillStyle = '#0C131C'; ctx.fillRect(213, 66, 4, 9); ctx.fillRect(221, 66, 4, 9);
+    ctx.fillStyle = '#3A3F46'; ctx.fillRect(178, 64, 16, 14);               // plug body
+    ctx.fillStyle = '#262A31'; ctx.fillRect(178, 64, 16, 3);
+    ctx.fillStyle = '#4E555E'; ctx.fillRect(194, 67, 8, 2); ctx.fillRect(194, 73, 8, 2);  // prongs
+    ctx.fillStyle = '#4A4136';                                              // the slack cable
+    for (let i = 0; i <= 44; i++){
+      const u = i / 44;
+      const cx = 178 * (1 - u);
+      const cy = (1 - u) * (1 - u) * 71 + 2 * u * (1 - u) * 118 + u * u * 78;
+      ctx.fillRect(Math.round(cx), Math.round(cy), 2, 2);
+    }
+  }
+
+  // Highway to Hell: the horizon itself is on fire — a fringe of low tongues
+  // burning along the back of the stage under the ember bands.
+  if (world.burnhz){
+    for (let x = 0; x < W; x += 7){
+      const hh = 3 + ((x * 13) % 6) + (drift ? Math.round(Math.sin(t / 380 + x * 0.7) * 1.5) : 0);
+      ctx.fillStyle = 'rgba(200,72,45,.38)'; ctx.fillRect(x, FLOOR - 16 - hh, 5, hh);
+      ctx.fillStyle = 'rgba(242,169,59,.20)'; ctx.fillRect(x + 1, FLOOR - 16 - (hh >> 1), 3, hh >> 1);
+    }
   }
 
   // spotlights: soft nested cones off rig fixtures, pooling where they land.
@@ -675,7 +889,8 @@ function drawScene(t){
       const x0 = b ? 230 : Math.round(78 + (drift ? Math.sin(t / 3000) * 8 : 0));
       if (!b){
         ctx.fillStyle = '#14110F'; ctx.fillRect(x0 - 5, 11, 10, 6);         // the fixture
-        ctx.fillStyle = '#F6E27A'; ctx.fillRect(x0 - 2, 16, 4, 2);          // its lens
+        // the lens hot-pixels go dark on the over screen — lights out means out
+        if (GV.phase !== 'over'){ ctx.fillStyle = '#F6E27A'; ctx.fillRect(x0 - 2, 16, 4, 2); }
       }
       for (const [spread, a] of [[0.30, .04], [0.19, .05], [0.09, .06]]){
         ctx.fillStyle = 'rgba(242,169,59,' + a + ')';
@@ -710,11 +925,21 @@ function drawScene(t){
   ctx.fillStyle = 'rgba(0,0,0,.30)'; ctx.fillRect(0, FLOOR + 1, W, 1);      // board shadow line
   ctx.fillStyle = 'rgba(246,242,236,.10)'; ctx.fillRect(0, FLOOR, W, 2);
 
-  // For Those About to Rock: a rank of cannon silhouettes at the back
+  // For Those About to Rock: a rank of cannon silhouettes at the back,
+  // with their ammunition stacked in pyramids beside them
   if (world.cannons){
     ctx.globalAlpha = .45;
     for (const cx of [156, 194, 232]) blit(ctx, CANNON, cx, FLOOR - 18, 1.5);
     ctx.globalAlpha = 1;
+    const ball = (x, y) => {
+      ctx.fillStyle = '#101114'; ctx.fillRect(x, y, 5, 5);
+      ctx.fillStyle = '#4E555E'; ctx.fillRect(x + 1, y + 1, 2, 2);   // glint
+    };
+    for (const [bx0, n] of [[138, 3], [268, 4]]){
+      for (let row = 0; row < n; row++)                              // pyramid
+        for (let i = 0; i < n - row; i++)
+          ball(bx0 + row * 3 + i * 6, FLOOR - 5 - row * 5);
+    }
   }
 
   /* THE FIRE — the streak made visible. Embers when cold; every consecutive
@@ -722,21 +947,40 @@ function drawScene(t){
      Highway-to-Hell style. */
   const streak = GV.run ? GV.run.state.combo : 0;
   const fh = streak === 0 ? 5 : Math.min(10 + streak * 5, 52);
+  /* Past the height cap the wall whitens instead: 0 at streak ≤8, 1 at 15. */
+  const heat = Math.max(0, Math.min(1, (streak - 8) / 7));
+  const hotCols = heat <= 0 ? FLAME_HOT : (heat < 0.5 ? FLAME_HOT2 : FLAME_HOT3);
+  const hotCore = heat <= 0 ? null : (heat < 0.5 ? ['#FBEFC0', '#F6E27A'] : ['#FFFBEE', '#FBEFC0']);
   if (streak > 0){
-    // the heat haze behind the wall of fire, brighter the longer the streak
-    ctx.fillStyle = 'rgba(242,169,59,' + Math.min(0.12, 0.025 * streak).toFixed(3) + ')';
+    const hazeA = Math.min(0.12, 0.025 * streak), glowA = Math.min(0.10, 0.02 * streak);
+    // the heat haze behind the wall of fire, brighter the longer the streak —
+    // its left edge FADES over ~16px so the cannon is not parked against a
+    // cold rectangle seam
+    ctx.fillStyle = 'rgba(242,169,59,' + hazeA.toFixed(3) + ')';
     ctx.fillRect(48, H - fh - 12, W - 52, fh + 12);
-    // the glow the fire throws back across the boards
-    ctx.fillStyle = 'rgba(242,169,59,' + Math.min(0.10, 0.02 * streak).toFixed(3) + ')';
+    ctx.fillStyle = 'rgba(242,169,59,' + glowA.toFixed(3) + ')';
     ctx.fillRect(48, FLOOR, W - 48, H - FLOOR);
+    for (let s = 0; s < 4; s++){                        // the 16px feather
+      const a = ((hazeA + glowA) / 2) * (1 - (s + 1) / 5);
+      ctx.fillStyle = 'rgba(242,169,59,' + a.toFixed(3) + ')';
+      ctx.fillRect(44 - s * 4, FLOOR, 4, H - FLOOR);
+    }
+    if (streak > 3){                                    // the heat reaches the barrel
+      ctx.fillStyle = 'rgba(242,169,59,.045)';
+      ctx.fillRect(0, FLOOR - 6, 48, H - FLOOR + 6);
+    }
   }
   if (streak === 0){
-    // cold stage: scattered embers glowing in the coals, no tongues yet
+    // cold stage: scattered embers glowing in the coals, no tongues yet.
+    // Each carries a coal-dark pixel beneath it, so it reads as an OBJECT
+    // sitting on the boards, not a stray bright pixel.
     for (let j = 0; j < 22; j++){
       const ex = 52 + j * 12 + ((j * 29) % 7);
+      const ey = H - 4 + (j % 2);
       const on = drift ? (Math.sin(t / 260 + j * 2.1) > -0.35) : (j % 3 !== 0);
+      ctx.fillStyle = '#1A0D06'; ctx.fillRect(ex, Math.min(H - 1, ey + 2), 2, 1);   // the coal
       ctx.fillStyle = on ? (j % 3 ? '#C7402F' : '#F2A93B') : '#6E1B12';
-      ctx.fillRect(ex, H - 4 + (j % 2), 2, 2);
+      ctx.fillRect(ex, ey, 2, 2);
       if (on && j % 4 === 0){ ctx.fillStyle = 'rgba(242,169,59,.25)'; ctx.fillRect(ex - 1, H - 6, 4, 4); }
     }
   } else {
@@ -751,7 +995,7 @@ function drawScene(t){
       const fx = 52 + j * 16 + ((j * 13) % 9);
       const jh = Math.max(3, Math.round(fh * (0.66 + 0.34 * Math.sin(j * 2.7))
                  * (drift ? (0.84 + 0.16 * Math.sin(t / 130 + j * 1.9)) : 1)));
-      pxFlame(ctx, fx, H - 2, jh, drift ? t / 150 + j : 0, 9 + ((j * 11) % 5));
+      pxFlame(ctx, fx, H - 2, jh, drift ? t / 150 + j : 0, 9 + ((j * 11) % 5), hotCols === FLAME_HOT ? null : hotCols, hotCore);
     }
     // sparks breaking off the top of the wall
     if (drift){
@@ -765,8 +1009,17 @@ function drawScene(t){
     }
   }
 
-  // the cannon, stage left, waiting for the right note
-  blit(ctx, CANNON, 14, FLOOR - 24, 2);
+  // the cannon, stage left, waiting for the right note. Firing has BODY:
+  // a 2-3px kickback and a 1px muzzle dip over the first ~80ms of the zap;
+  // a burnt-out fuse gets a 1px cough. All stillness under reduced motion.
+  let cnX = 14, cnY = FLOOR - 24;
+  if (!REDUCED){
+    if (GV.phase === 'zap'){
+      const za = now - GV.zapT;
+      if (za < 80){ cnX -= za < 40 ? 3 : 2; cnY += 1; }
+    } else if (GV.phase === 'breach' && now - GV.breachT < 140) cnY += 1;
+  }
+  blit(ctx, CANNON, cnX, cnY, 2);
 
   // a pluck settling: one quiet quaver rising by the cannon — canvas, no reflow
   if (now < GV.hearingUntil){
@@ -792,7 +1045,7 @@ function drawScene(t){
     sway = Math.round(sway);
     const by = 14;
     // one bright frame as the cannon goes off: the whole stage catches the flash
-    if (zapAge >= 0 && zapAge < 70){
+    if (zapAge >= 0 && zapAge < 70 && !REDUCED){
       ctx.fillStyle = 'rgba(246,226,122,.16)'; ctx.fillRect(0, 0, W, H);
     }
     // chain links from the beam down to the bell's hanger loop
@@ -815,22 +1068,34 @@ function drawScene(t){
     }
     GV.bx = bx; GV.by = by + 16;
 
-    // the cannonball on its way up: muzzle → bell, with a spark trail
-    if (zapAge >= 0 && zapAge < 160){
+    // the cannonball on its way up: muzzle → bell. The trail is CONNECTED —
+    // a 1px streak joins the spark samples — and the leading edge carries a
+    // cream rim-light. Under reduced motion the flight is skipped entirely;
+    // the impact at the bell still lands (below).
+    if (zapAge >= 0 && zapAge < 160 && !REDUCED){
       const p = zapAge / 160;
-      const cbx = 47 + (bx - 47) * p;
-      const cby = (FLOOR - 22) - (FLOOR - 22 - (by + 28)) * p - Math.sin(p * Math.PI) * 9;
+      const at = (u) => [47 + (bx - 47) * u,
+        (FLOOR - 22) - (FLOOR - 22 - (by + 28)) * u - Math.sin(u * Math.PI) * 9];
+      const [cbx, cby] = at(p);
+      // the 1px streak from the oldest sample to the ball
+      const back = Math.max(0, p - 4 * 0.06);
+      ctx.fillStyle = 'rgba(246,226,122,.30)';
+      for (let s = 0; s <= 14; s++){
+        const [sx, sy] = at(back + (p - back) * (s / 14));
+        ctx.fillRect(Math.round(sx) + 2, Math.round(sy) + 2, 1, 1);
+      }
       for (let i = 1; i <= 4; i++){
-        const tp = Math.max(0, p - i * 0.06);
-        const tx = 47 + (bx - 47) * tp;
-        const ty = (FLOOR - 22) - (FLOOR - 22 - (by + 28)) * tp - Math.sin(tp * Math.PI) * 9;
+        const [tx, ty] = at(Math.max(0, p - i * 0.06));
         ctx.fillStyle = 'rgba(246,226,122,' + (0.65 - i * 0.14).toFixed(2) + ')';
         const ts = i < 3 ? 3 : 2;
         ctx.fillRect(Math.round(tx) + 1, Math.round(ty) + 1, ts, ts);
       }
       ctx.fillStyle = '#14110F'; ctx.fillRect(Math.round(cbx) - 1, Math.round(cby) - 1, 6, 6);
       ctx.fillStyle = '#4E555E'; ctx.fillRect(Math.round(cbx) - 1, Math.round(cby) - 1, 2, 2);
-      ctx.fillStyle = '#F6E27A'; ctx.fillRect(Math.round(cbx) + 1, Math.round(cby) + 1, 2, 2);
+      // cream rim-light on the leading (up-and-right) edge
+      ctx.fillStyle = '#F6E27A';
+      ctx.fillRect(Math.round(cbx) + 4, Math.round(cby) - 1, 1, 3);
+      ctx.fillRect(Math.round(cbx) + 2, Math.round(cby) - 1, 2, 1);
     }
     // muzzle flash: a hot star off the bore with a blast ring, slow-decay core
     if (zapAge >= 0 && zapAge < 110){
@@ -852,24 +1117,31 @@ function drawScene(t){
       GV.zapHit = true;
       if (!REDUCED) gvBurst(bx + sway, by + 20, '#F6E27A');
     }
-    if (zapAge >= 160 && zapAge < 380 && !REDUCED){
+    if (zapAge >= 160 && zapAge < 380){
       const p = (zapAge - 160) / 220;
-      pxCircle(ctx, bx + sway, by + 20, 5 + Math.round(p * 15), null,
+      // reduced motion still gets the IMPACT — a fading ring that does not fly
+      pxCircle(ctx, bx + sway, by + 20, REDUCED ? 10 : 5 + Math.round(p * 15), null,
         'rgba(246,226,122,' + (0.8 * (1 - p)).toFixed(2) + ')');
     }
-    // breach: the fuse died — three grey puffs crawl off the muzzle and thin out
+    // breach: the fuse died — three grey puffs crawl off the muzzle and thin
+    // out. Two-tone (light core inside a darker body, dark rim), each puff on
+    // its own drift vector so they shear apart instead of rising as one blob.
+    // Under reduced motion the puffs hold position and simply fade.
     if (GV.phase === 'breach'){
       const age = now - GV.breachT;
+      const VEC = [[-14, -22], [10, -30], [-2, -16]];        // staggered drift
       for (let i = 0; i < 3; i++){
         const a0 = age - i * 90;
         if (a0 < 0) continue;
         const p = Math.min(1, a0 / 620);
-        const r = 5 + Math.round(p * (8 + i * 2));
-        const cy = FLOOR - 32 - Math.round(p * (16 + i * 9)) - i * 4;
-        const cx = 51 + (i - 1) * 5 + Math.round(p * (i * 5 - 3));
-        pxCircle(ctx, cx, cy, r, 'rgba(152,144,132,' + (0.50 * (1 - p)).toFixed(3) + ')', null);
+        const move = REDUCED ? 0.35 : p;                     // static-ish when reduced
+        const r = 5 + Math.round((REDUCED ? 0.5 : p) * (8 + i * 2));
+        const cx = 51 + (i - 1) * 5 + Math.round(move * VEC[i][0]);
+        const cy = FLOOR - 32 - i * 5 + Math.round(move * VEC[i][1]);
+        pxCircle(ctx, cx, cy, r, 'rgba(120,113,103,' + (0.48 * (1 - p)).toFixed(3) + ')',
+          'rgba(74,69,62,' + (0.55 * (1 - p)).toFixed(3) + ')');
         pxCircle(ctx, cx - (r >> 2), cy - (r >> 1), Math.max(3, r >> 1),
-          'rgba(186,178,166,' + (0.40 * (1 - p)).toFixed(3) + ')', null);
+          'rgba(196,189,177,' + (0.42 * (1 - p)).toFixed(3) + ')', null);
       }
     }
     // the fuse: a twisted rope burning right to left toward the cannon,
@@ -880,14 +1152,21 @@ function drawScene(t){
       const x0 = 46, x1 = 150, fy = FLOOR + 9;
       const sparkX = Math.round(x1 - (x1 - x0) * p);
       ctx.fillStyle = 'rgba(0,0,0,.35)';                       // seats it on the boards
-      ctx.fillRect(x0, fy + 2, x1 - x0, 1);
-      for (let x = x0; x < sparkX; x += 2){                    // the rope's twist
-        ctx.fillStyle = ((x >> 1) & 1) ? '#6B5138' : '#4A3826';
-        ctx.fillRect(x, fy + ((x >> 2) & 1), 2, 2);
+      ctx.fillRect(x0, fy + 3, x1 - x0, 1);
+      // the unburnt cord: a cream core in a dark outline — readable at arm's
+      // length, unlike the old brown-on-brown twist
+      for (let x = x0; x < sparkX; x += 2){
+        const dy = (x >> 2) & 1;
+        ctx.fillStyle = '#3A2A12'; ctx.fillRect(x, fy - 1 + dy, 2, 4);   // outline
       }
-      ctx.fillStyle = 'rgba(96,90,82,.55)';                    // the ash line left behind
-      for (let x = sparkX + 3; x < x1; x += 5) ctx.fillRect(x, fy + 1, 2, 1);
-      pxCircle(ctx, sparkX, fy, 5, 'rgba(242,169,59,.22)', null);
+      for (let x = x0; x < sparkX; x += 2){
+        const dy = (x >> 2) & 1;
+        ctx.fillStyle = ((x >> 1) & 1) ? '#F6E27A' : '#EED25E';          // cream core
+        ctx.fillRect(x, fy + dy, 2, 2);
+      }
+      // the burnt side is GONE — no residue to misread as cord left to burn
+      pxCircle(ctx, sparkX, fy, 6, 'rgba(242,169,59,.28)', null);        // 3px warm halo
+      pxCircle(ctx, sparkX, fy, 3, 'rgba(246,226,122,.40)', null);
       ctx.fillStyle = '#E4675C'; ctx.fillRect(sparkX - 2, fy - 1, 5, 4);
       ctx.fillStyle = '#F6E27A'; ctx.fillRect(sparkX - 1, fy, 3, 2);
       if (drift){                                              // it spits as it burns
@@ -918,6 +1197,7 @@ function drawScene(t){
     }
   }
   GV.fx = keep;
+  ctx.restore();   // undo the screen-shake translate
 }
 
 /* ---- bass-clef staff (the reading mode) ----
@@ -1066,40 +1346,65 @@ function onStableNote(reading){
     if (GV.run && GV.run.state.over) return;   // the restart button owns the screen
     const verdict = C.checkAnswer(reading, q.midi);
     const vEl = document.getElementById('fVerdict'), hEl = document.getElementById('fHeard');
-    hEl.textContent = 'heard ' + heardName + C.hzToNote(reading.hz).octave +
-      ' (' + reading.hz.toFixed(1) + ' Hz, ' + (reading.cents>0?'+':'') + Math.round(reading.cents) + ' cents)';
-    if (verdict === 'correct'){
-      const clean = wrongThisQ === 0;
-      vEl.textContent = clean
-        ? ['FIRE! ' + q.name + ' rings the bell.', q.name + ' — dead on.',
-           'BOOM — that was ' + q.name + '.', q.name + '. The bell tolls.'][Math.floor(Math.random()*4)]
-        : 'There it is — ' + q.name + '.';
+    const heardCents = Math.round(reading.cents);
+    hEl.textContent = 'heard ' + heardName.replace('#', '♯') + C.hzToNote(reading.hz).octave +
+      ' (sounding) · ' + reading.hz.toFixed(1) + ' Hz · ' +
+      (heardCents === 0 ? 'spot on' : Math.abs(heardCents) + '¢ ' + (heardCents > 0 ? 'sharp' : 'flat'));
+    /* One shared path for every accepted answer (dead-on, or the octave twin).
+       One stored answer per QUESTION, graded on the first attempt — the rule
+       the heat map and the "in under 2 seconds" checkpoint already assume.
+       Hunting used to bank a wrong AND then a correct, so four questions all
+       answered right came out as 50% of 8. countWrong() has already banked
+       this question if the first attempt missed. And CLEAN means unaided:
+       a correct after any hint scores as found, never as a first-try recall. */
+    const acceptCorrect = (label) => {
+      const clean = wrongThisQ === 0 && hintLevel === 0;
+      vEl.textContent = label;
       vEl.className = 'verdict ok';
       sess.find.score++;
-      /* One stored answer per QUESTION, graded on the first attempt — the rule the
-         heat map and the "in under 2 seconds" checkpoint already assume. Hunting
-         used to bank a wrong AND then a correct, so four questions all answered
-         right came out as 50% of 8. countWrong() has already banked this
-         question if the first attempt missed; banking again would double it. */
       if (clean){
         sess.find.clean++; sess.find.streak++; sess.find.asked++;
         recordAnswer(true, q, performance.now() - qStart);
+      } else if (wrongThisQ === 0){
+        /* Hint-assisted find: the question was asked and the streak is gone,
+           but only the REVEAL rung banks a shared answer — a shown answer is
+           a failed recall; a range hint is just guided practice. */
+        sess.find.asked++; sess.find.streak = 0;
+        if (revealedThisQ){
+          recordAnswer(false, q, performance.now() - qStart);
+          reviewQ.add(q.sn + ':' + q.f, qCount);
+        }
       }
       gvJudge(clean ? 'clean' : 'dirty');
       gvZap();
       updateFindStats();
-      setTimeout(newQuestion, 1150);
+      setTimeout(newQuestion, 900);
+    };
+    if (verdict === 'correct'){
+      acceptCorrect(wrongThisQ === 0 && hintLevel === 0
+        ? ['FIRE! ' + q.name + ' rings the bell.', q.name + ' — dead on.',
+           'BOOM — that was ' + q.name + '.', q.name + '. The bell tolls.'][Math.floor(Math.random()*4)]
+        : 'There it is — ' + q.name + '.');
     } else if (verdict === 'out-of-tune'){
       vEl.textContent = 'Right note! But it is ' + Math.abs(Math.round(reading.cents)) + ' cents ' +
         (reading.cents < 0 ? 'flat' : 'sharp') + ' — that string needs tuning.';
       vEl.className = 'verdict warn';
       outOfTuneThisQ = true;   // let the stall timer escalate to the tuner
     } else if (verdict === 'wrong-octave'){
-      const article = /^[AEF]$/.test(heardName) ? 'an' : 'a';
-      vEl.textContent = 'That’s ' + article + ' ' + heardName + ' — right note, wrong octave. You want the one 12 frets ' +
-        (reading.midi > q.midi ? 'lower' : 'higher') + ', on the ' + q.sn + ' string.';
-      vEl.className = 'verdict no';
-      countWrong();
+      const twinF = q.f + (reading.midi - q.midi);   // the same note's other home on this string
+      if (GV.promptKind === 'name' && Math.abs(reading.midi - q.midi) === 12
+          && twinF >= 0 && twinF <= tierNow().maxFret){
+        /* NAME mode asked for "G on the E string" — and fret 3 and fret 15
+           are both exactly that. Reading mode stays strict: the octave is
+           written on the page. */
+        acceptCorrect(q.name + ' — that’s the other one: it also lives at fret ' + twinF + '. Both count.');
+      } else {
+        const article = /^[AEF]$/.test(heardName) ? 'an' : 'a';
+        vEl.textContent = 'That’s ' + article + ' ' + heardName + ' — right note, wrong octave. You want the one an octave ' +
+          (reading.midi > q.midi ? 'lower' : 'higher') + ' — on the ' + q.sn + ' string it’s at fret ' + q.f + '.';
+        vEl.className = 'verdict no';
+        countWrong();
+      }
     } else {
       vEl.textContent = 'That was ' + heardName + ' — looking for ' + q.name + '.';
       vEl.className = 'verdict no';
@@ -1145,8 +1450,9 @@ function countWrong(){
   if (wrongThisQ === 1){
     sess.find.streak = 0; sess.find.asked++;
     recordAnswer(false, q, performance.now() - qStart);
+    reviewQ.add(q.sn + ':' + q.f, qCount);   // a recorded miss books a comeback
   }
-  if (wrongThisQ >= 2 && hintLevel < 2) showHint();
+  if (wrongThisQ >= 2 && hintLevel < maxHintRungs()) showHint();
   updateFindStats();
 }
 /* Day-stamped answers, in the shared store, so the practice plan's "This week"
@@ -1298,7 +1604,13 @@ function setMode(m){
   /* The scene animates only while it is on screen; the pace clock lives in
      the same loop, so leaving the tab also freezes the fuse honestly. */
   gvLoop(m === 'find');
-  if (m === 'find') GV.spawnAt = performance.now();   // returning ≠ time served
+  if (m === 'find'){
+    GV.spawnAt = performance.now();   // returning ≠ time served
+    // A note already ringing on arrival must not be judged as the first answer.
+    GV.graceUntil = performance.now() + 600;
+    GV.graceNote = null;
+    gvFitScene();                     // the section just unhid: sizes are real now
+  }
   if (m === 'echo') newEcho();
   /* Same honesty as suspend(): checking the tuner mid-drill stops the click,
      so the run must give up its claim on it — otherwise the notes played
@@ -1387,7 +1699,9 @@ function renderTierUI(){
   fs.innerHTML = '<button data-f="">All strings</button>' +
     strs.map(s => '<button data-f="' + s + '">' + s + ' only</button>').join('');
   fs.querySelectorAll('button').forEach(b => {
-    b.classList.toggle('on', (b.dataset.f || null) === focus);
+    const on = (b.dataset.f || null) === focus;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', String(on));
     b.addEventListener('click', () => { focus = b.dataset.f || null; renderTierUI(); newQuestion(); });
   });
   document.getElementById('tStrings').textContent = TUNING.names.join(' ');
@@ -1399,12 +1713,14 @@ function renderTierUI(){
 function renderGameUI(){
   const ws = document.getElementById('gvWorld');
   if (!ws) return;
+  // Range before band name: a phone <select> truncates the tail, and the
+  // range is the half a player needs to pick a stage.
   ws.innerHTML = TIERS.map((t,i) =>
     '<option value="' + i + '"' + (i===tier?' selected':'') + '>Stage ' + (i+1) + ' · ' +
-    WORLDS[i].name + ' — ' + t.label.replace(/^\d+ · /,'') + '</option>').join('');
+    t.label.replace(/^\d+ · /,'') + ' — ' + WORLDS[i].name + '</option>').join('');
   const ps = document.getElementById('gvPaceSeg');
   ps.innerHTML = GAME.PACE_ORDER.map(p =>
-    '<button data-p="' + p + '"' + (p===GV.pace?' class="on"':'') + '>' +
+    '<button data-p="' + p + '" aria-pressed="' + (p===GV.pace) + '"' + (p===GV.pace?' class="on"':'') + '>' +
     GAME.PACES[p].label + '</button>').join('');
   ps.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
     if (b.dataset.p === GV.pace) return;
@@ -1416,7 +1732,7 @@ function renderGameUI(){
   document.getElementById('gvPaceNote').textContent = GAME.PACES[GV.pace].detail;
   const rs = document.getElementById('gvPromptSeg');
   rs.innerHTML = GAME.PROMPT_ORDER.map(p =>
-    '<button data-r="' + p + '"' + (p===GV.prompt?' class="on"':'') + '>' +
+    '<button data-r="' + p + '" aria-pressed="' + (p===GV.prompt) + '"' + (p===GV.prompt?' class="on"':'') + '>' +
     GAME.PROMPTS[p].label + '</button>').join('');
   rs.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
     if (b.dataset.r === GV.prompt) return;
@@ -1430,10 +1746,13 @@ function renderGameUI(){
   gs.innerHTML = '<button data-f="">All strings</button>' +
     strs.map(s => '<button data-f="' + s + '">' + s + ' only</button>').join('');
   gs.querySelectorAll('button').forEach(b => {
-    b.classList.toggle('on', (b.dataset.f || null) === focus);
+    const on = (b.dataset.f || null) === focus;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', String(on));
     b.addEventListener('click', () => { focus = b.dataset.f || null; renderTierUI(); newQuestion(); });
   });
   drawClefRef();
+  gvFitScene();   // entering/re-rendering the game: keep the pixels integer
 }
 
 /* One button, one click: it grants the mic AND starts what you came for. The
@@ -1457,8 +1776,30 @@ document.getElementById('gvWorld').addEventListener('change', e => {
 document.getElementById('fHint').addEventListener('click', showHint);
 document.getElementById('fSkip').addEventListener('click', () => {
   if (GV.run && GV.run.state.over) return;   // Play again is the only door now
+  if (!q) return;
+  if (GV.phase === 'zap' || GV.phase === 'breach') return;   // a verdict is settling
+  /* A skip teaches and records: say what it was, break the session streak,
+     bank a SOFT miss (position heat + recent, but not the shared accuracy —
+     walking away is not a wrong answer), book the comeback, THEN move on
+     slowly enough that the correction line can actually be read. */
+  const v = document.getElementById('fVerdict');
+  v.textContent = 'Skipped — that was ' + q.name + ', ' + q.sn + ' string, fret ' + q.f + '.';
+  v.className = 'verdict warn';
+  sess.find.streak = 0;
+  const key = q.sn + ':' + q.f;
+  saveStats(st => {
+    st.heat[key] = (st.heat[key] || 0) + 1;
+    st.noteRecent = st.noteRecent || {};
+    const nr = st.noteRecent[key] || (st.noteRecent[key] = []);
+    nr.push(0);
+    if (nr.length > 6) nr.shift();
+  });
+  reviewQ.add(key, qCount);
   gvJudge('skip');                           // walks away; the combo goes too
-  newQuestion();
+  GV.phase = 'breach';                       // holds judging while the line shows
+  GV.breachT = performance.now();
+  updateFindStats();
+  setTimeout(newQuestion, 900);
 });
 document.getElementById('gvRestart').addEventListener('click', () => {
   gvNewRun();
@@ -1481,12 +1822,25 @@ gvNewRun();   // XP loaded, stage lights on, before the first question can spawn
 // or being stuck holding one wrong note (which fires only a single verdict).
 // Once they've already missed, help arrives sooner.
 setInterval(() => {
-  if (mode !== 'find' || !q || hintLevel >= 2) return;
+  if (mode !== 'find' || !q || hintLevel >= maxHintRungs()) return;
   // Not while a verdict settles, and never over the game-over screen.
   if (GV.phase === 'zap' || GV.phase === 'breach') return;
   if (GV.run && GV.run.state.over) return;
   const stalledFor = performance.now() - lastProgressAt;
-  if (stalledFor > (wrongThisQ > 0 ? 4500 : 10000)) showHint();
+  if (stalledFor > (wrongThisQ > 0 ? 4500 : 10000)){
+    /* On the no-pressure pace, silence is often DELIBERATE work — reading the
+       neck, counting frets. Point at the Hint button once instead of spending
+       a hint rung the player never asked for. Timed paces, and any question
+       already missed, keep the auto-ladder. */
+    if (GV.pace === 'chill' && wrongThisQ === 0){
+      if (!nudgedThisQ){
+        nudgedThisQ = true;
+        document.getElementById('fSub').textContent = 'Stuck? The Hint button is just below.';
+      }
+      return;
+    }
+    showHint();
+  }
 }, 700);
 
 /* ==================================================================
@@ -3633,7 +3987,12 @@ function resume(){
   if (DR.phase === 'running') DR.lastAdvanceAt = performance.now();
   /* Coming back to the game: the fuse must not count the time spent
      away — that would be a stage light lost to a tab switch. */
-  if (mode === 'find'){ GV.spawnAt = performance.now(); gvLoop(true); }
+  if (mode === 'find'){
+    GV.spawnAt = performance.now();
+    GV.graceUntil = performance.now() + 600;   // same entry grace as setMode
+    GV.graceNote = null;
+    gvLoop(true);
+  }
 }
 
 /** Enter a Live mode. Gates on the first one ever asked for, and never again. */
@@ -3688,4 +4047,7 @@ window.timingLine = timingLine;
    two wrong notes then the right one — which needs to feed readings straight in:
    a synthetic mic plays one fixed pitch, and the question is picked at random. */
 window.onStableNote = onStableNote;
+/* The staff-clipping regression test draws arbitrary midis straight onto the
+   game's staff canvas and reads the pixels back. */
+window.drawStaff = drawStaff;
 })();

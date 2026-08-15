@@ -101,6 +101,70 @@ test('the note just asked is strongly avoided but a one-note pool still works', 
     'a single-note pool must still yield its note');
 });
 
+test('six clean answers park a note much deeper than three, but never to zero', () => {
+  const deep = G.weightFor({ tries: 6, recent: [1, 1, 1, 1, 1, 1] }, false);
+  const parked = G.weightFor({ tries: 3, recent: [1, 1, 1] }, false);
+  assert.ok(deep < parked, 'six straight cleans must fade further than three');
+  assert.ok(deep > 0, 'but the note stays in the pool — memory decays');
+});
+
+test('in a fully-parked pool, the one missed note dominates the draws', () => {
+  // 65 positions, all long-since mastered, except one missed six straight:
+  // that one must be what the session is spent on.
+  const pool = [];
+  for (let f = 0; f <= 12; f++) for (const sn of ['B', 'E', 'A', 'D', 'G'])
+    pool.push({ sn, f });
+  const view = key => key === 'A:5'
+    ? { tries: 6, recent: [0, 0, 0, 0, 0, 0] }
+    : { tries: 9, recent: [1, 1, 1, 1, 1, 1] };
+  let hits = 0;
+  const N = 2000;
+  for (let i = 0; i < N; i++) {
+    const p = G.weightedPick(pool, view, null, () => i / N);
+    if (p.sn + ':' + p.f === 'A:5') hits++;
+  }
+  assert.ok(hits >= N * 0.25,
+    `the missed note took ${hits}/${N} draws — parked notes are not fading enough`);
+});
+
+/* ================= review queue ================= */
+
+test('a missed note comes back within 3-8 draws, and never back-to-back', () => {
+  const rq = G.createReviewQueue(() => 0.5);        // due = now + 3 + 2
+  rq.add('E:3', 10);
+  assert.equal(rq.next(11, null), null, 'not due yet');
+  assert.equal(rq.next(14, null), null, 'still one short');
+  assert.equal(rq.next(15, 'E:3'), null, 'never the question just asked');
+  assert.equal(rq.next(15, null), 'E:3', 'due and served');
+});
+
+test('a served key is revisited a second time later, then retired', () => {
+  const rq = G.createReviewQueue(() => 0);          // first: +3, second: +8
+  rq.add('A:2', 0);
+  assert.equal(rq.next(3, null), 'A:2', 'first revisit at +3');
+  assert.equal(rq.next(4, null), null, 'the second revisit is booked ~8-14 later');
+  assert.equal(rq.next(11, null), 'A:2', 'second revisit at +8');
+  assert.equal(rq.next(30, null), null, 'two revisits and the key retires');
+  assert.equal(rq.size, 0);
+});
+
+test('keys absent from the pool are skipped without loss', () => {
+  const rq = G.createReviewQueue(() => 0);
+  rq.add('B:9', 0);                                 // tier shrank: B left the pool
+  rq.add('E:1', 0);
+  const inPool = k => k !== 'B:9';
+  assert.equal(rq.next(5, null, inPool), 'E:1', 'the in-pool key is served');
+  assert.equal(rq.next(6, null, inPool), null, 'the absent key is not forced out');
+  assert.equal(rq.next(20, null), 'B:9', 'and it is still there when the pool grows back');
+});
+
+test('re-adding a scheduled key keeps its original slot', () => {
+  const rq = G.createReviewQueue(() => 0);
+  rq.add('E:3', 0);                                 // due at 3
+  rq.add('E:3', 100);                               // missed again before served
+  assert.equal(rq.next(3, null), 'E:3', 'the first booking stands');
+});
+
 /* ================= run arithmetic ================= */
 
 test('a clean streak builds combo and pays rising XP', () => {
@@ -142,6 +206,19 @@ test('in a timed pace only a breach costs a heart, and the third ends the run', 
   assert.equal(last.hearts, 0);
   assert.equal(last.over, true);
   assert.deepEqual(run.judge('clean').ignored, true, 'a finished run judges nothing more');
+});
+
+test('a difficulty multiplier scales the XP gain but never hearts or combo', () => {
+  const flat = G.createRun({ pace: 'steady' });
+  const boosted = G.createRun({ pace: 'steady' });
+  const a = flat.judge('clean');
+  const b = boosted.judge('clean', 1.5);
+  assert.ok(b.gain > a.gain, `judge('clean', 1.5) paid ${b.gain} vs ${a.gain} plain`);
+  assert.equal(b.gain, Math.round(a.gain * 1.5), 'the gain is the base rounded up by the multiplier');
+  assert.equal(b.combo, a.combo, 'combo is game state, not a payout');
+  const breach = boosted.judge('breach', 1.5);
+  assert.equal(breach.hearts, 2, 'a multiplied breach still costs exactly one stage light');
+  assert.equal(boosted.judge('dirty', 1.5).gain, 6, 'dirty pays 4 × 1.5 = 6');
 });
 
 test('levels rise with XP and report the moment they turn over', () => {

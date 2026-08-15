@@ -18,7 +18,7 @@
   const PACES = {
     chill:  { label: 'Soundcheck', detail: 'No fuse, no pressure — find every note at your own pace.',
               approachMs: null,  hearts: null },
-    steady: { label: 'Gig',        detail: 'The cannon fuse burns slow. If it burns out, one stage light goes dark.',
+    steady: { label: 'Gig',        detail: 'The cannon fuse burns slow. Burnt out = one of your three bolts — your stage lights — goes dark.',
               approachMs: 14000, hearts: 3 },
     turbo:  { label: 'Encore',     detail: 'A short fuse. For those about to rock.',
               approachMs: 7000,  hearts: 3 },
@@ -84,18 +84,22 @@
       zaps: 0,                          // notes nailed this set
       over: false,
     };
-    function judge(kind) {
+    /** `mult` is an optional XP multiplier (pace × stage × prompt, decided by
+        the caller) applied to the gain only — hearts and combo are game
+        STATE and never scale. Default 1, so existing callers pay the old rates. */
+    function judge(kind, mult) {
       if (s.over) return { ignored: true, over: true, gain: 0, combo: s.combo, hearts: s.hearts };
+      const m = (typeof mult === 'number' && mult > 0) ? mult : 1;
       const before = levelFor(s.xp);
       let gain = 0;
       if (kind === 'clean') {
         s.combo++;
         if (s.combo > s.bestCombo) s.bestCombo = s.combo;
-        gain = 10 + 2 * Math.min(s.combo - 1, 15);
+        gain = Math.round((10 + 2 * Math.min(s.combo - 1, 15)) * m);
         s.xp += gain; s.zaps++;
       } else if (kind === 'dirty') {
         // The hunt already broke the combo (every wrong is judged first).
-        gain = 4;
+        gain = Math.round(4 * m);
         s.xp += gain; s.zaps++;
       } else if (kind === 'wrong') {
         s.combo = 0;
@@ -137,8 +141,13 @@
     if (recent.length) {
       const missRate = 1 - recent.reduce((a, b) => a + b, 0) / recent.length;
       w += 2.5 * missRate;                              // trouble notes come back
+      const lastSix = recent.slice(-6);
       const lastThree = recent.slice(-3);
-      if (lastThree.length === 3 && lastThree.every(x => x === 1)) w *= 0.35;  // parked
+      if (v.tries >= 6 && lastSix.length === 6 && lastSix.every(x => x === 1)) {
+        w *= 0.08;                                        // deeper-parked: truly known
+      } else if (lastThree.length === 3 && lastThree.every(x => x === 1)) {
+        w *= 0.15;                                        // parked
+      }
     }
     if (isLast) w *= 0.15;                              // rarely twice in a row
     return w;
@@ -158,6 +167,40 @@
       if (roll <= 0) return pool[i];
     }
     return pool[pool.length - 1];
+  }
+
+  /* ================= review queue =================
+     A missed note must come back SOON — spaced repetition inside one sitting.
+     Counting is in QUESTIONS, not time: the caller increments a counter per
+     question and asks the queue before rolling the adaptive picker.
+       add(key, nowCount)  — schedule a first revisit 3–7 questions out
+       next(nowCount, lastKey, has) — the oldest due key (never lastKey,
+         never one `has` rejects), or null. Serving the first visit books a
+         second ~8–14 questions later; serving that one retires the key. */
+  function createReviewQueue(rand) {
+    const r = rand || Math.random;
+    const items = {};                       // key → { due, stage } stage 0|1
+    return {
+      add(key, nowCount) {
+        if (items[key]) return;             // already booked — keep its slot
+        items[key] = { due: (nowCount | 0) + 3 + Math.floor(r() * 5), stage: 0 };
+      },
+      next(nowCount, lastKey, has) {
+        let best = null;
+        for (const k in items) {
+          if (k === lastKey) continue;                  // never twice in a row
+          if (items[k].due > nowCount) continue;        // not due yet
+          if (has && !has(k)) continue;                 // not in the pool: skip, keep
+          if (!best || items[k].due < items[best].due) best = k;
+        }
+        if (!best) return null;
+        const it = items[best];
+        if (it.stage === 0) { it.stage = 1; it.due = (nowCount | 0) + 8 + Math.floor(r() * 7); }
+        else delete items[best];
+        return best;
+      },
+      get size() { return Object.keys(items).length; },
+    };
   }
 
   /* ================= bass-clef staff geometry =================
@@ -193,6 +236,6 @@
   return {
     PACES, PACE_ORDER, PROMPTS, PROMPT_ORDER, resolvePrompt,
     XP_PER_LEVEL, LEVEL_TITLES, levelFor, levelTitle, levelProgress, approachMs,
-    createRun, weightFor, weightedPick, staffSpec,
+    createRun, weightFor, weightedPick, createReviewQueue, staffSpec,
   };
 });

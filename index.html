@@ -133,22 +133,26 @@
           <span class="gv-hearts" id="gvHearts" aria-label="stage lights left"></span>
           <span class="t-data gv-level" id="gvLevel">LV 1 · GARAGE ROADIE</span>
           <span class="t-data gv-combo hidden" id="gvCombo">STREAK ×2</span>
-          <span class="gv-xp" title="XP to the next level"><i id="gvXpBar"></i></span>
+          <span class="t-data gv-xplabel" aria-hidden="true">XP</span>
+          <span class="gv-xp" title="XP to the next level" role="progressbar" aria-label="XP into the current level"
+                aria-valuemin="0" aria-valuemax="120" aria-valuenow="0"><i id="gvXpBar"></i></span>
         </div>
         <div class="gv-screen">
           <canvas id="gvScene" width="320" height="150" aria-hidden="true"></canvas>
           <div class="gv-over hidden" id="gvOver">
             <b class="gv-over-title">LIGHTS OUT</b>
-            <p class="t-caption" id="gvOverText"></p>
+            <p class="t-caption" id="gvOverText" role="status"></p>
             <button class="btn primary" id="gvRestart">Back on stage</button>
           </div>
         </div>
+        <div class="gv-fusebar hidden" id="gvFuseBar" role="progressbar" aria-label="fuse time left"
+             aria-valuemin="0"><i></i></div>
         <div class="q" id="fQ">—</div>
         <div class="gv-staffwrap hidden" id="gvStaffWrap">
-          <canvas id="gvStaff" width="170" height="124" aria-label="the note, written on a bass clef staff"></canvas>
+          <canvas id="gvStaff" width="170" height="150" aria-label="sight-reading exercise: a note drawn on a bass clef staff — the Hint button reveals its name"></canvas>
         </div>
-        <div class="qsub" id="fSub">Find it on the neck and play it.</div>
-        <div class="verdict" id="fVerdict">&nbsp;</div>
+        <div class="qsub" id="fSub" aria-live="polite">Find it on the neck and play it.</div>
+        <div class="verdict" id="fVerdict" aria-live="polite">&nbsp;</div>
         <div class="heard" id="fHeard">&nbsp;</div>
         <div id="fBoard"></div>
         <div class="row" style="justify-content:center; margin-top:8px">

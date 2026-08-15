@@ -320,6 +320,69 @@ test('sheet-music mode poses the question on a bass-clef staff, and the hint nam
   } finally { await app.close(); }
 });
 
+test('every corner of the range draws unclipped on the question staff', async () => {
+  // Regression: the staff canvas was 124px tall, and the written G4 (G string,
+  // fret 12 — staff position 14) drew its note head above the canvas: a
+  // reading question whose note was literally not on the page.
+  const app = await openWithNote(987.767);   // silent to the detector
+  try {
+    const { page } = app;
+    await page.evaluate(() => setMode('find'));
+    for (const midi of [23, 28, 43, 55]) {   // low B, open E, open G, high G
+      const r = await page.evaluate((m) => {
+        const cv = document.getElementById('gvStaff');
+        drawStaff(cv, m, {});
+        const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+        let amber = 0, edge = 0;
+        for (let y = 0; y < cv.height; y++) for (let x = 0; x < cv.width; x++) {
+          const i = (y * cv.width + x) * 4;
+          if (d[i + 3] > 0 && d[i] > 225 && d[i + 1] > 150 && d[i + 1] < 190
+              && d[i + 2] > 40 && d[i + 2] < 80) {
+            amber++;
+            if (y < 2 || y >= cv.height - 2) edge++;
+          }
+        }
+        return { amber, edge };
+      }, midi);
+      assert.ok(r.amber > 40, `midi ${midi}: only ${r.amber} note-head pixels — the head is clipped`);
+      assert.equal(r.edge, 0, `midi ${midi}: note ink touches the canvas edge — it is being cut off`);
+    }
+    assert.deepEqual(app.errors, [], 'page errors');
+  } finally { await app.close(); }
+});
+
+test('a correct answer shown by the reveal hint is a failed recall, not a clean find', async () => {
+  // The hint-exploit: reveal the fret, play it, collect a "first try". Clean
+  // requires NO hints; the reveal rung specifically banks a failed recall.
+  const app = await openWithNote(G2);
+  try {
+    const { page } = app;
+    await page.evaluate(() => {
+      localStorage.removeItem('bassTheoryTrainer.v1');
+      setMode('find');
+      q = { si: 1, f: 3, midi: 43, sn: 'E', name: 'G' };
+      hintLevel = 0; wrongThisQ = 0; qStart = performance.now();
+      showHint(); showHint();          // range, then the reveal — the shown answer
+      tracker.reset();
+    });
+    const verdict = await until(page, () => {
+      const el = document.getElementById('fVerdict');
+      return el.className.includes('ok') ? el.textContent : null;
+    }, null, 8000);
+    assert.ok(verdict, 'the correct note was not accepted at all');
+    const r = await page.evaluate(() => ({
+      stats: JSON.parse(localStorage.getItem('bassTheoryTrainer.v1')).stats,
+      clean: document.getElementById('fClean').textContent,
+      asked: document.getElementById('fAsked').textContent,
+    }));
+    assert.equal(r.stats.correct, 0, 'a revealed answer was banked as a correct recall');
+    assert.equal(r.stats.answered, 1, 'the reveal should bank exactly one (failed) answer');
+    assert.equal(r.clean, '0', 'the session panel counted a hinted find as first-try');
+    assert.equal(r.asked, '1');
+    assert.deepEqual(app.errors, [], 'page errors');
+  } finally { await app.close(); }
+});
+
 test('repeated guesses at one ear-training note count as a single answer', async () => {
   // Regression: Echo recorded every wrong guess into the shared accuracy that
   // the Theory Trainer's checkpoints read, penalising the act of practising.

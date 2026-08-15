@@ -70,20 +70,38 @@
 
 /* ---- Fret Quest (Find it) ----
    The game's canvases are drawn at a low internal resolution and scaled up:
-   image-rendering keeps the pixels square instead of smearing them. */
-.gv-screen{position:relative; margin:2px 0 6px;}
+   image-rendering keeps the pixels square instead of smearing them. The JS
+   snaps the scene wrapper to an integer multiple of 320px (gvFitScene), so
+   the wrapper centres itself and the canvas keeps square corners — a radius
+   would shave fractional pixels off a pixel-art edge. */
+.gv-screen{position:relative; margin:2px auto 6px;}
 .gv-screen canvas{display:block; width:100%; height:auto; image-rendering:pixelated;
-  border:1px solid var(--line); border-radius:var(--r-sm); background:var(--s0);}
+  border:1px solid var(--line); border-radius:0; background:var(--s0);}
 .gv-hud{display:flex; align-items:center; gap:10px; flex-wrap:wrap; min-height:18px; margin-bottom:6px;}
+.gv-hud .t-data{font-size:13px;}
+.gv-xplabel{color:var(--t4);}
 /* Stage lights, not hearts: each <i> is one pixel lightning bolt — the
-   band's own mark. Losing one dims it. */
+   band's own mark. A lost one is drawn as an OUTLINE (not a grayscale wash):
+   the ~#A79F94 stroke holds 3:1 against the panel, so "which are gone"
+   survives low vision and dim rooms. */
 .gv-hearts{display:flex; gap:4px;}
-.gv-hearts i{width:11px; height:16px; image-rendering:pixelated;
+.gv-hearts i{width:12px; height:17px; image-rendering:pixelated;
   background-image:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 7 10' shape-rendering='crispEdges'><path fill='%23F2A93B' d='M3 0h3L4 4h2L1 10l1-4H1z'/><path fill='%23F6E27A' d='M4 1h1L4 3H3z'/></svg>");
   background-size:100% 100%;}
-.gv-hearts i.lost{filter:grayscale(1) brightness(.45);}
+.gv-hearts i.lost{background-image:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 7 10'><path fill='none' stroke='%23A79F94' stroke-width='0.9' d='M3 0h3L4 4h2L1 10l1-4H1z'/></svg>");}
 .gv-combo{color:var(--root); font-weight:700;}
 .gv-level{color:var(--t3);}
+/* The readable fuse: a DOM bar mirroring the canvas cord, because a 2px pixel
+   rope is flavour, not a timer. .low = last two seconds. */
+.gv-fusebar{height:6px; margin:0 auto 6px; background:var(--s2);
+  border:1px solid var(--line); border-radius:2px; overflow:hidden;}
+.gv-fusebar i{display:block; height:100%; width:100%;
+  background:linear-gradient(90deg, #C77F1F, var(--root));}
+.gv-fusebar.low i{background:var(--bad);}
+@media (prefers-reduced-motion: no-preference){
+  .gv-fusebar.low i{animation:gv-fuse-pulse .9s ease-in-out infinite;}
+  @keyframes gv-fuse-pulse{0%,100%{opacity:1;} 50%{opacity:.55;}}
+}
 .gv-xp{flex:1 1 60px; min-width:60px; height:7px; background:var(--s2);
   border:1px solid var(--line); border-radius:2px; overflow:hidden;}
 /* XP is stage heat, not app chrome: the bar warms from ember to amber so the
@@ -91,14 +109,18 @@
 .gv-xp i{display:block; height:100%; width:0%;
   background:linear-gradient(90deg, #C77F1F, var(--root)); transition:width var(--slow) var(--ease);}
 .gv-over{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center;
-  justify-content:center; gap:6px; text-align:center; background:rgba(14,13,12,.82);
+  justify-content:center; gap:6px; text-align:center; background:rgba(14,13,12,.92);
   border-radius:var(--r-sm); padding:10px;}
 .gv-over-title{font-family:var(--mono); font-size:22px; letter-spacing:.18em; color:var(--root);
   text-shadow:0 0 14px rgba(242,169,59,.45);}
 .gv-staffwrap{display:flex; justify-content:center; margin:4px 0 2px;}
-.gv-staffwrap canvas{width:min(230px, 70%); height:auto; image-rendering:pixelated;
+/* Fixed INTEGER widths (1× or 2× the backing store) — fractional scales smear
+   the staff lines. 170×150 → 340 on wide screens; the clef ref 300 → 600. */
+.gv-staffwrap canvas{width:170px; height:auto; image-rendering:pixelated;
   background:var(--s2); border:1px solid var(--line); border-radius:var(--r-sm);}
-#gvClefHelp .gv-staffwrap canvas{width:min(340px, 96%);}
+@media (min-width:760px){ .gv-staffwrap canvas{width:340px;} }
+#gvClefHelp .gv-staffwrap canvas{width:300px;}
+@media (min-width:1000px){ #gvClefHelp .gv-staffwrap canvas{width:600px;} }
 /* Verdicts land as one committed banner per judged note — the pop replays
    because the class is re-applied per judgement, and nothing else moves. */
 #secFind .verdict{min-height:34px; font-size:17px;}
@@ -107,7 +129,19 @@
     animation:gv-pop var(--cheer) var(--pop);}
   @keyframes gv-pop{0%{transform:scale(.85); opacity:.4;} 100%{transform:scale(1); opacity:1;}}
 }
-#secFind .heard{font-family:var(--mono); font-size:12px;}
+#secFind .heard{font-family:var(--mono); font-size:13px;}
+/* The question's two facts read in the scene's own colours: the NOTE being
+   learned in root amber, the string in the app's violet. */
+#fQ b.gv-note{color:var(--root);}
+/* The DOM chrome joins the fiction (scoped to the game only): stat tiles and
+   the two game buttons take the HUD's voice — mono type, a 1px line bevel,
+   a slightly darker surface. Subtle, not a redesign. */
+#secFind .stat-row .stat{background:var(--s1); border:1px solid var(--line);
+  box-shadow:inset 0 1px 0 rgba(246,242,236,.05), inset 0 -1px 0 rgba(0,0,0,.35);}
+#secFind .stat-row .stat span{font-family:var(--mono); letter-spacing:.04em;
+  text-transform:uppercase; font-size:10.5px;}
+#secFind #fHint, #secFind #fSkip{font-family:var(--mono); background:var(--s1);
+  box-shadow:inset 0 1px 0 rgba(246,242,236,.05), inset 0 -1px 0 rgba(0,0,0,.35);}
 #secFind summary{min-height:44px; display:flex; align-items:center; gap:var(--sp2);
   cursor:pointer; list-style:none;}
 #secFind summary::-webkit-details-marker{display:none;}
