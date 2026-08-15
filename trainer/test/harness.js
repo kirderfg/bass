@@ -39,12 +39,29 @@ function wavHeader(dataLength, rate) {
   return h;
 }
 
-/** Write a looping WAV of one plucked bass tone. */
-function writeNoteWav(hz, file, seconds = 3, rate = 44100) {
+/**
+ * Write a looping WAV of one plucked bass tone.
+ *
+ * The tone stops half a second before the end of the file by default, so
+ * every loop of the fake device is a RELEASE followed by a genuine re-attack —
+ * matching how the app now judges: a note that was already ringing when a
+ * question arrived is never an answer, only a fresh attack is.
+ *
+ * `opts.toneSeconds` overrides where the tone stops (e.g. the full length for
+ * a note that must ring without ever re-attacking); `opts.leadSeconds`
+ * prepends silence, for tests that need the ONE attack to land after their
+ * own setup has finished.
+ */
+function writeNoteWav(hz, file, seconds = 3, rate = 44100, opts) {
+  const lead = Math.max(0, (opts && opts.leadSeconds) || 0);
+  const toneSeconds = (opts && opts.toneSeconds != null)
+    ? opts.toneSeconds : Math.max(0.5, seconds - 0.5);
   const n = Math.floor(seconds * rate);
+  const leadN = Math.floor(lead * rate);
+  const toneEnd = Math.min(n, leadN + Math.floor(toneSeconds * rate));
   const data = Buffer.alloc(n * 2);
-  for (let i = 0; i < n; i++) {
-    const t = i / rate;
+  for (let i = leadN; i < toneEnd; i++) {
+    const t = (i - leadN) / rate;
     let v = 0;
     for (const [mult, amp] of PARTIALS) v += amp * Math.sin(2 * Math.PI * hz * mult * t);
     data.writeInt16LE(Math.max(-32767, Math.min(32767, Math.round((v / 1.5) * 22000))), i * 2);
@@ -95,13 +112,17 @@ function writeSequenceWav(hzList, file, secondsEach = 2.4, rate = 44100) {
  *
  * `viewport` widens the window for tests about the desktop layout.
  *
+ * `wavOpts` shapes the single-tone file: {seconds, toneSeconds, leadSeconds}
+ * (see writeNoteWav) — e.g. one attack that rings for 15s and never repeats.
+ *
  * @returns {{page, errors, gum, goto, close}} gum() counts getUserMedia calls.
  */
-async function openApp(hz, url = '/index.html', viewport) {
+async function openApp(hz, url = '/index.html', viewport, wavOpts) {
   const { chromium } = require(PW);
   const { server, port } = await startServer();
   const wav = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'basswav-')), 'note.wav');
-  if (Array.isArray(hz)) writeSequenceWav(hz, wav); else writeNoteWav(hz, wav);
+  if (Array.isArray(hz)) writeSequenceWav(hz, wav);
+  else writeNoteWav(hz, wav, (wavOpts && wavOpts.seconds) || 3, 44100, wavOpts);
 
   const browser = await chromium.launch({
     executablePath: CHROME,
@@ -149,15 +170,17 @@ async function openApp(hz, url = '/index.html', viewport) {
  * arms the mic from the gate that mode shows.
  * @returns {{page, close}} page is already past the mic gate and listening.
  */
-async function openWithNote(hz) {
-  const app = await openApp(hz, '/index.html#tuner');
+async function openWithNote(hz, wavOpts) {
+  const app = await openApp(hz, '/index.html#tuner', undefined, wavOpts);
   await app.page.click('#startBtn');
   await app.page.waitForSelector('#app:not(.hidden)', { timeout: 5000 });
   return app;
 }
 
-/** Poll until `fn` (run in the page) returns a truthy value, or time out. */
-async function until(page, fn, arg, timeout = 6000) {
+/** Poll until `fn` (run in the page) returns a truthy value, or time out.
+    The default allows for the looping WAV's re-attack cadence: the app judges
+    only fresh attacks now, so the first verdict can be a loop away. */
+async function until(page, fn, arg, timeout = 10000) {
   const start = Date.now();
   let last;
   while (Date.now() - start < timeout) {

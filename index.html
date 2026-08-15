@@ -65,18 +65,20 @@
     </div>
 
     <div id="app" class="hidden">
-    <div class="card" style="padding:10px 12px">
-      <div class="listening"><span class="dot" id="liveDot"></span><span id="liveTxt">listening…</span></div>
-      <div class="level"><i id="levelBar"></i></div>
-      <div style="margin-top:8px">
-        <label class="small muted" for="deviceSel">Listening to this input — switch it if your bass isn't showing up:</label>
-        <select id="deviceSel" style="margin-top:4px"></select>
-        <!-- The gate's own error slot lives inside #gate, which is hidden the
-             moment the mic is armed — so a failed switch of input DEVICE, which
-             can only happen after arming, needs somewhere visible to land. -->
-        <p class="err hidden" id="liveErr" style="margin:6px 0 0"></p>
+    <!-- Compact on purpose: this card sits above every Live mode on a phone,
+         so it is one listening row (dot + level inline) and a slim select.
+         The explanatory sentence lives in the select's title. -->
+    <div class="card mic-card" style="padding:8px 12px">
+      <div class="listening mic-row"><span class="dot" id="liveDot"></span><span id="liveTxt">listening…</span>
+        <div class="level"><i id="levelBar"></i></div>
       </div>
-      <p class="small muted hidden" id="tuneWarn" style="margin:8px 0 0"></p>
+      <select id="deviceSel" aria-label="Audio input"
+              title="Listening to this input — switch it if your bass isn't showing up"></select>
+      <!-- The gate's own error slot lives inside #gate, which is hidden the
+           moment the mic is armed — so a failed switch of input DEVICE, which
+           can only happen after arming, needs somewhere visible to land. -->
+      <p class="err hidden" id="liveErr" style="margin:6px 0 0"></p>
+      <p class="small muted hidden" id="tuneWarn" style="margin:6px 0 0"></p>
     </div>
 
     <!-- ================= TUNER =================
@@ -145,8 +147,17 @@
             <button class="btn primary" id="gvRestart">Back on stage</button>
           </div>
         </div>
-        <div class="gv-fusebar hidden" id="gvFuseBar" role="progressbar" aria-label="fuse time left"
-             aria-valuemin="0"><i></i></div>
+        <!-- The readable fuse plus, in the last five seconds, a plain seconds
+             numeral — the bar alone is a guess at arm's length. -->
+        <div class="gv-fusewrap">
+          <div class="gv-fusebar hidden" id="gvFuseBar" role="progressbar" aria-label="fuse time left"
+               aria-valuemin="0"><i></i></div>
+          <span class="gv-fusesec hidden" id="gvFuseSec" aria-hidden="true"></span>
+        </div>
+        <!-- The game's screen-reader channel. #fQ is deliberately NOT live —
+             it mutates mid-question on hints; new questions, XP toasts and the
+             5-second warning are announced here instead. -->
+        <div class="sr-only" aria-live="polite" id="gvLive"></div>
         <div class="q" id="fQ">—</div>
         <div class="gv-staffwrap hidden" id="gvStaffWrap">
           <canvas id="gvStaff" width="170" height="150" aria-label="sight-reading exercise: a note drawn on a bass clef staff — the Hint button reveals its name"></canvas>
@@ -154,7 +165,6 @@
         <div class="qsub" id="fSub" aria-live="polite">Find it on the neck and play it.</div>
         <div class="verdict" id="fVerdict" aria-live="polite">&nbsp;</div>
         <div class="heard" id="fHeard">&nbsp;</div>
-        <div id="fBoard"></div>
         <div class="row" style="justify-content:center; margin-top:8px">
           <button class="btn small" id="fHint">Hint</button>
           <button class="btn small" id="fSkip">Skip →</button>
@@ -165,10 +175,13 @@
                answered right showed "4 correct, 8 asked". Found and first-time are
                different facts and are now labelled as such. -->
           <div class="stat"><b id="fScore">0</b><span>found</span></div>
-          <div class="stat"><b id="fClean">0</b><span>first try</span></div>
+          <div class="stat"><b id="fClean">0</b><span>1st try</span></div>
           <div class="stat"><b id="fStreak">0</b><span>streak</span></div>
           <div class="stat"><b id="fAsked">0</b><span>questions</span></div>
         </div>
+        <!-- Below the stat row on purpose: a hint diagram appearing here must
+             never shift Hint/Skip or the stats (the controls sit above). -->
+        <div id="fBoard"></div>
       </div>
 
       <!-- The game's three difficulty axes: how much neck, how much time
@@ -180,21 +193,40 @@
           <span class="t-caption">Stage — how much of the neck is in play</span>
           <select id="gvWorld" style="margin-top:4px"></select>
         </label>
+        <!-- The stage's band name, out of the select where phones truncate it. -->
+        <p class="t-caption" id="gvStageNow" style="margin:4px 0 0">Now playing: High Voltage</p>
         <div class="row" style="margin-top:var(--sp3); gap:var(--sp5); flex-wrap:wrap; align-items:flex-start">
           <div>
             <span class="t-caption">Pace</span>
-            <div class="seg compact" id="gvPaceSeg" style="margin-top:4px"></div>
+            <div class="seg compact" id="gvPaceSeg" role="group" aria-label="Pace" style="margin-top:4px"></div>
           </div>
           <div>
             <span class="t-caption">The note is shown as</span>
-            <div class="seg compact" id="gvPromptSeg" style="margin-top:4px"></div>
+            <div class="seg compact" id="gvPromptSeg" role="group" aria-label="The note is shown as" style="margin-top:4px"></div>
           </div>
         </div>
         <p class="t-caption" id="gvPaceNote" style="margin:var(--sp2) 0 0"></p>
-        <div style="margin-top:var(--sp3)">
-          <span class="t-caption">Strings</span>
-          <div class="seg compact" id="gvFocusSeg" style="margin-top:4px"></div>
+        <div class="row" style="margin-top:var(--sp3); gap:var(--sp5); flex-wrap:wrap; align-items:flex-start">
+          <div>
+            <span class="t-caption">Strings</span>
+            <div class="seg compact" id="gvFocusSeg" role="group" aria-label="Strings" style="margin-top:4px"></div>
+          </div>
+          <div>
+            <span class="t-caption">Frets</span>
+            <div class="seg compact" id="gvFretSeg" role="group" aria-label="Frets" style="margin-top:4px"></div>
+          </div>
         </div>
+        <div class="row" style="margin-top:var(--sp3); gap:var(--sp5); flex-wrap:wrap; align-items:flex-start">
+          <div>
+            <span class="t-caption">Effects</span>
+            <div class="seg compact" id="gvFxSeg" role="group" aria-label="Effects" style="margin-top:4px"></div>
+          </div>
+          <div>
+            <span class="t-caption">Sound</span>
+            <div class="seg compact" id="gvSndSeg" role="group" aria-label="Sound" style="margin-top:4px"></div>
+          </div>
+        </div>
+        <p class="t-caption" id="gvBestNote" style="margin:var(--sp3) 0 0">Best on this setup: 0</p>
       </div>
 
       <!-- The reading mode's teaching support: what the staff is, and where
@@ -209,7 +241,8 @@
           <p class="t-caption" style="margin:var(--sp3) 0 0">Anchor the open strings first and read everything else off
           them: open <b>E</b> hangs on the first ledger line below the staff, open <b>A</b> is the bottom space, open
           <b>D</b> is the middle line, open <b>G</b> is the top space — and the low <b>B</b> hangs below two ledger
-          lines. A <b>♯</b> in front of a note head means one fret higher than the natural.</p>
+          lines. A <b>♯</b> in front of a note head means one fret higher than the natural, and a <b>♭</b> means one
+          fret lower — every ♯ has a flat name too: <b>C♯ = D♭</b> — same fret, same sound.</p>
         </div>
       </details>
     </section>

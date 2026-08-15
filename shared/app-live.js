@@ -48,7 +48,11 @@ function persistTier(){
 /* ================= audio ================= */
 const A = { ctx:null, analyser:null, stream:null, buf:null, timer:null, rate:44100, level:0, muteUntil:0 };
 const DECIMATE = 4;
-let tracker = C.createTracker({ stableMs:150 });
+/* The tracker's settle time. The game's entry grace leans on it: a stable
+   reading fires this long after its note's attack, so "did this note begin
+   before the grace ended?" is answerable from the stable's own timestamp. */
+const TRACKER_STABLE_MS = 150;
+let tracker = C.createTracker({ stableMs:TRACKER_STABLE_MS });
 /* Readings used to decide whether the INSTRUMENT is out of tune: {cents, name}
    per reading, so the warning can tell one flat string from a flat bass. */
 let centsHistory = [];
@@ -158,20 +162,18 @@ function tick(){
   if (mode === 'tuner') renderTuner(pitch, reading);
   else if (reading.state === 'stable') {
     /* Entry grace for the game only: a note (or hum) that was already sounding
-       when the Find-it screen arrived must not be judged as the player's first
-       answer. The gate lives HERE, not in onStableNote — manual test feeds
-       must bypass it. A stable landing inside the grace is PARKED, not judged:
-       if it stops before the grace runs out it was ambience and dies unjudged;
-       if it is still ringing afterwards the player is holding a real note,
-       and it gets its verdict then (see the held check below). */
-    if (mode === 'find' && now < GV.graceUntil) GV.graceNote = reading.midi;
+       when the Find-it screen arrived must NEVER be judged as the player's
+       first answer — it dies unjudged, however long it keeps ringing. The
+       gate lives HERE, not in onStableNote — manual test feeds must bypass
+       it. A stable reading fires TRACKER_STABLE_MS after its note began, so
+       any stable landing before graceUntil + that settle time belongs to a
+       note that began inside the grace: dropped for good. The tracker has
+       already consumed the attack, so only a release and a fresh attack can
+       produce the next judgeable stable. */
+    if (mode === 'find' && now < GV.graceUntil + TRACKER_STABLE_MS){ /* pre-entry ring: dies unjudged */ }
     else onStableNote(reading);
   }
   else if (mode === 'find') {
-    if (GV.graceNote != null && now >= GV.graceUntil){
-      if (reading.state === 'held' && reading.midi === GV.graceNote) onStableNote(reading);
-      GV.graceNote = null;
-    }
     /* No streamed "hearing X…" text here any more — raw detector output
        flipping under the question 18×/second WAS the flicker the game
        replaced. While a note settles, a quiet quaver rises through the
@@ -305,8 +307,11 @@ let nudgedThisQ = false;
 /* Question counter + the in-session review queue: a missed note books itself
    a comeback a few questions out (see BassGame.createReviewQueue). */
 let qCount = 0;
-/* The first staff question of a page load points at the teaching card once. */
-let staffIntroShown = false;
+/* The staff teaching pointer persists until a staff question has actually
+   been ANSWERED (not merely seen), and it is a real link to the clef card. */
+let staffAnswered = false;
+/* One "5 seconds" spoken warning per question, and one fuse double-tick. */
+let saidFiveThisQ = false, tickedFuseThisQ = false;
 /* `score` = questions you eventually found; `clean` = found on the first attempt,
    which is the one the stored accuracy is built from. */
 const sess = { find:{ score:0, clean:0, streak:0, asked:0 }, echo:{ score:0, streak:0 } };
@@ -318,6 +323,9 @@ const GV_KEY = 'bassTrainer.game.v1';
    losing the stage lights ends a set, never progress. */
 const GV = {
   pace:'chill', prompt:'name', xp:0, best:{},
+  calm:false,            // "Effects: Calm" — forces the reduced-motion path
+  sound:true,            // WebAudio cues (all far above the 420 Hz detector)
+  frets:'all',           // fret-region focus: all | low | mid | high
   run:null,
   promptKind:'name',     // what THIS question shows ('mix' resolves per question)
   phase:'idle',          // idle | fight | zap | breach | over
@@ -328,17 +336,21 @@ const GV = {
   fx:[],                 // particles and floating toasts
   hearingUntil:0,        // canvas quaver while a pluck settles
   graceUntil:0,          // entry grace: a note already sounding when the
-                         // screen arrives is ambience, not an answer (tick only)
-  graceNote:null,        // a stable parked during the grace, judged only if
-                         // it is still ringing when the grace expires
+                         // screen arrives is ambience, not an answer — it is
+                         // dropped for good, never judged (tick only)
+  hiddenAt:null,         // when the tab went to the background (fuse pauses)
   raf:null, lastFrame:0,
 };
-let REDUCED = typeof matchMedia === 'function'
+/* REDUCED = the OS's reduced-motion setting OR the game's own "Effects: Calm"
+   toggle — either one forces the still path everywhere the scene animates. */
+let OS_REDUCED = typeof matchMedia === 'function'
   && matchMedia('(prefers-reduced-motion: reduce)').matches;
+let REDUCED = OS_REDUCED;
+function updateReduced(){ REDUCED = OS_REDUCED || GV.calm; }
 if (typeof matchMedia === 'function'){
   // Live, not a snapshot: flipping the OS setting mid-session must take.
   const rmq = matchMedia('(prefers-reduced-motion: reduce)');
-  if (rmq.addEventListener) rmq.addEventListener('change', e => { REDUCED = e.matches; });
+  if (rmq.addEventListener) rmq.addEventListener('change', e => { OS_REDUCED = e.matches; updateReduced(); });
 }
 /** How many hint rungs this question's prompt has: reading mode gets three
     (name → range → reveal), name mode two (range → reveal). */
@@ -360,6 +372,9 @@ function gvLoad(){
     if (GAME.PACES[s.pace]) GV.pace = s.pace;
     if (GAME.PROMPTS[s.prompt]) GV.prompt = s.prompt;
     GV.xp = Math.max(0, s.xp | 0);
+    GV.calm = !!s.calm;
+    GV.sound = s.sound !== false;   // default ON
+    if (FRET_WINS.hasOwnProperty(s.frets)) GV.frets = s.frets;
     // Keyed pace|tier|prompt since the multiplier landed; the old plain
     // 'steady'/'turbo' keys ride along harmlessly and missing keys read as 0.
     GV.best = Object.assign({}, s.best);
@@ -367,15 +382,71 @@ function gvLoad(){
 }
 function gvSave(){
   try { localStorage.setItem(GV_KEY, JSON.stringify({
-    pace:GV.pace, prompt:GV.prompt, xp:GV.xp, best:GV.best })); } catch(e){}
+    pace:GV.pace, prompt:GV.prompt, xp:GV.xp, best:GV.best,
+    calm:GV.calm, sound:GV.sound, frets:GV.frets })); } catch(e){}
 }
+/* Fret-region focus for the question pool. Windows overlap on purpose —
+   fret 5 belongs to both hands' territory. */
+const FRET_WINS = {
+  all:  { label:'All',   range:null },
+  low:  { label:'0–5',   range:[0, 5] },
+  mid:  { label:'5–9',   range:[5, 9] },
+  high: { label:'7–12',  range:[7, 12] },
+};
+const FRET_ORDER = ['all', 'low', 'mid', 'high'];
 gvLoad();
+updateReduced();
+
+/** Display spelling of a note name: the engraved ♯, never the ASCII #.
+    Display only — q.name and every stored key stay ASCII. */
+function disp(name){ return String(name).replace(/#/g, '♯'); }
+/** 'an A', 'an E', 'an F♯' — the article covers sharps too (prefix test). */
+function article(name){ return /^[AEF]/.test(name) ? 'an' : 'a'; }
+/** The game's screen-reader channel: a visually-hidden polite live region.
+    #fQ itself must never be live — it mutates mid-question on hints. */
+function srAnnounce(text){
+  const el = document.getElementById('gvLive');
+  if (el) el.textContent = text;
+}
+
+/* ---- sound cues ----
+   Tiny WebAudio blips through the SAME AudioContext the mic uses. Every cue
+   sits far above the detector's 420 Hz ceiling, so even on a phone speaker
+   the mic can never hear one as a note. Optional (GV.sound), default on. */
+function gvCue(kind){
+  if (!GV.sound || !A.ctx) return;
+  try {
+    const t = A.ctx.currentTime;
+    const blip = (freq, at, dur, peak, type) => {
+      const o = A.ctx.createOscillator(), g = A.ctx.createGain();
+      o.type = type || 'sine'; o.frequency.value = freq;
+      g.gain.setValueAtTime(0.0001, t + at);
+      g.gain.exponentialRampToValueAtTime(peak, t + at + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + at + dur);
+      o.connect(g); g.connect(A.ctx.destination);
+      o.start(t + at); o.stop(t + at + dur + 0.02);
+    };
+    if (kind === 'ding'){          // a clean zap rings a tiny bell
+      blip(1760, 0, 0.35, 0.12);
+      blip(2637, 0, 0.22, 0.05);   // a bright partial over it
+    } else if (kind === 'tick'){   // the fuse crossed 2s: a soft double-tick
+      blip(880, 0, 0.05, 0.07);
+      blip(880, 0.14, 0.05, 0.07);
+    } else if (kind === 'phut'){   // the fuse died: a dull phut
+      blip(620, 0, 0.16, 0.09, 'triangle');
+    }
+  } catch(e){ /* a blocked context must never break a verdict */ }
+}
 
 function gvNewRun(){
   GV.run = GAME.createRun({ pace: GV.pace, xp: GV.xp });
   GV.phase = 'idle';
   const over = document.getElementById('gvOver');
   if (over) over.classList.add('hidden');
+  // Back on stage: the controls the over screen disabled come back.
+  const hint = document.getElementById('fHint'), skip = document.getElementById('fSkip');
+  if (hint) hint.disabled = false;
+  if (skip) skip.disabled = false;
   renderHud();
 }
 /** Feed one judgement to the run and let every dependent surface follow. */
@@ -435,6 +506,14 @@ function pool(){
       out.push({ si, f, midi, sn, name });
     }
   }
+  /* Fret-region focus, combined with the string focus above. If the combined
+     filter empties the pool (a 7–12 window on a 5-fret stage), fall back to
+     the whole range — a dead pool must never happen. */
+  const win = FRET_WINS[GV.frets] && FRET_WINS[GV.frets].range;
+  if (win){
+    const inWin = out.filter(it => it.f >= win[0] && it.f <= win[1]);
+    if (inWin.length) return inWin;
+  }
   return out;
 }
 /** Per-position recent results, for the adaptive picker: the notes being
@@ -456,10 +535,15 @@ function newQuestion(){
              : GAME.weightedPick(p, noteView(), lastKey, Math.random);
   hintLevel = 0; wrongThisQ = 0; outOfTuneThisQ = false; qStart = performance.now();
   revealedThisQ = false; nudgedThisQ = false;
+  saidFiveThisQ = false; tickedFuseThisQ = false;
   lastProgressAt = qStart;
   tracker.reset();   // clears the settle clock only — a ringing note stays consumed
   GV.promptKind = GAME.resolvePrompt(GV.prompt, Math.random);
   renderPrompt();
+  // Announce the fresh question to screen readers — #fQ itself is not live.
+  srAnnounce(GV.promptKind === 'staff'
+    ? 'Next: read the staff — a note on the ' + q.sn + ' string'
+    : 'Next: play ' + disp(q.name) + ' on the ' + q.sn + ' string');
   const v = document.getElementById('fVerdict');
   v.innerHTML = '&nbsp;'; v.className = 'verdict';
   document.getElementById('fHeard').innerHTML = '&nbsp;';
@@ -472,17 +556,19 @@ function renderPrompt(){
   if (!q){ if (wrap) wrap.classList.add('hidden'); return; }
   if (GV.promptKind === 'staff'){
     document.getElementById('fQ').innerHTML = 'Play this note on the <b>' + q.sn + '</b> string';
-    // The first staff question of a session points at the teaching card below.
-    document.getElementById('fSub').textContent = staffIntroShown
+    /* The teaching pointer stays until a staff question has been ANSWERED —
+       seeing one proves nothing — and it is a real link: it opens the clef
+       card below and scrolls there (wired once, delegated, in the ui section). */
+    document.getElementById('fSub').innerHTML = staffAnswered
       ? 'Read it off the staff, find it on the neck, play it.'
-      : 'Read it off the staff, find it on the neck, play it. New to the staff? Open ‘Reading the staff — bass clef in one minute’ below.';
-    staffIntroShown = true;
+      : 'Read it off the staff, find it on the neck, play it. New to the staff? ' +
+        '<a href="#" class="gv-staffhelp-link">Open ‘Reading the staff — bass clef in one minute’</a>.';
     drawStaff(document.getElementById('gvStaff'), q.midi, { showName:false });
     wrap.classList.remove('hidden');
   } else {
     // The note letter is the thing being learned — it gets the root amber;
     // the string letter stays chrome-violet.
-    document.getElementById('fQ').innerHTML = 'Play <b class="gv-note">' + q.name + '</b> on the <b>' + q.sn + '</b> string';
+    document.getElementById('fQ').innerHTML = 'Play <b class="gv-note">' + disp(q.name) + '</b> on the <b>' + q.sn + '</b> string';
     document.getElementById('fSub').textContent = 'Find it on the neck and play it.';
     wrap.classList.add('hidden');
   }
@@ -490,8 +576,9 @@ function renderPrompt(){
 function showHint(){
   if (!q) return;
   if (GV.run && GV.run.state.over) return;   // LIGHTS OUT: the restart button owns the screen
-  if (outOfTuneThisQ && hintLevel === 0){
-    // They found the right note; the problem is the instrument, not the fret.
+  if (outOfTuneThisQ){
+    /* They found the right note; the problem is the instrument, not the
+       fret — so this branch wins WHATEVER rung the ladder is on. */
     document.getElementById('fSub').innerHTML =
       'You are playing the right note — it is your <b>tuning</b> that is off. Open the Tuner tab and retune that string.';
     lastProgressAt = performance.now();
@@ -499,30 +586,38 @@ function showHint(){
     return;
   }
   const rungs = maxHintRungs();
+  const firstUse = hintLevel === 0;
   hintLevel = Math.min(rungs, hintLevel + 1);
   lastProgressAt = performance.now();
+  /* Honesty about the price, on the first rung only: a hint waives the
+     first-try credit, and the player deserves to know before leaning on it. */
+  const cost = firstUse ? ' (a hint waives first-try credit)' : '';
   /* Reading mode gets a three-rung ladder: NAME → range → reveal. The name
      alone converts the question into one the player may already know how to
      answer — so that rung gives nothing else away. Name mode: range → reveal. */
   if (GV.promptKind === 'staff'){
-    document.getElementById('fQ').innerHTML = 'Play <b class="gv-note">' + q.name + '</b> on the <b>' + q.sn + '</b> string';
+    document.getElementById('fQ').innerHTML = 'Play <b class="gv-note">' + disp(q.name) + '</b> on the <b>' + q.sn + '</b> string';
     if (hintLevel === 1){
-      document.getElementById('fSub').textContent = 'That’s its name — now find it on the neck yourself.';
+      document.getElementById('fSub').textContent =
+        'It’s ' + article(q.name) + ' ' + disp(q.name) + ' — now find it on the neck yourself.' + cost;
       return;
     }
   }
   if (hintLevel < rungs){
-    // A 5-fret window CONTAINING the answer, at a random offset — always
-    // q.f±2 taught players to aim dead-centre of every hint.
+    /* A window CONTAINING the answer, at a random offset — always q.f±2
+       taught players to aim dead-centre of every hint. On a short neck
+       (stage 1's six frets) a 5-fret window is most of the board, so the
+       window shrinks to 3 frets there. */
     const mf = tierNow().maxFret;
-    let lo = q.f - Math.floor(Math.random() * 5);
-    lo = Math.max(0, Math.min(lo, mf - 4, q.f));
-    const hi = Math.min(mf, lo + 4);
-    document.getElementById('fSub').textContent = 'Hint: it is somewhere between fret ' + lo + ' and fret ' + hi + '.';
+    const span = mf <= 5 ? 2 : 4;              // window = span + 1 frets
+    let lo = q.f - Math.floor(Math.random() * (span + 1));
+    lo = Math.max(0, Math.min(lo, mf - span, q.f));
+    const hi = Math.min(mf, lo + span);
+    document.getElementById('fSub').textContent = 'Hint: it is somewhere between fret ' + lo + ' and fret ' + hi + '.' + cost;
     drawBoard({ range:[lo, hi] });
   } else {
     revealedThisQ = true;   // a shown answer — the correct that follows is not a recall
-    document.getElementById('fSub').textContent = 'It is right here — play it, then it moves on.';
+    document.getElementById('fSub').textContent = 'It is right here — play it, then it moves on.' + cost;
     drawBoard({ reveal:true });
   }
 }
@@ -553,8 +648,14 @@ function gvBreach(){
   }
   wrongThisQ++;          // the eventual find (next question) must not count clean
   const r = gvJudge('breach');
+  gvCue('phut');
   const v = document.getElementById('fVerdict');
-  v.textContent = 'The fuse burnt out — that was ' + q.name + ', ' + q.sn + ' string, fret ' + q.f + '.';
+  // The correction carries the cost: how many stage lights are still lit.
+  const lights = (r && r.hearts != null && GV.run)
+    ? ' — ' + r.hearts + ' of ' + GV.run.state.maxHearts + ' stage light' +
+      (GV.run.state.maxHearts === 1 ? '' : 's') + ' left'
+    : '';
+  v.textContent = 'The fuse burnt out — that was ' + disp(q.name) + ', ' + q.sn + ' string, fret ' + q.f + lights + '.';
   v.className = 'verdict warn';
   updateFindStats();
   if (r && r.over){ gvGameOver(); return; }
@@ -567,17 +668,24 @@ function gvGameOver(){
   const bk = gvBestKey();
   if (s.zaps > (GV.best[bk] || 0)){ GV.best[bk] = s.zaps; gvSave(); }
   const txt = document.getElementById('gvOverText');
-  if (txt) txt.textContent = s.zaps + ' notes nailed this set · best on ' +
+  if (txt) txt.textContent = 'Lights out. ' +
+    s.zaps + (s.zaps === 1 ? ' note' : ' notes') + ' nailed this set · best on ' +
     GAME.PACES[GV.pace].label + ' at this difficulty: ' + (GV.best[bk] || 0) +
     ' · your XP stays with you — still ' + GAME.levelTitle(GAME.levelFor(GV.xp)) + '.';
   const over = document.getElementById('gvOver');
   if (over) over.classList.remove('hidden');
-  // The overlay owns the message — a second banner underneath it read as two
-  // competing game-over screens.
+  /* The overlay owns the message — a second banner underneath it read as two
+     competing game-over screens; the leftover verdict banner goes too. */
   document.getElementById('fQ').textContent = ' ';
   document.getElementById('fSub').textContent = '';
+  const v = document.getElementById('fVerdict');
+  v.innerHTML = '&nbsp;'; v.className = 'verdict';
   const wrap = document.getElementById('gvStaffWrap');
   if (wrap) wrap.classList.add('hidden');
+  // Dead controls read as dead: Hint and Skip disable until the restart.
+  document.getElementById('fHint').disabled = true;
+  document.getElementById('fSkip').disabled = true;
+  updateBestNote();
   const restart = document.getElementById('gvRestart');
   if (restart) restart.focus();
 }
@@ -664,6 +772,7 @@ function gvBurst(x, y, color){
 }
 function gvToast(text){
   GV.fx.push({ kind:'t', text, born:performance.now() });
+  srAnnounce(text);   // the canvas is aria-hidden; the payout is not
 }
 /* The DOM fuse bar — the timer a player can actually read (the canvas cord is
    flavour). Driven from the rAF loop but writes style at most ~5×/s, and the
@@ -672,26 +781,53 @@ const FUSE = { lastStyleAt:0, lastAriaSec:null };
 function updateFuseBar(){
   const bar = document.getElementById('gvFuseBar');
   if (!bar) return;
+  const secEl = document.getElementById('gvFuseSec');
   const ms = GAME.approachMs(GV.pace, GAME.levelFor(GV.xp));
   const show = ms != null && GV.phase === 'fight' && GV.run && !GV.run.state.over;
   if (bar.classList.contains('hidden') !== !show) bar.classList.toggle('hidden', !show);
-  if (!show){ FUSE.lastAriaSec = null; return; }
+  if (!show){
+    FUSE.lastAriaSec = null;
+    if (secEl) secEl.classList.add('hidden');
+    return;
+  }
   const now = performance.now();
   if (now - FUSE.lastStyleAt < 200) return;
   FUSE.lastStyleAt = now;
   const left = Math.max(0, ms - (now - GV.spawnAt));
   bar.firstElementChild.style.width = (left / ms * 100).toFixed(1) + '%';
   bar.classList.toggle('low', left <= 2000);
+  // The last two seconds get an audible nudge too — once per question.
+  if (left <= 2000 && !tickedFuseThisQ){ tickedFuseThisQ = true; gvCue('tick'); }
   const sec = Math.ceil(left / 1000);
+  // The visible countdown numeral: the last five seconds, in numbers.
+  if (secEl){
+    const showSec = left <= 5000;
+    secEl.classList.toggle('hidden', !showSec);
+    if (showSec) secEl.textContent = sec + 's';
+  }
+  if (left <= 5000 && !saidFiveThisQ){
+    saidFiveThisQ = true;
+    srAnnounce('5 seconds');   // ONE polite spoken warning per question
+  }
   if (sec !== FUSE.lastAriaSec){
     FUSE.lastAriaSec = sec;
     bar.setAttribute('aria-valuenow', sec);
     bar.setAttribute('aria-valuemax', Math.ceil(ms / 1000));
+    bar.setAttribute('aria-valuetext', sec + ' second' + (sec === 1 ? '' : 's') + ' left');
   }
 }
 function gvFrame(t){
   GV.raf = null;
   if (mode !== 'find') return;    // the loop dies with the tab; setMode restarts it
+  /* Out-of-tune fairness: while the player is being told their INSTRUMENT is
+     the problem, the fuse holds — spawnAt slides forward by each frame's dt,
+     so the remaining time stands still until the question moves on. The dt is
+     clamped: a frame gap (tab hop, jank) must not smuggle in extra credit. */
+  const dtRaw = GV.lastFrame ? t - GV.lastFrame : 0;
+  GV.lastFrame = t;
+  if (outOfTuneThisQ && GV.phase === 'fight'){
+    GV.spawnAt += Math.max(0, Math.min(250, dtRaw));
+  }
   drawScene(t);
   updateFuseBar();
   if (GV.phase === 'fight' && GV.run && !GV.run.state.over){
@@ -701,13 +837,25 @@ function gvFrame(t){
   GV.raf = requestAnimationFrame(gvFrame);
 }
 function gvLoop(on){
-  if (on && !GV.raf) GV.raf = requestAnimationFrame(gvFrame);
+  if (on && !GV.raf){ GV.lastFrame = 0; GV.raf = requestAnimationFrame(gvFrame); }
   if (!on && GV.raf){ cancelAnimationFrame(GV.raf); GV.raf = null; }
 }
-/** Integer pixel scaling: snap the scene's display width to a whole multiple
-    of its 320px backing store so every game pixel is exactly N screen pixels —
-    fractional scales smear one column and double the next. The wrapper is
-    sized (auto-centred by CSS) so the over-screen overlay stays congruent. */
+/* The fuse pauses while the TAB is hidden — same principle as the existing
+   tab-hop forgiveness: time the player could not see is not time served. */
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden){
+    if (GV.hiddenAt == null) GV.hiddenAt = performance.now();
+  } else if (GV.hiddenAt != null){
+    if (mode === 'find' && GV.phase === 'fight') GV.spawnAt += performance.now() - GV.hiddenAt;
+    GV.hiddenAt = null;
+  }
+});
+/** Integer pixel scaling BOTH axes: snap the scene's display size to a whole
+    multiple of its 320×150 backing store so every game pixel is exactly N
+    screen pixels. Width alone was not enough — height:auto rounded through
+    the border box to 151.06px and duplicated one row on every phone, so the
+    height is now set explicitly. The wrapper is sized (auto-centred by CSS)
+    so the over-screen overlay stays congruent. */
 function gvFitScene(){
   const cv = document.getElementById('gvScene');
   const wrap = cv && cv.parentElement;
@@ -715,7 +863,10 @@ function gvFitScene(){
   wrap.style.width = '';
   const w = wrap.clientWidth;
   if (!w) return;   // section hidden — setMode('find') calls again on entry
-  wrap.style.width = Math.max(320, Math.floor(w / 320) * 320) + 'px';
+  const scale = Math.max(1, Math.floor((w - 2) / 320));   // 2 = the 1px borders
+  cv.style.width = (320 * scale) + 'px';
+  cv.style.height = (150 * scale) + 'px';
+  wrap.style.width = (320 * scale + 2) + 'px';
 }
 window.addEventListener('resize', gvFitScene);
 /** A circle built from 2px blocks, optionally rim-only — bubbles, pixel-style. */
@@ -737,12 +888,17 @@ const FLAME_HOT  = ['#6E1B12', '#A6281A', '#DE5226', '#F2A93B', '#F6E27A'];
 const FLAME_HOT2 = ['#6E1B12', '#A6281A', '#DE5226', '#F6E27A', '#FBEFC0'];
 const FLAME_HOT3 = ['#8E2A1F', '#DE5226', '#F2A93B', '#FBEFC0', '#FFFBEE'];
 const FLAME_DEEP = ['#4A120C', '#6E1B12', '#8E2A1F', '#A83A24'];
-function pxFlame(ctx, x, baseY, h, flick, wMax, cols, core){
+function pxFlame(ctx, x, baseY, h, flick, wMax, cols, core, seed){
   const C = cols || FLAME_HOT, wm = wMax || 12;
+  const sd = seed | 0;
+  const skew = ((sd * 7 + 3) % 5) - 2;               // each tongue leans its own way
   for (let k = 0; k < h; k += 2){
     const f = k / Math.max(2, h);
-    const w = Math.max(2, Math.round(wm * (1 - f * f)));
-    const wob = flick ? Math.round(Math.sin(flick + k) * (f * 2.5)) : 0;
+    // irregular step widths — a per-row jitter breaks the symmetric pine
+    const jag = ((k >> 1) * 5 + sd * 11) % 3 - 1;
+    const w = Math.max(2, Math.round(wm * (1 - f * f)) + jag);
+    const wob = (flick ? Math.round(Math.sin(flick + k) * (f * 2.5)) : 0)
+              + Math.round(f * f * skew);            // the tip skews off-centre
     ctx.fillStyle = C[Math.min(C.length - 1, Math.floor(f * C.length))];
     ctx.fillRect(x - (w >> 1) + wob, baseY - k - 2, w, 2);
   }
@@ -794,8 +950,18 @@ function drawScene(t){
   // identity, so it GLOWS: a blue-grey band each side of the core, and (motion
   // permitting) a two-frame gutter of alpha now and then, like an arc lamp.
   if (world.bolt){
+    // a barely-visible one-value noise dither, so the void reads as AIR
+    // rather than dead flat fill (static — it is texture, not motion)
+    ctx.fillStyle = 'rgba(232,226,212,.03)';
+    for (let i = 0; i < 110; i++){
+      const nx = (i * 53 + ((i * i) % 17)) % W;
+      const nyv = (i * 89 + ((i * 7) % 23)) % (FLOOR - 16);
+      if ((i * 31) % 5 < 2) continue;
+      ctx.fillRect(nx, nyv, 1, 1);
+    }
     const seg = [[184, 12], [172, 34], [180, 48], [158, 74], [168, 88], [142, 118]];
-    const flicker = !REDUCED && Math.floor(t / 110) % 19 < 2;
+    // the arc lamp re-STRIKES: a couple of gutter frames every ~4 seconds
+    const flicker = !REDUCED && Math.floor(t / 130) % 31 < 2;
     for (let i = 0; i < seg.length - 1; i++)
       pxLine(ctx, seg[i][0], seg[i][1], seg[i + 1][0], seg[i + 1][1], 9, 'rgba(232,226,212,.10)');
     for (let i = 0; i < seg.length - 1; i++)
@@ -829,6 +995,15 @@ function drawScene(t){
     }
     if (world.darkAmps){ ctx.fillStyle = 'rgba(0,0,0,.38)'; ctx.fillRect(ax, FLOOR - 37, 32, 37); }
   }
+  // Back in Black: the bolt EARTHS somewhere — a scorch on the nearest amp's
+  // shoulder and a faint glow where the strike lands, so the strike is an
+  // event in the scene, not a decal behind it.
+  if (world.bolt){
+    ctx.fillStyle = '#060608';                                              // scorch pixels
+    ctx.fillRect(148, FLOOR - 38, 6, 2); ctx.fillRect(150, FLOOR - 36, 3, 1);
+    pxCircle(ctx, 145, 119, 8, 'rgba(148,170,205,.07)', null);
+    pxCircle(ctx, 145, 119, 4, 'rgba(232,226,212,.08)', null);
+  }
 
   // High Voltage: a leaning power pylon stage right, arc sparks jumping
   // between its insulators (behind the bell; the bell is drawn later).
@@ -854,11 +1029,10 @@ function drawScene(t){
   }
 
   // Powerage: the giant plug not quite home in its socket, its slack cable
-  // sagging right across the backdrop.
+  // sagging right across the backdrop. The socket PLATE is drawn later,
+  // after the light cones — a solid plate must not let the bell's beam
+  // bleed through it.
   if (world.plug){
-    ctx.fillStyle = '#1B2836'; ctx.fillRect(206, 56, 26, 32);               // socket plate
-    ctx.fillStyle = '#2E3F52'; ctx.fillRect(208, 58, 22, 28);
-    ctx.fillStyle = '#0C131C'; ctx.fillRect(213, 66, 4, 9); ctx.fillRect(221, 66, 4, 9);
     ctx.fillStyle = '#3A3F46'; ctx.fillRect(178, 64, 16, 14);               // plug body
     ctx.fillStyle = '#262A31'; ctx.fillRect(178, 64, 16, 3);
     ctx.fillStyle = '#4E555E'; ctx.fillRect(194, 67, 8, 2); ctx.fillRect(194, 73, 8, 2);  // prongs
@@ -876,41 +1050,76 @@ function drawScene(t){
   if (world.burnhz){
     for (let x = 0; x < W; x += 7){
       const hh = 3 + ((x * 13) % 6) + (drift ? Math.round(Math.sin(t / 380 + x * 0.7) * 1.5) : 0);
-      ctx.fillStyle = 'rgba(200,72,45,.38)'; ctx.fillRect(x, FLOOR - 16 - hh, 5, hh);
-      ctx.fillStyle = 'rgba(242,169,59,.20)'; ctx.fillRect(x + 1, FLOOR - 16 - (hh >> 1), 3, hh >> 1);
+      // two-frame shimmer, per clump, motion-gated: the fire BREATHES
+      const shim = drift && Math.floor(t / 240 + (x >> 3)) % 2 === 0;
+      ctx.fillStyle = 'rgba(110,27,18,.40)'; ctx.fillRect(x, FLOOR - 16 - hh, 6, hh);   // deep base value
+      ctx.fillStyle = shim ? 'rgba(222,82,38,.42)' : 'rgba(200,72,45,.38)';
+      ctx.fillRect(x, FLOOR - 16 - hh, 5, hh);
+      ctx.fillStyle = shim ? 'rgba(246,226,122,.24)' : 'rgba(242,169,59,.20)';
+      ctx.fillRect(x + 1, FLOOR - 16 - (hh >> 1), 3, hh >> 1);
     }
   }
 
-  // spotlights: soft nested cones off rig fixtures, pooling where they land.
-  // The second cone hangs dead over the bell — it IS the bell's light, so it
-  // gets no housing (the bell's own hanger occupies that spot) and no drift.
-  if (world.spot){
-    for (let b = 0; b < 2; b++){
-      const x0 = b ? 230 : Math.round(78 + (drift ? Math.sin(t / 3000) * 8 : 0));
-      if (!b){
-        ctx.fillStyle = '#14110F'; ctx.fillRect(x0 - 5, 11, 10, 6);         // the fixture
-        // the lens hot-pixels go dark on the over screen — lights out means out
-        if (GV.phase !== 'over'){ ctx.fillStyle = '#F6E27A'; ctx.fillRect(x0 - 2, 16, 4, 2); }
+  /* Light rig — ONE lighting grammar on every stage: each cone hangs from a
+     visible lamp fixture on the truss. The bell gets its own rig lamp on ALL
+     five stages (the bell never emits light of its own); the brighter
+     drifting front-of-house cone is the spot-stages' extra. Each cone also
+     LIGHTS WHAT IT TOUCHES: amps under a cone get lit-pixel tops and fronts,
+     and the floor pool is a two-tone lit patch, not a wash. */
+  const cones = [{ x0: 222, dim: world.spot ? 1 : 0.75 }];   // beside the bell's hanger
+  if (world.spot) cones.unshift({ x0: Math.round(78 + (drift ? Math.sin(t / 3000) * 8 : 0)), dim: 1 });
+  for (const cone of cones){
+    const x0 = cone.x0;
+    ctx.fillStyle = '#14110F'; ctx.fillRect(x0 - 5, 11, 10, 6);           // the fixture
+    ctx.fillStyle = '#0B0A08'; ctx.fillRect(x0 - 5, 11, 10, 1);           // housing cap
+    // the lens hot-pixels go dark on the over screen — lights out means out
+    if (GV.phase !== 'over'){ ctx.fillStyle = '#F6E27A'; ctx.fillRect(x0 - 2, 16, 4, 2); }
+    if (GV.phase === 'over') continue;                                    // no beams either
+    for (const [spread, a] of [[0.30, .04], [0.19, .05], [0.09, .06]]){
+      ctx.fillStyle = 'rgba(242,169,59,' + (a * cone.dim).toFixed(3) + ')';
+      for (let y = 18; y < FLOOR; y += 3){
+        const half = 2 + Math.round((y - 18) * spread);
+        ctx.fillRect(x0 - half, y, half * 2, 3);
       }
-      for (const [spread, a] of [[0.30, .04], [0.19, .05], [0.09, .06]]){
-        ctx.fillStyle = 'rgba(242,169,59,' + a + ')';
-        for (let y = 18; y < FLOOR; y += 3){
-          const half = 2 + Math.round((y - 18) * spread);
-          ctx.fillRect(x0 - half, y, half * 2, 3);
-        }
-      }
-      const half = 2 + Math.round((FLOOR - 18) * 0.30);                     // the pool
-      ctx.fillStyle = 'rgba(242,169,59,.10)'; ctx.fillRect(x0 - half, FLOOR, half * 2, 3);
-      ctx.fillStyle = 'rgba(246,226,122,.08)'; ctx.fillRect(x0 - (half >> 1), FLOOR, half, 2);
     }
+    const half = 2 + Math.round((FLOOR - 18) * 0.30);                     // the pool
+    ctx.fillStyle = 'rgba(242,169,59,.10)'; ctx.fillRect(x0 - half, FLOOR, half * 2, 3);
+    ctx.fillStyle = 'rgba(246,226,122,.08)'; ctx.fillRect(x0 - (half >> 1), FLOOR, half, 2);
+    // amps inside the footprint catch the light: lit top caps, warmer head
+    // panel, brighter knobs — solid lit-variant pixels, not another wash
+    for (const ax of (world.amps || [62, 116])){
+      const halfTop = 2 + Math.round(((FLOOR - 37) - 18) * 0.30);
+      const o0 = Math.max(ax, x0 - halfTop), o1 = Math.min(ax + 32, x0 + halfTop);
+      if (o1 - o0 < 4) continue;
+      ctx.fillStyle = '#4A4136'; ctx.fillRect(o0, FLOOR - 37, o1 - o0, 1);  // lit top cap
+      ctx.fillStyle = '#332A20'; ctx.fillRect(Math.max(o0, ax + 2), FLOOR - 35, Math.min(o1, ax + 30) - Math.max(o0, ax + 2), 2);
+      ctx.fillStyle = '#F6E27A';                                            // knobs catch it
+      for (let g = 0; g < 4; g++){
+        const kx = ax + 5 + g * 6;
+        if (kx >= o0 && kx + 2 <= o1) ctx.fillRect(kx, FLOOR - 33, 2, 2);
+      }
+      ctx.fillStyle = 'rgba(246,226,122,.10)';                              // cab fronts
+      ctx.fillRect(o0, FLOOR - 27, o1 - o0, 24);
+    }
+  }
+  // Powerage's socket plate, over the beams: solid, outlined, screwed on.
+  if (world.plug){
+    ctx.fillStyle = '#0A0F16'; ctx.fillRect(205, 55, 28, 34);               // 1px dark outline
+    ctx.fillStyle = '#2E3F52'; ctx.fillRect(206, 56, 26, 32);               // solid plate
+    ctx.fillStyle = '#0C131C'; ctx.fillRect(213, 66, 4, 9); ctx.fillRect(221, 66, 4, 9);
+    ctx.fillStyle = '#4E555E'; ctx.fillRect(218, 58, 2, 2); ctx.fillRect(218, 84, 2, 2);  // screws
   }
   // Highway to Hell (and the cannons' stage): embers climbing off the fire
   if (world.embers){
     for (let i = 0; i < 14; i++){
-      const ey = (i * 41 + (drift ? t / (48 + (i % 3) * 15) : 0)) % (FLOOR - 12);
+      // never into the top 12px — embers die before the truss
+      const span = FLOOR - 20;
+      const ey = (i * 41 + (drift ? t / (48 + (i % 3) * 15) : 0)) % span;
       const ex = (i * 71 + 19 + (drift ? Math.round(Math.sin(t / 700 + i) * 3) : 0)) % W;
-      ctx.fillStyle = 'rgba(242,169,59,' + (0.25 + (i % 3) * 0.15).toFixed(2) + ')';
-      const sz = i % 3 === 2 ? 1 : 2;
+      // two-frame twinkle, per ember, staggered so they never blink as one
+      const tw = drift ? (Math.floor(t / 170 + i * 3) % 2 ? 1 : 0.5) : 1;
+      ctx.fillStyle = 'rgba(242,169,59,' + ((0.25 + (i % 3) * 0.15) * tw).toFixed(2) + ')';
+      const sz = i % 3 === 2 ? 2 : 1;      // mostly 1px motes, the odd 2px coal
       ctx.fillRect(ex, FLOOR - 8 - ey, sz, sz);
     }
   }
@@ -969,6 +1178,20 @@ function drawScene(t){
       ctx.fillStyle = 'rgba(242,169,59,.045)';
       ctx.fillRect(0, FLOOR - 6, 48, H - FLOOR + 6);
     }
+    /* The fire CASTS light: a 1-2px warm rim on the surfaces that face it —
+       the floor lip, the amp bottoms, the cannon-stage ammunition — with the
+       intensity riding the flame flicker (held steady under reduced motion). */
+    const rimF = drift ? (0.75 + 0.25 * Math.sin(t / 140)) : 1;
+    const rimA = Math.min(0.4, 0.05 + 0.03 * streak) * rimF;
+    ctx.fillStyle = 'rgba(242,169,59,' + rimA.toFixed(3) + ')';
+    ctx.fillRect(40, FLOOR, W - 40, 2);                                  // floor lip
+    ctx.fillStyle = 'rgba(242,169,59,' + (rimA * 0.7).toFixed(3) + ')';
+    for (const ax of (world.amps || [62, 116]))                          // amp bottoms
+      ctx.fillRect(ax, FLOOR - 3, 32, 2);
+    if (world.cannons){                                                  // ammo pyramids
+      ctx.fillStyle = 'rgba(242,169,59,' + (rimA * 0.9).toFixed(3) + ')';
+      for (const bx0 of [138, 268]) ctx.fillRect(bx0 - 1, FLOOR - 6, 26, 1);
+    }
   }
   if (streak === 0){
     // cold stage: scattered embers glowing in the coals, no tongues yet.
@@ -989,17 +1212,19 @@ function drawScene(t){
       const fx = 54 + j * 21 + ((j * 13) % 7);
       const jh = Math.max(4, Math.round(fh * 1.12 * (0.7 + 0.3 * Math.sin(j * 3.9))
                  * (drift ? (0.88 + 0.12 * Math.sin(t / 170 + j * 2.3)) : 1)));
-      pxFlame(ctx, fx, H - 2, jh, drift ? t / 190 + j * 2 : 0, 17, FLAME_DEEP);
+      pxFlame(ctx, fx, H - 2, jh, drift ? t / 190 + j * 2 : 0, 17, FLAME_DEEP, null, j);
     }
     for (let j = 0; j < 17; j++){
       const fx = 52 + j * 16 + ((j * 13) % 9);
       const jh = Math.max(3, Math.round(fh * (0.66 + 0.34 * Math.sin(j * 2.7))
                  * (drift ? (0.84 + 0.16 * Math.sin(t / 130 + j * 1.9)) : 1)));
-      pxFlame(ctx, fx, H - 2, jh, drift ? t / 150 + j : 0, 9 + ((j * 11) % 5), hotCols === FLAME_HOT ? null : hotCols, hotCore);
+      pxFlame(ctx, fx, H - 2, jh, drift ? t / 150 + j : 0, 9 + ((j * 11) % 5), hotCols === FLAME_HOT ? null : hotCols, hotCore, j * 3 + 1);
     }
-    // sparks breaking off the top of the wall
+    // sparks breaking off the top of the wall. The wall's height and heat
+    // both cap out around streak 12 — past that the SPARK RATE keeps
+    // climbing, so a 25-streak inferno still out-crackles a 15.
     if (drift){
-      const n = Math.min(3 + streak, 10);
+      const n = streak > 12 ? Math.min(20, 10 + (streak - 12)) : Math.min(3 + streak, 10);
       for (let i = 0; i < n; i++){
         const sx = 60 + (i * 97) % (W - 90) + Math.round(Math.sin(t / 300 + i * 5) * 3);
         const sy = H - 4 - ((t / (34 + (i % 4) * 9) + i * 43) % (fh + 30));
@@ -1035,9 +1260,13 @@ function drawScene(t){
   if (bell && GV.phase !== 'over'){
     const bx = 230;
     const zapAge = GV.phase === 'zap' ? now - GV.zapT : -1;
+    /* The shot has a wind-up: the first ~80ms are pre-fire — fuse sputter at
+       the bore, the barrel settling — and only THEN the flash. Everything
+       flash-and-after runs on fireAge = zapAge - 80. */
+    const fireAge = zapAge < 0 ? -1 : zapAge - 80;
     let sway = drift ? Math.sin(t / 1500) * 2 : 0;
-    if (zapAge > 160 && !REDUCED)
-      sway += Math.sin((zapAge - 160) / 90) * 8 * Math.exp(-(zapAge - 160) / 500);
+    if (fireAge > 160 && !REDUCED)
+      sway += Math.sin((fireAge - 160) / 90) * 8 * Math.exp(-(fireAge - 160) / 500);
     if (bell.wobble && now - bell.wobble < 340 && !REDUCED){
       const wp = (now - bell.wobble) / 340;
       sway += Math.sin(wp * Math.PI * 4) * 4 * (1 - wp);   // a hard rattle that dies out
@@ -1045,7 +1274,7 @@ function drawScene(t){
     sway = Math.round(sway);
     const by = 14;
     // one bright frame as the cannon goes off: the whole stage catches the flash
-    if (zapAge >= 0 && zapAge < 70 && !REDUCED){
+    if (fireAge >= 0 && fireAge < 70 && !REDUCED){
       ctx.fillStyle = 'rgba(246,226,122,.16)'; ctx.fillRect(0, 0, W, H);
     }
     // chain links from the beam down to the bell's hanger loop
@@ -1053,17 +1282,19 @@ function drawScene(t){
     ctx.fillStyle = '#3A342E'; ctx.fillRect(chx, 12, 2, 4);
     ctx.fillStyle = '#4E463C'; ctx.fillRect(chx, 13, 2, 1);
     // the bell rings: a warm halo swells around it while the note lands
-    if (zapAge >= 160 && zapAge < 560 && !REDUCED){
-      const p = (zapAge - 160) / 400;
+    if (fireAge >= 160 && fireAge < 560 && !REDUCED){
+      const p = (fireAge - 160) / 400;
       pxCircle(ctx, bx + sway, by + 18, 20 + Math.round(p * 8),
         'rgba(246,226,122,' + (0.16 * (1 - p)).toFixed(3) + ')', null);
     }
     blit(ctx, BELL, bx - 16 + sway, by + 2, 2);
-    const label = GV.promptKind === 'staff' ? '♪?' : (q ? q.name : '');
+    const label = GV.promptKind === 'staff' ? '♪?' : (q ? disp(q.name) : '');
     if (label){
-      ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
+      // two characters ("F♯") drop to 11px so the name stays inside the skirt
+      ctx.font = 'bold ' + (label.length > 1 ? 11 : 13) + 'px monospace';
+      ctx.textAlign = 'center';
       // the label itself flashes hot for the first beat of the ring
-      ctx.fillStyle = (zapAge >= 60 && zapAge < 420) ? '#7E1F16' : '#14110F';
+      ctx.fillStyle = (fireAge >= 60 && fireAge < 420) ? '#7E1F16' : '#14110F';
       ctx.fillText(label, bx + sway, by + 24);
     }
     GV.bx = bx; GV.by = by + 16;
@@ -1072,8 +1303,8 @@ function drawScene(t){
     // a 1px streak joins the spark samples — and the leading edge carries a
     // cream rim-light. Under reduced motion the flight is skipped entirely;
     // the impact at the bell still lands (below).
-    if (zapAge >= 0 && zapAge < 160 && !REDUCED){
-      const p = zapAge / 160;
+    if (fireAge >= 0 && fireAge < 160 && !REDUCED){
+      const p = fireAge / 160;
       const at = (u) => [47 + (bx - 47) * u,
         (FLOOR - 22) - (FLOOR - 22 - (by + 28)) * u - Math.sin(u * Math.PI) * 9];
       const [cbx, cby] = at(p);
@@ -1097,9 +1328,20 @@ function drawScene(t){
       ctx.fillRect(Math.round(cbx) + 4, Math.round(cby) - 1, 1, 3);
       ctx.fillRect(Math.round(cbx) + 2, Math.round(cby) - 1, 2, 1);
     }
+    // pre-fire: two frames of fuse-sputter at the bore while the barrel
+    // settles — the shot ANNOUNCES itself (skipped under reduced motion,
+    // where the flash below still lands)
+    if (zapAge >= 0 && fireAge < 0 && !REDUCED){
+      const ph = Math.floor(zapAge / 40) % 2;
+      ctx.fillStyle = '#F6E27A';
+      ctx.fillRect(45 + ph, FLOOR - 24, 2, 2);
+      ctx.fillRect(48 - ph, FLOOR - 26 + ph, 1, 1);
+      ctx.fillStyle = '#F2A93B';
+      ctx.fillRect(43 + ph * 2, FLOOR - 21, 1, 1);
+    }
     // muzzle flash: a hot star off the bore with a blast ring, slow-decay core
-    if (zapAge >= 0 && zapAge < 110){
-      const fa = 1 - (zapAge / 110) * (zapAge / 110);
+    if (fireAge >= 0 && fireAge < 110){
+      const fa = 1 - (fireAge / 110) * (fireAge / 110);
       pxCircle(ctx, 50, FLOOR - 22, 12, 'rgba(242,169,59,' + (0.35 * fa).toFixed(2) + ')', null);
       pxCircle(ctx, 49, FLOOR - 22, 7, 'rgba(246,226,122,' + (0.95 * fa).toFixed(2) + ')', null);
       ctx.fillStyle = 'rgba(246,226,122,' + (0.95 * fa).toFixed(2) + ')';
@@ -1107,18 +1349,29 @@ function drawScene(t){
       ctx.fillRect(45, FLOOR - 27, 2, 2); ctx.fillRect(54, FLOOR - 27, 2, 2);
       ctx.fillRect(45, FLOOR - 17, 2, 2); ctx.fillRect(54, FLOOR - 17, 2, 2);
       if (!REDUCED){
-        const rp = zapAge / 110;
+        const rp = fireAge / 110;
         pxCircle(ctx, 50, FLOOR - 22, 6 + Math.round(rp * 12), null,
           'rgba(242,169,59,' + (0.5 * fa).toFixed(2) + ')');
       }
     }
+    // after the ball leaves: a muzzle wisp drifts up and thins for ~300ms
+    // (a static puff under reduced motion)
+    if (fireAge >= 110 && fireAge < 440){
+      const wp = (fireAge - 110) / 330;
+      const move = REDUCED ? 0.4 : wp;
+      const a = 0.30 * (1 - wp);
+      pxCircle(ctx, 52 + Math.round(move * 10), FLOOR - 26 - Math.round(move * 12),
+        3 + Math.round(move * 4), 'rgba(160,152,140,' + a.toFixed(3) + ')', null);
+      pxCircle(ctx, 48 + Math.round(move * 6), FLOOR - 23 - Math.round(move * 8),
+        2 + Math.round(move * 3), 'rgba(196,189,177,' + (a * 0.8).toFixed(3) + ')', null);
+    }
     // impact: the ring blooms off the bell mouth exactly when the ball lands
-    if (zapAge >= 160 && !GV.zapHit){
+    if (fireAge >= 160 && !GV.zapHit){
       GV.zapHit = true;
       if (!REDUCED) gvBurst(bx + sway, by + 20, '#F6E27A');
     }
-    if (zapAge >= 160 && zapAge < 380){
-      const p = (zapAge - 160) / 220;
+    if (fireAge >= 160 && fireAge < 380){
+      const p = (fireAge - 160) / 220;
       // reduced motion still gets the IMPACT — a fading ring that does not fly
       pxCircle(ctx, bx + sway, by + 20, REDUCED ? 10 : 5 + Math.round(p * 15), null,
         'rgba(246,226,122,' + (0.8 * (1 - p)).toFixed(2) + ')');
@@ -1167,8 +1420,18 @@ function drawScene(t){
       // the burnt side is GONE — no residue to misread as cord left to burn
       pxCircle(ctx, sparkX, fy, 6, 'rgba(242,169,59,.28)', null);        // 3px warm halo
       pxCircle(ctx, sparkX, fy, 3, 'rgba(246,226,122,.40)', null);
-      ctx.fillStyle = '#E4675C'; ctx.fillRect(sparkX - 2, fy - 1, 5, 4);
-      ctx.fillStyle = '#F6E27A'; ctx.fillRect(sparkX - 1, fy, 3, 2);
+      /* the burn point: an IRREGULAR 3-5px flicker cluster that reshapes
+         every ~70ms — never a neat outlined square — over a 1px floor halo */
+      const ph = drift ? Math.floor(t / 70) % 4 : 1;
+      ctx.fillStyle = 'rgba(242,169,59,.30)';                            // floor halo
+      ctx.fillRect(sparkX - 3, fy + 3, 7, 1);
+      ctx.fillStyle = '#E4675C';
+      ctx.fillRect(sparkX - 1, fy - 1 + (ph & 1), 3, 2);
+      ctx.fillRect(sparkX + (ph & 1) - 2, fy + 1, 2, 1);
+      if (ph !== 2) ctx.fillRect(sparkX + 1, fy - 2 + (ph >> 1), 1, 2);
+      ctx.fillStyle = '#F6E27A';
+      ctx.fillRect(sparkX - (ph & 1), fy, 2, 1);
+      if (ph === 1) ctx.fillRect(sparkX - 2, fy - 1, 1, 1);
       if (drift){                                              // it spits as it burns
         if (Math.floor(t / 90) % 2){ ctx.fillStyle = '#F2A93B'; ctx.fillRect(sparkX + 1, fy - 4, 2, 2); }
         if (Math.floor(t / 70) % 3 === 0){ ctx.fillStyle = '#F6E27A'; ctx.fillRect(sparkX - 3, fy - 6, 1, 1); }
@@ -1191,7 +1454,18 @@ function drawScene(t){
       ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
       ctx.globalAlpha = Math.min(1, 2 - (age / 650));
       ctx.fillStyle = '#F2A93B';
-      ctx.fillText(f.text, W / 2, 40 - (REDUCED ? 0 : age / 80));
+      // x=120: clear of the bell (bx 230) and its ring halo at every sway
+      ctx.fillText(f.text, 120, 40 - (REDUCED ? 0 : age / 80));
+      ctx.globalAlpha = 1;
+      keep.push(f);
+    } else if (f.kind === 'd' && age < 600 && !REDUCED){
+      // wrong-shiver dust: 2px clumps shaken off the bell, falling on small
+      // arcs (none at all under reduced motion)
+      const pp = age / 600;
+      ctx.fillStyle = '#8A7A5E';
+      ctx.globalAlpha = 0.7 * (1 - pp);
+      ctx.fillRect(Math.round(f.x + Math.sin(age / 90 + f.seed * 2.1) * 3),
+                   Math.round(f.y + pp * pp * 22), 2, 2);
       ctx.globalAlpha = 1;
       keep.push(f);
     }
@@ -1218,9 +1492,9 @@ const CLEF = sprite({ c:STAFF_INK },
    '..ccccccc...',
    '.cc.....cc..',
    'cc.......cc.',
-   '..........cc',
-   '..........cc',
-   '..........cc',
+   'cc........cc',
+   'cc........cc',
+   'cc........cc',
    'ccc.......cc',
    'cccc......cc',
    'ccc.......cc',
@@ -1252,16 +1526,32 @@ function paintNote(ctx, g, midi, nx, opts){
   const spec = GAME.staffSpec(midi);
   const ny = g.baseY - spec.pos * g.hs;
   ctx.fillStyle = STAFF_INK;
+  // Ledger lines share the staff lines' y-convention, so a note ON a ledger
+  // (open E) has the line running through the head's centre row.
   for (const lp of spec.ledgers)
     ctx.fillRect(nx - 10, g.baseY - lp * g.hs - 1, 20, 2);
-  // note head: a chunky pixel ellipse
+  // note head: a clean pixel oval — no tails, symmetric top and bottom
   ctx.fillStyle = (opts && opts.color) || '#F2A93B';
   ctx.fillRect(nx - 4, ny - 3, 8, 2);
   ctx.fillRect(nx - 6, ny - 1, 12, 3);
   ctx.fillRect(nx - 4, ny + 2, 8, 2);
-  // stem: up from low notes, down from high ones, like engraving does
-  if (spec.pos < 4) ctx.fillRect(nx + 4, ny - 22, 2, 21);
-  else ctx.fillRect(nx - 6, ny + 2, 2, 21);
+  /* stem: up from low notes (right side), down from high ones (left side),
+     joining at the head's CENTRE row — starting below it gave the head a
+     droopy bottom-left tail. Engraved length ~2.5-3 line-spaces (32px);
+     notes far outside the staff extend their stems back toward the middle
+     line, the way engraving pulls far-ledger notes home. */
+  const midY = g.baseY - 4 * g.hs;
+  if (spec.pos < 4){
+    let top = ny - 32;
+    if (spec.pos <= -2) top = Math.min(top, midY);
+    top = Math.max(3, top);
+    ctx.fillRect(nx + 4, top, 2, ny - top);
+  } else {
+    let bottom = ny + 32;
+    if (spec.pos >= 10) bottom = Math.max(bottom, midY);
+    bottom = Math.min(g.baseY + 44, bottom);
+    ctx.fillRect(nx - 6, ny, 2, bottom - ny);
+  }
   if (spec.acc === '#'){
     const ax = nx - 17, ay = ny - 6;
     ctx.fillRect(ax + 1, ay, 2, 13);
@@ -1278,11 +1568,14 @@ function drawStaff(cv, midi, opts){
   const g = staffGeo(cv);
   paintStaff(ctx, g);
   const nx = Math.round((g.x0 + g.x1) / 2) + 6;
-  paintNote(ctx, g, midi, nx, {});
+  const spec = paintNote(ctx, g, midi, nx, {});
   if (opts && opts.showName && q){
-    ctx.font = 'bold 12px monospace'; ctx.textAlign = 'right';
-    ctx.fillStyle = '#B58BF5';
-    ctx.fillText(q.name, cv.width - 6, cv.height - 6);
+    // right beside the head it names — not off in a corner the eye has to
+    // travel to and associate back
+    const ny = g.baseY - spec.pos * g.hs;
+    ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left';
+    ctx.fillStyle = '#F2A93B';
+    ctx.fillText(disp(q.name), nx + 13, ny + 4);
   }
 }
 /** The reference card: the five open strings on one staff, named. */
@@ -1311,7 +1604,7 @@ function drawBoard(opts){
 
   const markers = [];
   if (opts.reveal){
-    markers.push({ si:q.si, fret:q.f, kind:'correct', label:q.name });
+    markers.push({ si:q.si, fret:q.f, kind:'correct', label:disp(q.name) });
   } else if (opts.range){
     // Mark the search area on the target string without giving away the fret.
     for (let f = opts.range[0]; f <= opts.range[1]; f++){
@@ -1322,7 +1615,7 @@ function drawBoard(opts){
   BassNeck.render(host, {
     strings: names, fromFret:0, toFret:t.maxFret, scale: wide ? 'desk' : 'read',
     markers, dimStrings,
-    title: opts.reveal ? (q.name + ' is on the ' + q.sn + ' string, fret ' + q.f)
+    title: opts.reveal ? (disp(q.name) + ' is on the ' + q.sn + ' string, fret ' + q.f)
                        : 'the ' + q.sn + ' string, frets ' + (opts.range ? opts.range.join(' to ') : ''),
     scrollToFret: q.f,
   });
@@ -1375,21 +1668,28 @@ function onStableNote(reading){
           reviewQ.add(q.sn + ':' + q.f, qCount);
         }
       }
-      gvJudge(clean ? 'clean' : 'dirty');
+      /* The arcade score keeps the same distinction: a REVEALED answer is
+         'assisted' — no XP, no zap, no toast — while a plain hunted find
+         stays 'dirty' with its small payout. */
+      gvJudge(clean ? 'clean' : (revealedThisQ ? 'assisted' : 'dirty'));
+      if (GV.promptKind === 'staff') staffAnswered = true;   // the pointer's job is done
+      if (clean) gvCue('ding');
       gvZap();
       updateFindStats();
       setTimeout(newQuestion, 900);
     };
     if (verdict === 'correct'){
+      const dn = disp(q.name);
       acceptCorrect(wrongThisQ === 0 && hintLevel === 0
-        ? ['FIRE! ' + q.name + ' rings the bell.', q.name + ' — dead on.',
-           'BOOM — that was ' + q.name + '.', q.name + '. The bell tolls.'][Math.floor(Math.random()*4)]
-        : 'There it is — ' + q.name + '.');
+        ? ['FIRE! ' + dn + ' rings the bell.', dn + ' — dead on.',
+           'BOOM — that was ' + dn + '.', dn + '. The bell tolls.'][Math.floor(Math.random()*4)]
+        : 'There it is — ' + dn + '.');
     } else if (verdict === 'out-of-tune'){
-      vEl.textContent = 'Right note! But it is ' + Math.abs(Math.round(reading.cents)) + ' cents ' +
-        (reading.cents < 0 ? 'flat' : 'sharp') + ' — that string needs tuning.';
+      vEl.textContent = 'Right note! But it is ' + Math.abs(Math.round(reading.cents)) + ' cents (nearly half a fret) ' +
+        (reading.cents < 0 ? 'flat' : 'sharp') +
+        ' — check your finger placement, or that string may need tuning.';
       vEl.className = 'verdict warn';
-      outOfTuneThisQ = true;   // let the stall timer escalate to the tuner
+      outOfTuneThisQ = true;   // freezes the fuse; the Hint button escalates to the tuner
     } else if (verdict === 'wrong-octave'){
       const twinF = q.f + (reading.midi - q.midi);   // the same note's other home on this string
       if (GV.promptKind === 'name' && Math.abs(reading.midi - q.midi) === 12
@@ -1397,16 +1697,23 @@ function onStableNote(reading){
         /* NAME mode asked for "G on the E string" — and fret 3 and fret 15
            are both exactly that. Reading mode stays strict: the octave is
            written on the page. */
-        acceptCorrect(q.name + ' — that’s the other one: it also lives at fret ' + twinF + '. Both count.');
+        acceptCorrect(disp(q.name) + ' — that’s the other one: it also lives at fret ' + twinF + '. Both count.');
+      } else if (GV.promptKind === 'staff'){
+        /* Reading mode teaches NOTATION, so the correction reads the page,
+           not the neck: no fret number (the reveal rung still gives it). */
+        vEl.textContent = 'That’s ' + article(heardName) + ' ' + disp(heardName) +
+          ' — right note, wrong octave. Count the ledger lines: this one sits ' +
+          (reading.midi > q.midi ? 'lower' : 'higher') + ' than the one you played.';
+        vEl.className = 'verdict no';
+        countWrong();
       } else {
-        const article = /^[AEF]$/.test(heardName) ? 'an' : 'a';
-        vEl.textContent = 'That’s ' + article + ' ' + heardName + ' — right note, wrong octave. You want the one an octave ' +
+        vEl.textContent = 'That’s ' + article(heardName) + ' ' + disp(heardName) + ' — right note, wrong octave. You want the one an octave ' +
           (reading.midi > q.midi ? 'lower' : 'higher') + ' — on the ' + q.sn + ' string it’s at fret ' + q.f + '.';
         vEl.className = 'verdict no';
         countWrong();
       }
     } else {
-      vEl.textContent = 'That was ' + heardName + ' — looking for ' + q.name + '.';
+      vEl.textContent = 'That was ' + disp(heardName) + ' — looking for ' + disp(q.name) + '.';
       vEl.className = 'verdict no';
       countWrong();
     }
@@ -1446,6 +1753,11 @@ function countWrong(){
   wrongThisQ++;
   lastProgressAt = performance.now();
   if (GV.bell) GV.bell.wobble = performance.now();       // it shivers; no text flips
+  if (GV.bell && !REDUCED){                              // and shakes off a little dust
+    for (let i = 0; i < 4; i++)
+      GV.fx.push({ kind:'d', x:GV.bx - 10 + i * 6, y:GV.by + 10 + (i % 2) * 3,
+                   born:performance.now(), seed:i });
+  }
   gvJudge('wrong');                                      // the streak breaks
   if (wrongThisQ === 1){
     sess.find.streak = 0; sess.find.asked++;
@@ -1606,9 +1918,8 @@ function setMode(m){
   gvLoop(m === 'find');
   if (m === 'find'){
     GV.spawnAt = performance.now();   // returning ≠ time served
-    // A note already ringing on arrival must not be judged as the first answer.
+    // A note already ringing on arrival is never judged — it dies unjudged.
     GV.graceUntil = performance.now() + 600;
-    GV.graceNote = null;
     gvFitScene();                     // the section just unhid: sizes are real now
   }
   if (m === 'echo') newEcho();
@@ -1709,15 +2020,28 @@ function renderTierUI(){
   if (t2) t2.textContent = TUNING.names.join(' ');
   renderGameUI();   // tier and focus are shared state; both UIs must agree
 }
+/* Stage labels the width of a phone <select>: the fret range must SURVIVE
+   truncation, so the option is short and the band-stage name lives in the
+   always-visible caption below instead. */
+const STAGE_SHORT = ['E+A, frets 0–5', 'E+A, frets 0–12', 'E A D G, frets 0–12',
+                     '+ low B, frets 0–12', 'all strings + ♯, frets 0–12'];
+/** "Best on this setup: N" — follows pace, stage and prompt, and each run. */
+function updateBestNote(){
+  const el = document.getElementById('gvBestNote');
+  if (!el) return;
+  el.textContent = 'Best on this setup: ' + (GV.best[gvBestKey()] || 0);
+}
 /** The game's settings card: world (the shared tier), pace, prompt, strings. */
 function renderGameUI(){
   const ws = document.getElementById('gvWorld');
   if (!ws) return;
-  // Range before band name: a phone <select> truncates the tail, and the
-  // range is the half a player needs to pick a stage.
+  // Short, range-always-visible option labels — no phone truncates the half
+  // a player needs to pick a stage.
   ws.innerHTML = TIERS.map((t,i) =>
-    '<option value="' + i + '"' + (i===tier?' selected':'') + '>Stage ' + (i+1) + ' · ' +
-    t.label.replace(/^\d+ · /,'') + ' — ' + WORLDS[i].name + '</option>').join('');
+    '<option value="' + i + '"' + (i===tier?' selected':'') + '>Stage ' + (i+1) + ' — ' +
+    STAGE_SHORT[i] + '</option>').join('');
+  const nowEl = document.getElementById('gvStageNow');
+  if (nowEl) nowEl.textContent = 'Now playing: ' + WORLDS[Math.min(tier, WORLDS.length - 1)].name;
   const ps = document.getElementById('gvPaceSeg');
   ps.innerHTML = GAME.PACE_ORDER.map(p =>
     '<button data-p="' + p + '" aria-pressed="' + (p===GV.pace) + '"' + (p===GV.pace?' class="on"':'') + '>' +
@@ -1751,6 +2075,42 @@ function renderGameUI(){
     b.setAttribute('aria-pressed', String(on));
     b.addEventListener('click', () => { focus = b.dataset.f || null; renderTierUI(); newQuestion(); });
   });
+  // Fret-region focus: which stretch of the neck the questions come from.
+  const frs = document.getElementById('gvFretSeg');
+  if (frs){
+    frs.innerHTML = FRET_ORDER.map(k =>
+      '<button data-fr="' + k + '" aria-pressed="' + (k===GV.frets) + '"' +
+      (k===GV.frets?' class="on"':'') + '>' + FRET_WINS[k].label + '</button>').join('');
+    frs.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+      if (b.dataset.fr === GV.frets) return;
+      GV.frets = b.dataset.fr; gvSave();
+      renderGameUI();
+      newQuestion();
+    }));
+  }
+  // Effects: Full / Calm — Calm forces the reduced-motion path regardless of
+  // the OS setting. Sound: the WebAudio cues. Both persist with the prefs.
+  const fx = document.getElementById('gvFxSeg');
+  if (fx){
+    fx.innerHTML = [['full','Full'], ['calm','Calm']].map(([k, label]) =>
+      '<button data-fx="' + k + '" aria-pressed="' + ((k==='calm')===GV.calm) + '"' +
+      (((k==='calm')===GV.calm)?' class="on"':'') + '>' + label + '</button>').join('');
+    fx.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+      GV.calm = b.dataset.fx === 'calm';
+      updateReduced(); gvSave(); renderGameUI();
+    }));
+  }
+  const snd = document.getElementById('gvSndSeg');
+  if (snd){
+    snd.innerHTML = [[true,'On'], [false,'Off']].map(([on, label]) =>
+      '<button data-snd="' + on + '" aria-pressed="' + (on===GV.sound) + '"' +
+      ((on===GV.sound)?' class="on"':'') + '>' + label + '</button>').join('');
+    snd.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+      GV.sound = b.dataset.snd === 'true';
+      gvSave(); renderGameUI();
+    }));
+  }
+  updateBestNote();
   drawClefRef();
   gvFitScene();   // entering/re-rendering the game: keep the pixels integer
 }
@@ -1764,6 +2124,10 @@ document.getElementById('startBtn').addEventListener('click', async () => {
   setMode(want);
   document.getElementById('gate').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
+  /* Only now is #app visible, so only now do the scene's sizes read real —
+     setMode's own gvFitScene saw clientWidth 0 on this first-entry path,
+     which is exactly how phones ended up with a 320×151.06 canvas. */
+  gvFitScene();
 });
 document.getElementById('deviceSel').addEventListener('change', e => startListening(e.target.value));
 
@@ -1783,7 +2147,7 @@ document.getElementById('fSkip').addEventListener('click', () => {
      walking away is not a wrong answer), book the comeback, THEN move on
      slowly enough that the correction line can actually be read. */
   const v = document.getElementById('fVerdict');
-  v.textContent = 'Skipped — that was ' + q.name + ', ' + q.sn + ' string, fret ' + q.f + '.';
+  v.textContent = 'Skipped — that was ' + disp(q.name) + ', ' + q.sn + ' string, fret ' + q.f + '.';
   v.className = 'verdict warn';
   sess.find.streak = 0;
   const key = q.sn + ':' + q.f;
@@ -1799,7 +2163,19 @@ document.getElementById('fSkip').addEventListener('click', () => {
   GV.phase = 'breach';                       // holds judging while the line shows
   GV.breachT = performance.now();
   updateFindStats();
-  setTimeout(newQuestion, 900);
+  // The correction line IS the teaching — hold it as long as a breach holds.
+  setTimeout(newQuestion, 2600);
+});
+/* The staff pointer in #fSub is a real link: it opens the clef teaching card
+   and goes there. Delegated, because #fSub is rewritten per question. */
+document.getElementById('fSub').addEventListener('click', e => {
+  const a = e.target.closest('.gv-staffhelp-link');
+  if (!a) return;
+  e.preventDefault();
+  const card = document.getElementById('gvClefHelp');
+  if (!card) return;
+  card.open = true;
+  card.scrollIntoView({ block:'start', behavior: REDUCED ? 'auto' : 'smooth' });
 });
 document.getElementById('gvRestart').addEventListener('click', () => {
   gvNewRun();
@@ -1828,11 +2204,12 @@ setInterval(() => {
   if (GV.run && GV.run.state.over) return;
   const stalledFor = performance.now() - lastProgressAt;
   if (stalledFor > (wrongThisQ > 0 ? 4500 : 10000)){
-    /* On the no-pressure pace, silence is often DELIBERATE work — reading the
-       neck, counting frets. Point at the Hint button once instead of spending
-       a hint rung the player never asked for. Timed paces, and any question
-       already missed, keep the auto-ladder. */
-    if (GV.pace === 'chill' && wrongThisQ === 0){
+    /* Before any miss, silence is often DELIBERATE work — reading the neck,
+       counting frets, thinking down a 14-second fuse. On EVERY pace that
+       earns only the free nudge (no rung spent, once per question); the
+       player keeps full clean credit. Only a question already missed gets
+       the 4.5s auto-ladder. */
+    if (wrongThisQ === 0){
       if (!nudgedThisQ){
         nudgedThisQ = true;
         document.getElementById('fSub').textContent = 'Stuck? The Hint button is just below.';
@@ -3983,14 +4360,13 @@ function resume(){
      is re-armed the way a new rep re-arms it, because otherwise the first thing
      heard on return answered the current target and a drill could come back
      already failed on a note the player never aimed at it. */
-  tracker = C.createTracker({ stableMs:150 });
+  tracker = C.createTracker({ stableMs:TRACKER_STABLE_MS });
   if (DR.phase === 'running') DR.lastAdvanceAt = performance.now();
   /* Coming back to the game: the fuse must not count the time spent
      away — that would be a stage light lost to a tab switch. */
   if (mode === 'find'){
     GV.spawnAt = performance.now();
     GV.graceUntil = performance.now() + 600;   // same entry grace as setMode
-    GV.graceNote = null;
     gvLoop(true);
   }
 }

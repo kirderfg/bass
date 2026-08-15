@@ -2,7 +2,7 @@
    assert the app reacts correctly. Run with `npm run test:e2e`. */
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { openWithNote, until } = require('./harness.js');
+const { openApp, openWithNote, until } = require('./harness.js');
 
 // Equal-temperament reference pitches (A4 = 440).
 const E1 = 41.203, G2 = 97.999, A1 = 55.000, G3 = 195.998;
@@ -84,11 +84,12 @@ test('playing the wrong note is rejected, and a second miss opens the hint', asy
     const stillAsking = await app.page.evaluate(() => q && q.name);
     assert.equal(stillAsking, 'G', 'a wrong note must not advance the question');
 
-    // A repeated miss should surface help without being asked.
+    // A repeated miss should surface help without being asked. The second
+    // miss arrives on the WAV's next re-attack, so give it a loop's headroom.
     const hinted = await until(app.page, () => {
       const sub = document.getElementById('fSub').textContent;
       return /between fret|right here/.test(sub) ? sub : null;
-    }, null, 8000);
+    }, null, 12000);
     assert.ok(hinted, 'no hint appeared after repeated misses');
 
     const stats = await app.page.evaluate(() =>
@@ -153,7 +154,11 @@ test('a still-ringing string does not answer the question that follows it', asyn
   // correct answer while the note was still sounding, and judged that
   // ring-out against the next question — inventing misses the player
   // never made, and poisoning the stats the practice checkpoints read.
-  const app = await openWithNote(G2);
+  //
+  // The premise is ONE attack with a long ring, so the WAV attacks once —
+  // after 5s of lead silence, clearing the test's own setup — rings for 10s
+  // and then stays silent: the loop never re-attacks inside the test.
+  const app = await openWithNote(G2, { seconds: 20, leadSeconds: 5, toneSeconds: 10 });
   try {
     await app.page.evaluate(() => {
       localStorage.removeItem('bassTheoryTrainer.v1');
@@ -165,7 +170,7 @@ test('a still-ringing string does not answer the question that follows it', asyn
     await until(app.page, () => {
       const el = document.getElementById('fVerdict');
       return el.className.includes('ok') ? el.textContent : null;
-    });
+    }, null, 12000);
 
     // The app now picks its own next question while G keeps sounding.
     await new Promise(r => setTimeout(r, 4000));
@@ -176,6 +181,36 @@ test('a still-ringing string does not answer the question that follows it', asyn
     assert.equal(stats.answered, 1,
       `the ring-out was judged again: ${stats.answered} answers recorded for one note`);
     assert.deepEqual(stats.heat, {}, 'no phantom misses on the heatmap');
+  } finally { await app.close(); }
+});
+
+test('a note already sounding when Find-it opens dies unjudged', async () => {
+  // The entry ambush: two reviewers lost question 1 to a note that was still
+  // ringing as the screen arrived. A tone that attacks once and rings
+  // throughout entry must NEVER be judged — no verdict, no banked stats;
+  // the first judged reading of a session must be a fresh attack.
+  const app = await openApp(G2, '/index.html#find', undefined,
+    { seconds: 25, toneSeconds: 25 });
+  try {
+    const { page } = app;
+    await page.evaluate(() => localStorage.removeItem('bassTheoryTrainer.v1'));
+    await page.click('#startBtn');
+    await page.waitForSelector('#secFind:not(.hidden)', { timeout: 5000 });
+    // Well past the 600ms entry grace: the pre-entry ring is dead, not parked.
+    await new Promise(r => setTimeout(r, 1500));
+    const r = await page.evaluate(() => ({
+      verdict: document.getElementById('fVerdict').textContent.trim(),
+      cls: document.getElementById('fVerdict').className,
+      stats: (JSON.parse(localStorage.getItem('bassTheoryTrainer.v1') || '{}').stats) || null,
+      asked: document.getElementById('fAsked').textContent,
+    }));
+    assert.equal(r.verdict.replace(/ /g, ''), '',
+      `the pre-entry note was judged: "${r.verdict}"`);
+    assert.equal(r.cls, 'verdict', 'a verdict class was painted');
+    assert.ok(!r.stats || !r.stats.answered,
+      'the pre-entry note banked an answer: ' + JSON.stringify(r.stats));
+    assert.equal(r.asked, '0', 'the session panel counted a question nobody answered');
+    assert.deepEqual(app.errors, [], 'page errors');
   } finally { await app.close(); }
 });
 
@@ -368,7 +403,7 @@ test('a correct answer shown by the reveal hint is a failed recall, not a clean 
     const verdict = await until(page, () => {
       const el = document.getElementById('fVerdict');
       return el.className.includes('ok') ? el.textContent : null;
-    }, null, 8000);
+    }, null, 12000);
     assert.ok(verdict, 'the correct note was not accepted at all');
     const r = await page.evaluate(() => ({
       stats: JSON.parse(localStorage.getItem('bassTheoryTrainer.v1')).stats,

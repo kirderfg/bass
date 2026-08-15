@@ -222,6 +222,7 @@ test('a difficulty multiplier scales the XP gain but never hearts or combo', () 
 });
 
 test('levels rise with XP and report the moment they turn over', () => {
+  // The L1→L2 boundary still sits at 120 XP, curve or no curve.
   const run = G.createRun({ pace: 'chill', xp: G.XP_PER_LEVEL - 5 });
   const r = run.judge('clean');
   assert.equal(r.leveled, true, 'crossing the boundary must announce itself');
@@ -229,7 +230,47 @@ test('levels rise with XP and report the moment they turn over', () => {
   assert.equal(G.levelTitle(1), 'Garage Roadie');
   assert.equal(G.levelTitle(999), 'Thunderstruck', 'titles clamp at the top');
   const prog = G.levelProgress(G.XP_PER_LEVEL + 30);
-  assert.equal(prog.into, 30);
+  assert.equal(prog.into, 30, '30 XP into level 2');
+});
+
+test('the level curve rises: each level costs 40 XP more than the last', () => {
+  // Level n costs 120 + 40×(n−1): L2 at 120 total, L3 at 280, L4 at 480…
+  assert.equal(G.levelFor(0), 1);
+  assert.equal(G.levelFor(119), 1);
+  assert.equal(G.levelFor(120), 2, 'L2 opens at 120');
+  assert.equal(G.levelFor(279), 2);
+  assert.equal(G.levelFor(280), 3, 'L3 opens at 280 (120 + 160)');
+  assert.equal(G.levelFor(479), 3);
+  assert.equal(G.levelFor(480), 4, 'L4 opens at 480 (120 + 160 + 200)');
+  assert.equal(G.XP_PER_LEVEL, 120, 'the exported constant is the first span');
+});
+
+test('levelProgress reports the CURRENT level\'s span, not a flat rate', () => {
+  const l1 = G.levelProgress(60);
+  assert.deepEqual({ into: l1.into, span: l1.span }, { into: 60, span: 120 });
+  assert.ok(Math.abs(l1.frac - 0.5) < 1e-9, 'halfway through level 1');
+  const l2 = G.levelProgress(280 - 1);
+  assert.deepEqual({ into: l2.into, span: l2.span }, { into: 159, span: 160 },
+    'one XP short of L3 is 159 into a 160 span');
+  const l3 = G.levelProgress(280);
+  assert.deepEqual({ into: l3.into, span: l3.span }, { into: 0, span: 200 },
+    'a fresh L3 starts a 200-XP span');
+  assert.equal(G.levelProgress(-5).into, 0, 'negative XP clamps sanely');
+});
+
+test('an assisted find (the reveal hint) pays nothing and breaks the combo', () => {
+  const run = G.createRun({ pace: 'steady' });
+  run.judge('clean'); run.judge('clean');
+  const r = run.judge('assisted', 1.5);
+  assert.equal(r.gain, 0, 'a shown answer earns no XP, whatever the multiplier');
+  assert.equal(r.combo, 0, 'the combo goes — it was not a recall');
+  assert.equal(r.hearts, 3, 'but the stage lights are untouched');
+  assert.equal(run.state.zaps, 2, 'a shown answer is not a note nailed');
+  assert.equal(r.over, false);
+  // …and 'dirty' still pays its taste of XP and its zap, unlike 'assisted'.
+  const d = run.judge('dirty');
+  assert.equal(d.gain, 4);
+  assert.equal(run.state.zaps, 3);
 });
 
 test('turbo gives less time than steady, speeds up with level, and floors sanely', () => {

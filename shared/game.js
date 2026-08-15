@@ -18,9 +18,9 @@
   const PACES = {
     chill:  { label: 'Soundcheck', detail: 'No fuse, no pressure — find every note at your own pace.',
               approachMs: null,  hearts: null },
-    steady: { label: 'Gig',        detail: 'The cannon fuse burns slow. Burnt out = one of your three bolts — your stage lights — goes dark.',
+    steady: { label: 'Gig',        detail: 'The cannon fuse burns slow. Burnt out = one of your three bolts — your stage lights — goes dark. The fuse tightens a touch as you level.',
               approachMs: 14000, hearts: 3 },
-    turbo:  { label: 'Encore',     detail: 'A short fuse. For those about to rock.',
+    turbo:  { label: 'Encore',     detail: 'A short fuse. For those about to rock. Same three stage lights as Gig — and the fuse tightens a touch as you level.',
               approachMs: 7000,  hearts: 3 },
   };
   const PACE_ORDER = ['chill', 'steady', 'turbo'];
@@ -38,18 +38,41 @@
     return mode === 'staff' ? 'staff' : 'name';
   }
 
-  /* ================= XP, combo, levels ================= */
-  const XP_PER_LEVEL = 120;
+  /* ================= XP, combo, levels =================
+     A rising curve, not a flat rate: level n costs 120 + 40×(n−1) XP, so
+     L1→L2 is 120, L2→L3 is 160, L3→L4 is 200… Cumulative XP to REACH level
+     n is therefore 20×(n−1)×(n+4): L2 at 120, L3 at 280, L4 at 480. */
   const LEVEL_TITLES = ['Garage Roadie', 'Pub Rocker', 'Support Act', 'Riff Machine',
                         'Headliner', 'Stadium Shaker', 'Rock Legend', 'Thunderstruck'];
-  function levelFor(xp) { return 1 + Math.floor(Math.max(0, xp) / XP_PER_LEVEL); }
+  /** How much XP the step from `level` to the next one costs. */
+  function levelSpan(level) {
+    const n = Math.max(1, level | 0);
+    return 120 + 40 * (n - 1);
+  }
+  /** Total XP needed to have REACHED `level` (level 1 is free). */
+  function levelBase(level) {
+    const n = Math.max(1, level | 0);
+    return 20 * (n - 1) * (n + 4);
+  }
+  // Kept for compatibility: the first level's span, derived from the curve.
+  const XP_PER_LEVEL = levelSpan(1);
+  function levelFor(xp) {
+    const x = Math.max(0, xp);
+    let n = 1;
+    while (x >= levelBase(n + 1)) n++;
+    return n;
+  }
   function levelTitle(level) {
     return LEVEL_TITLES[Math.min(LEVEL_TITLES.length - 1, Math.max(0, level - 1))];
   }
-  /** XP still to go inside the current level, for the HUD bar. */
+  /** Where the HUD bar sits inside the CURRENT level's span:
+      {into, span, frac} — `span` is what this level's step costs. */
   function levelProgress(xp) {
-    const into = Math.max(0, xp) % XP_PER_LEVEL;
-    return { into, span: XP_PER_LEVEL, frac: into / XP_PER_LEVEL };
+    const x = Math.max(0, xp);
+    const level = levelFor(x);
+    const into = x - levelBase(level);
+    const span = levelSpan(level);
+    return { into, span, frac: into / span };
   }
 
   /** How long the cannon fuse takes to burn down. Higher levels shave a
@@ -65,12 +88,15 @@
   /**
    * One run of the game. Tracks hearts, combo, XP and whether the run is
    * over. Judgement kinds:
-   *   'clean'   — right note, first attempt
-   *   'dirty'   — right note after hunting
-   *   'wrong'   — a miss (streak breaks; stage lights are NOT touched —
-   *               only the fuse burning out costs one, i.e. 'breach')
-   *   'breach'  — the clock ran out: the cannon fuse burnt to nothing
-   *   'skip'    — player asked for the next one
+   *   'clean'    — right note, first attempt
+   *   'dirty'    — right note after hunting
+   *   'assisted' — right note, but the reveal hint SHOWED it: no XP, no zap,
+   *                the combo goes, the hearts are untouched — a shown answer
+   *                must not feed the arcade score
+   *   'wrong'    — a miss (streak breaks; stage lights are NOT touched —
+   *                only the fuse burning out costs one, i.e. 'breach')
+   *   'breach'   — the clock ran out: the cannon fuse burnt to nothing
+   *   'skip'     — player asked for the next one
    */
   function createRun(opts) {
     const pace = PACES[(opts && opts.pace)] ? opts.pace : 'chill';
@@ -101,6 +127,9 @@
         // The hunt already broke the combo (every wrong is judged first).
         gain = Math.round(4 * m);
         s.xp += gain; s.zaps++;
+      } else if (kind === 'assisted') {
+        // A revealed answer: nothing gained, nothing lost but the combo.
+        s.combo = 0;
       } else if (kind === 'wrong') {
         s.combo = 0;
       } else if (kind === 'breach') {

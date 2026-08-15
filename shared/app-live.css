@@ -19,10 +19,19 @@
 #gate p{max-width:420px; margin:10px auto;}
 #gate .err{color:var(--bad); font-weight:600;}
 #gate .t-eyebrow{margin-bottom:var(--sp1);}
+/* Visually hidden, screen-reader audible: the game's live announcements. */
+.sr-only{position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+  overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0;}
 /* ---- level meter ---- */
 .level{height:8px; background:var(--panel2); border-radius:99px; overflow:hidden; margin:8px 0 2px;}
 .level i{display:block; height:100%; width:0%; background:var(--good); border-radius:99px; transition:width .08s linear;}
 .listening{display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--dim);}
+/* ---- the compact mic input card ----
+   One row: dot, status word, level bar inline — it sits above every Live
+   mode on a phone and must not eat a fifth of the screen. */
+.mic-row{margin:0;}
+.mic-row .level{flex:1 1 90px; margin:0;}
+.mic-card select{margin-top:6px; padding-top:6px; padding-bottom:6px;}
 .dot{width:9px; height:9px; border-radius:50%; background:var(--bad);}
 .dot.on{background:var(--good); box-shadow:0 0 8px var(--good);}
 /* ---- tuner ---- */
@@ -75,11 +84,15 @@
    the wrapper centres itself and the canvas keeps square corners — a radius
    would shave fractional pixels off a pixel-art edge. */
 .gv-screen{position:relative; margin:2px auto 6px;}
+/* content-box, because gvFitScene sets the canvas to EXACT 320×150 multiples:
+   border-box would shave the borders off the content and smear a column. */
 .gv-screen canvas{display:block; width:100%; height:auto; image-rendering:pixelated;
-  border:1px solid var(--line); border-radius:0; background:var(--s0);}
+  box-sizing:content-box; border:1px solid var(--line); border-radius:0; background:var(--s0);}
 .gv-hud{display:flex; align-items:center; gap:10px; flex-wrap:wrap; min-height:18px; margin-bottom:6px;}
 .gv-hud .t-data{font-size:13px;}
-.gv-xplabel{color:var(--t4);}
+/* A seam between the streak and the XP caption — the two read as one
+   run-on figure without it. */
+.gv-xplabel{color:var(--t4); margin-left:4px; padding-left:10px; border-left:1px solid var(--line);}
 /* Stage lights, not hearts: each <i> is one pixel lightning bolt — the
    band's own mark. A lost one is drawn as an OUTLINE (not a grayscale wash):
    the ~#A79F94 stroke holds 3:1 against the panel, so "which are gone"
@@ -92,12 +105,23 @@
 .gv-combo{color:var(--root); font-weight:700;}
 .gv-level{color:var(--t3);}
 /* The readable fuse: a DOM bar mirroring the canvas cord, because a 2px pixel
-   rope is flavour, not a timer. .low = last two seconds. */
+   rope is flavour, not a timer. .low = last two seconds. The fill is
+   pixel-STEPPED (hard-stop repeating gradient), matching the scene's grammar —
+   a smooth gradient was the one anti-aliased thing on a pixel stage. */
+.gv-fusewrap{position:relative;}
 .gv-fusebar{height:6px; margin:0 auto 6px; background:var(--s2);
   border:1px solid var(--line); border-radius:2px; overflow:hidden;}
 .gv-fusebar i{display:block; height:100%; width:100%;
-  background:linear-gradient(90deg, #C77F1F, var(--root));}
-.gv-fusebar.low i{background:var(--bad);}
+  background:repeating-linear-gradient(90deg,
+    #C77F1F 0 4px, #DE9630 4px 8px, var(--root) 8px 12px, #DE9630 12px 16px);}
+.gv-fusebar.low i{background:repeating-linear-gradient(90deg,
+    var(--bad) 0 4px, #A6281A 4px 8px);}
+/* The last-five-seconds numeral: mono, high contrast, beside the bar. */
+.gv-fusesec{position:absolute; right:0; top:-7px; font-family:var(--mono);
+  font-size:12px; font-weight:800; color:var(--t0, #F6F2EC); line-height:1;
+  background:var(--s0); border:1px solid var(--line); border-radius:2px;
+  padding:2px 4px; font-variant-numeric:tabular-nums;}
+.gv-fusebar.low ~ .gv-fusesec{color:var(--bad); border-color:var(--bad);}
 @media (prefers-reduced-motion: no-preference){
   .gv-fusebar.low i{animation:gv-fuse-pulse .9s ease-in-out infinite;}
   @keyframes gv-fuse-pulse{0%,100%{opacity:1;} 50%{opacity:.55;}}
@@ -133,6 +157,9 @@
 /* The question's two facts read in the scene's own colours: the NOTE being
    learned in root amber, the string in the app's violet. */
 #fQ b.gv-note{color:var(--root);}
+/* The staff teaching pointer is a real link now — in the app's colours,
+   not the browser's default blue. */
+.gv-staffhelp-link{color:var(--hl); text-decoration:underline; text-underline-offset:2px;}
 /* The DOM chrome joins the fiction (scoped to the game only): stat tiles and
    the two game buttons take the HUD's voice — mono type, a 1px line bevel,
    a slightly darker surface. Subtle, not a redesign. */
@@ -140,8 +167,13 @@
   box-shadow:inset 0 1px 0 rgba(246,242,236,.05), inset 0 -1px 0 rgba(0,0,0,.35);}
 #secFind .stat-row .stat span{font-family:var(--mono); letter-spacing:.04em;
   text-transform:uppercase; font-size:10.5px;}
+/* Squarer, mono, pixel-flavoured — the DOM buttons on the stage stop
+   pretending they belong to a different app than the canvas above them. */
 #secFind #fHint, #secFind #fSkip{font-family:var(--mono); background:var(--s1);
+  border-radius:4px;
   box-shadow:inset 0 1px 0 rgba(246,242,236,.05), inset 0 -1px 0 rgba(0,0,0,.35);}
+#secFind #gvRestart{font-family:var(--mono); border-radius:4px;}
+#secFind #fHint:disabled, #secFind #fSkip:disabled{opacity:.45; cursor:default;}
 #secFind summary{min-height:44px; display:flex; align-items:center; gap:var(--sp2);
   cursor:pointer; list-style:none;}
 #secFind summary::-webkit-details-marker{display:none;}
