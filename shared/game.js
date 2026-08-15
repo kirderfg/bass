@@ -18,7 +18,7 @@
   const PACES = {
     chill:  { label: 'Soundcheck', detail: 'No fuse, no pressure — find every note at your own pace.',
               approachMs: null,  hearts: null },
-    steady: { label: 'Gig',        detail: 'The cannon fuse burns slow. Burnt out = one of your three bolts — your stage lights — goes dark. The fuse tightens a touch as you level.',
+    steady: { label: 'Gig',        detail: 'The cannon fuse burns slow. Burnt out = one of your three stage lights goes dark. The fuse tightens a touch as you level.',
               approachMs: 14000, hearts: 3 },
     turbo:  { label: 'Encore',     detail: 'A short fuse. For those about to rock. Same three stage lights as Gig — and the fuse tightens a touch as you level.',
               approachMs: 7000,  hearts: 3 },
@@ -108,6 +108,7 @@
       combo: 0, bestCombo: 0,
       xp: startXp,
       zaps: 0,                          // notes nailed this set
+      cleanZaps: 0,                     // first-try, unaided finds — the best-run metric
       over: false,
     };
     /** `mult` is an optional XP multiplier (pace × stage × prompt, decided by
@@ -122,7 +123,7 @@
         s.combo++;
         if (s.combo > s.bestCombo) s.bestCombo = s.combo;
         gain = Math.round((10 + 2 * Math.min(s.combo - 1, 15)) * m);
-        s.xp += gain; s.zaps++;
+        s.xp += gain; s.zaps++; s.cleanZaps++;
       } else if (kind === 'dirty') {
         // The hunt already broke the combo (every wrong is judged first).
         gain = Math.round(4 * m);
@@ -242,18 +243,26 @@
   // Sharp spellings, matching BassCore.NAMES: pitch class → [letter, accidental]
   const SPELL = [['C', null], ['C', '#'], ['D', null], ['D', '#'], ['E', null], ['F', null],
                  ['F', '#'], ['G', null], ['G', '#'], ['A', null], ['A', '#'], ['B', null]];
+  /* Flat spellings of the same five pitch classes: the enharmonic twin sits
+     one letter HIGHER (D♭ lives on D's line/space). Reading music means
+     meeting both spellings, so staffSpec can be asked to prefer these. */
+  const SPELL_FLAT = { 1: ['D', 'b'], 3: ['E', 'b'], 6: ['G', 'b'], 8: ['A', 'b'], 10: ['B', 'b'] };
   const G2_DIA = 2 * 7 + LETTERS.indexOf('G');   // diatonic index of the bottom line
 
   /**
    * Where a SOUNDING midi note sits on the written staff.
+   * @param {{prefer?:'flat'}} [opts] — 'flat' spells the five accidentals as
+   *        flats (D♭ on D's position, acc:'b'); naturals are never touched.
    * @returns {{pos:number, letter:string, acc:string|null, octave:number,
    *            ledgers:number[]}} pos as above; ledgers lists the ledger-line
    *           positions (even numbers) the note needs drawn, nearest first.
    */
-  function staffSpec(midi) {
+  function staffSpec(midi, opts) {
     const written = midi + 12;
     const octave = Math.floor(written / 12) - 1;
-    const [letter, acc] = SPELL[((written % 12) + 12) % 12];
+    const pc = ((written % 12) + 12) % 12;
+    let [letter, acc] = SPELL[pc];
+    if (opts && opts.prefer === 'flat' && SPELL_FLAT[pc]) [letter, acc] = SPELL_FLAT[pc];
     const dia = octave * 7 + LETTERS.indexOf(letter);
     const pos = dia - G2_DIA;
     const ledgers = [];
@@ -262,9 +271,41 @@
     return { pos, letter, acc, octave, ledgers };
   }
 
+  /* ---- staff positions in words ----
+     Non-visual parity for the reading mode: the spoken question names WHERE
+     the note sits, never what it is. Positions -5..14; even = line, odd =
+     space; the staff proper is 0..8, ledgers live beyond 8 and below 0. */
+  const ORDINALS = ['first', 'second', 'third', 'fourth', 'fifth'];
+  function staffPosName(pos) {
+    const p = pos | 0;
+    if (p >= 0 && p <= 8) {                                     // on the staff
+      const LINES = { 0: 'the bottom line', 2: 'the second line', 4: 'the middle line',
+                      6: 'the fourth line', 8: 'the top line' };
+      const SPACES = { 1: 'the first space', 3: 'the second space',
+                       5: 'the third space', 7: 'the top space' };
+      return (p % 2 === 0 ? 'on ' + LINES[p] : 'in ' + SPACES[p]);
+    }
+    if (p < 0) {                                                // hanging below
+      if (p === -1) return 'just below the staff';
+      if (p % 2 === 0) {
+        const n = (-p) / 2;
+        return 'on the ' + (ORDINALS[n - 1] || n + 'th') + ' ledger line below the staff';
+      }
+      const n = (-p - 1) / 2;
+      return 'below the ' + (ORDINALS[n - 1] || n + 'th') + ' ledger line below the staff';
+    }
+    if (p === 9) return 'just above the staff';                 // riding above
+    if (p % 2 === 0) {
+      const n = (p - 8) / 2;
+      return 'on the ' + (ORDINALS[n - 1] || n + 'th') + ' ledger line above the staff';
+    }
+    const n = (p - 9) / 2;
+    return 'above the ' + (ORDINALS[n - 1] || n + 'th') + ' ledger line above the staff';
+  }
+
   return {
     PACES, PACE_ORDER, PROMPTS, PROMPT_ORDER, resolvePrompt,
     XP_PER_LEVEL, LEVEL_TITLES, levelFor, levelTitle, levelProgress, approachMs,
-    createRun, weightFor, weightedPick, createReviewQueue, staffSpec,
+    createRun, weightFor, weightedPick, createReviewQueue, staffSpec, staffPosName,
   };
 });

@@ -42,6 +42,66 @@ test('sharps keep the natural letter position and carry the accidental', () => {
   assert.equal(G.staffSpec(28).acc, null, 'naturals carry no accidental');
 });
 
+test('flat spellings sit one letter higher: D♭ on D\'s position, B♭ on B\'s', () => {
+  // C# on the E string (fret 9, midi 37) respelled flat is D♭ — D's position.
+  const dFlat = G.staffSpec(37, { prefer: 'flat' });
+  assert.equal(dFlat.letter, 'D');
+  assert.equal(dFlat.acc, 'b');
+  assert.equal(dFlat.pos, G.staffSpec(38).pos, 'D♭ sits on D\'s line/space');
+  // A# (midi 46) respelled flat is B♭ — B's position (the top line here).
+  const bFlat = G.staffSpec(46, { prefer: 'flat' });
+  assert.equal(bFlat.letter, 'B');
+  assert.equal(bFlat.acc, 'b');
+  assert.equal(bFlat.pos, G.staffSpec(47).pos, 'B♭ sits on B\'s line/space');
+});
+
+test('the same midi spells sharp or flat on demand — one position apart', () => {
+  for (const midi of [25, 27, 30, 32, 34]) {   // C#, D#, F#, G#, A# in octave 1
+    const sharp = G.staffSpec(midi);
+    const flat = G.staffSpec(midi, { prefer: 'flat' });
+    assert.equal(sharp.acc, '#', `midi ${midi} default-spells sharp`);
+    assert.equal(flat.acc, 'b', `midi ${midi} flat-spells with a ♭`);
+    assert.equal(flat.pos, sharp.pos + 1,
+      `midi ${midi}: the flat letter sits one diatonic step higher`);
+  }
+});
+
+test('natural notes never carry an accidental, flat preference or not', () => {
+  for (const midi of [23, 28, 33, 38, 43, 48, 55]) {
+    assert.equal(G.staffSpec(midi).acc, null, `midi ${midi} spells natural`);
+    assert.equal(G.staffSpec(midi, { prefer: 'flat' }).acc, null,
+      `midi ${midi} must not grow a ♭ from the preference`);
+    assert.equal(G.staffSpec(midi, { prefer: 'flat' }).pos, G.staffSpec(midi).pos,
+      `midi ${midi}: a natural's position must not move`);
+  }
+});
+
+test('every staff position from -5 to 14 has a spoken name', () => {
+  // The anchors a beginner is taught, in the words a tutor uses.
+  assert.equal(G.staffPosName(0), 'on the bottom line');
+  assert.equal(G.staffPosName(1), 'in the first space');
+  assert.equal(G.staffPosName(2), 'on the second line');
+  assert.equal(G.staffPosName(3), 'in the second space');
+  assert.equal(G.staffPosName(4), 'on the middle line');
+  assert.equal(G.staffPosName(7), 'in the top space');
+  assert.equal(G.staffPosName(8), 'on the top line');
+  // Off the staff: ledgers and the spaces around them.
+  assert.equal(G.staffPosName(-1), 'just below the staff');
+  assert.equal(G.staffPosName(-2), 'on the first ledger line below the staff');
+  assert.equal(G.staffPosName(-4), 'on the second ledger line below the staff');
+  assert.equal(G.staffPosName(-5), 'below the second ledger line below the staff');
+  assert.equal(G.staffPosName(9), 'just above the staff');
+  assert.equal(G.staffPosName(10), 'on the first ledger line above the staff');
+  assert.equal(G.staffPosName(14), 'on the third ledger line above the staff');
+  // Every position in range yields a non-empty, distinct-side phrase.
+  for (let p = -5; p <= 14; p++) {
+    const w = G.staffPosName(p);
+    assert.ok(typeof w === 'string' && w.length > 5, `position ${p} has no words`);
+    if (p < 0) assert.match(w, /below/, `position ${p} should say "below"`);
+    if (p > 8) assert.match(w, /above/, `position ${p} should say "above"`);
+  }
+});
+
 test('every note in the app\'s range is drawable: at most three ledger lines', () => {
   for (let midi = 23; midi <= 55; midi++) {
     const s = G.staffSpec(midi);
@@ -177,6 +237,18 @@ test('a clean streak builds combo and pays rising XP', () => {
   assert.equal(third.gain, 14);
   assert.equal(third.combo, 3);
   assert.equal(run.state.zaps, 3);
+});
+
+test('cleanZaps counts first-try finds only — the metric best runs are made of', () => {
+  const run = G.createRun({ pace: 'steady' });
+  run.judge('clean');
+  run.judge('wrong');
+  run.judge('dirty');       // hunted find: a zap, but not a clean one
+  run.judge('assisted');    // shown answer: neither
+  run.judge('breach');
+  run.judge('clean');
+  assert.equal(run.state.zaps, 3, 'clean + dirty both zap');
+  assert.equal(run.state.cleanZaps, 2, 'only the two clean finds count');
 });
 
 test('a wrong note breaks the combo; the eventual find pays a little, not nothing', () => {

@@ -132,7 +132,7 @@
       <h2>Find it</h2>
       <div class="card gv-card">
         <div class="gv-hud">
-          <span class="gv-hearts" id="gvHearts" aria-label="stage lights left"></span>
+          <span class="gv-hearts" id="gvHearts" role="img" aria-label="stage lights left"></span>
           <span class="t-data gv-level" id="gvLevel">LV 1 · GARAGE ROADIE</span>
           <span class="t-data gv-combo hidden" id="gvCombo">STREAK ×2</span>
           <span class="t-data gv-xplabel" aria-hidden="true">XP</span>
@@ -143,8 +143,12 @@
           <canvas id="gvScene" width="320" height="150" aria-hidden="true"></canvas>
           <div class="gv-over hidden" id="gvOver">
             <b class="gv-over-title">LIGHTS OUT</b>
-            <p class="t-caption" id="gvOverText" role="status"></p>
+            <!-- Two facts only ("14 notes · best 21 clean") — the XP-survives
+                 sentence sits below the button at caption size, so the overlay
+                 fits inside the scene frame at phone width. -->
+            <p class="t-caption gv-over-facts" id="gvOverText" role="status"></p>
             <button class="btn primary" id="gvRestart">Back on stage</button>
+            <p class="t-caption gv-over-xp" id="gvOverXp"></p>
           </div>
         </div>
         <!-- The readable fuse plus, in the last five seconds, a plain seconds
@@ -167,7 +171,7 @@
         <div class="heard" id="fHeard">&nbsp;</div>
         <div class="row" style="justify-content:center; margin-top:8px">
           <button class="btn small" id="fHint">Hint</button>
-          <button class="btn small" id="fSkip">Skip →</button>
+          <button class="btn small" id="fSkip">Skip <span aria-hidden="true">→</span></button>
         </div>
         <div class="stat-row">
           <!-- "correct / streak / asked" read as one rule and was two: hunting for
@@ -179,6 +183,8 @@
           <div class="stat"><b id="fStreak">0</b><span>streak</span></div>
           <div class="stat"><b id="fAsked">0</b><span>questions</span></div>
         </div>
+        <!-- These four counters reset with the page — say so. -->
+        <p class="t-caption gv-sesslabel">this session</p>
         <!-- Below the stat row on purpose: a hint diagram appearing here must
              never shift Hint/Skip or the stats (the controls sit above). -->
         <div id="fBoard"></div>
@@ -206,6 +212,8 @@
           </div>
         </div>
         <p class="t-caption" id="gvPaceNote" style="margin:var(--sp2) 0 0"></p>
+        <!-- The XP premium is real and was undisclosed: say it once, plainly. -->
+        <p class="t-caption" id="gvXpNote" style="margin:var(--sp2) 0 0">Sheet music and faster paces pay more XP.</p>
         <div class="row" style="margin-top:var(--sp3); gap:var(--sp5); flex-wrap:wrap; align-items:flex-start">
           <div>
             <span class="t-caption">Strings</span>

@@ -336,9 +336,16 @@ test('sheet-music mode poses the question on a bass-clef staff, and the hint nam
     });
     await page.click('#gvPromptSeg button[data-r="staff"]');
     await page.waitForSelector('#gvStaffWrap:not(.hidden)', { timeout: 3000 });
+    // The prompt is a difficulty axis: switching it starts a NEW run and a
+    // fresh question, so the name to hide/reveal is the app's own pick.
+    const name = await page.evaluate(() => q.name);
+    assert.ok(name, 'no question was posed after switching to reading mode');
     const posed = await page.textContent('#fQ');
     assert.match(posed, /Play this note on the/, 'the reading question should not name the note');
-    assert.doesNotMatch(posed, /\bG\b/, 'the note name leaked into a reading question');
+    // The question names the STRING, never the note — the note-name markup
+    // (.gv-note) must be absent until a hint spends the rung.
+    assert.equal(await page.evaluate(() => !!document.querySelector('#fQ .gv-note')), false,
+      'the note name leaked into a reading question');
     // The staff canvas must actually carry ink — lines, clef and a note head.
     const inked = await page.evaluate(() => {
       const cv = document.getElementById('gvStaff');
@@ -350,7 +357,8 @@ test('sheet-music mode poses the question on a bass-clef staff, and the hint nam
     assert.ok(inked > 300, 'the staff canvas is blank (' + inked + ' inked pixels)');
     // First hint in reading mode is the note's NAME.
     await page.click('#fHint');
-    assert.match(await page.textContent('#fQ'), /G/, 'the hint should reveal the name');
+    assert.ok(new RegExp(name.replace('#', '[#♯]')).test(await page.textContent('#fQ')),
+      'the hint should reveal the name (' + name + ')');
     assert.deepEqual(app.errors, [], 'page errors');
   } finally { await app.close(); }
 });

@@ -114,16 +114,20 @@
 .gv-fusebar i{display:block; height:100%; width:100%;
   background:repeating-linear-gradient(90deg,
     #C77F1F 0 4px, #DE9630 4px 8px, var(--root) 8px 12px, #DE9630 12px 16px);}
+/* .low: the brighter --bad (#E4675C) is the DOMINANT stripe — it holds ≥3:1
+   against the track; the deep #A6281A is only the thin seam between steps. */
 .gv-fusebar.low i{background:repeating-linear-gradient(90deg,
-    var(--bad) 0 4px, #A6281A 4px 8px);}
+    var(--bad) 0 9px, #A6281A 9px 12px);}
 /* The last-five-seconds numeral: mono, high contrast, beside the bar. */
 .gv-fusesec{position:absolute; right:0; top:-7px; font-family:var(--mono);
-  font-size:12px; font-weight:800; color:var(--t0, #F6F2EC); line-height:1;
+  font-size:12px; font-weight:800; color:var(--t1); line-height:1;
   background:var(--s0); border:1px solid var(--line); border-radius:2px;
   padding:2px 4px; font-variant-numeric:tabular-nums;}
 .gv-fusebar.low ~ .gv-fusesec{color:var(--bad); border-color:var(--bad);}
+/* Gated on BOTH reduced-motion signals: the OS media query, and the game's
+   own "Effects: Calm" toggle (the .calm class on #secFind). */
 @media (prefers-reduced-motion: no-preference){
-  .gv-fusebar.low i{animation:gv-fuse-pulse .9s ease-in-out infinite;}
+  #secFind:not(.calm) .gv-fusebar.low i{animation:gv-fuse-pulse .9s ease-in-out infinite;}
   @keyframes gv-fuse-pulse{0%,100%{opacity:1;} 50%{opacity:.55;}}
 }
 .gv-xp{flex:1 1 60px; min-width:60px; height:7px; background:var(--s2);
@@ -134,9 +138,17 @@
   background:linear-gradient(90deg, #C77F1F, var(--root)); transition:width var(--slow) var(--ease);}
 .gv-over{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center;
   justify-content:center; gap:6px; text-align:center; background:rgba(14,13,12,.92);
-  border-radius:var(--r-sm); padding:10px;}
+  border-radius:var(--r-sm); padding:10px; overflow:hidden;}
 .gv-over-title{font-family:var(--mono); font-size:22px; letter-spacing:.18em; color:var(--root);
   text-shadow:0 0 14px rgba(242,169,59,.45);}
+.gv-over-facts{margin:0;}
+.gv-over-xp{margin:0; color:var(--t4);}
+/* Phone width: the scene frame is ~320-340px tall at 1×, so the overlay
+   shrinks to fit — title down to 17px, everything on the caption scale. */
+@media (max-width:759px){
+  .gv-over-title{font-size:17px; letter-spacing:.12em;}
+  .gv-over{gap:4px; padding:8px;}
+}
 .gv-staffwrap{display:flex; justify-content:center; margin:4px 0 2px;}
 /* Fixed INTEGER widths (1× or 2× the backing store) — fractional scales smear
    the staff lines. 170×150 → 340 on wide screens; the clef ref 300 → 600. */
@@ -148,8 +160,14 @@
 /* Verdicts land as one committed banner per judged note — the pop replays
    because the class is re-applied per judgement, and nothing else moves. */
 #secFind .verdict{min-height:34px; font-size:17px;}
+/* Idle dead-space gets a faint quaver instead of a blank band. CSS-generated
+   on purpose: the e2e suite samples #fVerdict's TEXT for stability and
+   emptiness, and a ::before leaves the text exactly as it was. */
+#secFind .verdict:not(.ok):not(.no):not(.warn)::before{
+  content:'♪'; color:var(--t4); opacity:.5; font-weight:400;}
 @media (prefers-reduced-motion: no-preference){
-  #secFind .verdict.ok, #secFind .verdict.no, #secFind .verdict.warn{
+  #secFind:not(.calm) .verdict.ok, #secFind:not(.calm) .verdict.no,
+  #secFind:not(.calm) .verdict.warn{
     animation:gv-pop var(--cheer) var(--pop);}
   @keyframes gv-pop{0%{transform:scale(.85); opacity:.4;} 100%{transform:scale(1); opacity:1;}}
 }
@@ -166,7 +184,13 @@
 #secFind .stat-row .stat{background:var(--s1); border:1px solid var(--line);
   box-shadow:inset 0 1px 0 rgba(246,242,236,.05), inset 0 -1px 0 rgba(0,0,0,.35);}
 #secFind .stat-row .stat span{font-family:var(--mono); letter-spacing:.04em;
-  text-transform:uppercase; font-size:10.5px;}
+  text-transform:uppercase; font-size:13px;}
+/* Four tiles with 13px labels: tighter padding so they hold one row on a
+   380px phone; narrower than ~320px the row is allowed to wrap (see below). */
+#secFind .stat-row{gap:6px;}
+#secFind .stat-row .stat{padding:6px 8px; min-width:64px;}
+/* The stat row measures THIS SITTING only — one quiet label says so. */
+.gv-sesslabel{text-align:center; margin:2px 0 0; color:var(--t4);}
 /* Squarer, mono, pixel-flavoured — the DOM buttons on the stage stop
    pretending they belong to a different app than the canvas above them. */
 #secFind #fHint, #secFind #fSkip{font-family:var(--mono); background:var(--s1);
@@ -181,7 +205,7 @@
 #secFind details[open] summary::before{content:'▾';}
 /* Three tiles side by side in a narrow card need a floor, or "correct" and
    "streak" collapse to different widths and the row reads as broken. */
-.stat-row{display:flex; gap:8px; justify-content:center; margin:8px 0 0;}
+.stat-row{display:flex; gap:8px; justify-content:center; margin:8px 0 0; flex-wrap:wrap;}
 .stat-row .stat{padding:6px 12px; min-width:74px;}
 /* ---- drills ---- */
 #secDrill label span{display:block; margin-bottom:3px;}
