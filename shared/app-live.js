@@ -160,7 +160,7 @@ function tick(){
   else if (mode === 'find') {
     /* No streamed "hearing X…" text here any more — raw detector output
        flipping under the question 18×/second WAS the flicker the game
-       replaced. While a note settles, the hero gets a note bubble on the
+       replaced. While a note settles, a quiet quaver rises through the
        canvas (no reflow, no text). The one sentence kept is committed,
        rare and useful: the still-ringing-from-before nudge. */
     if (reading.state === 'listening') {
@@ -276,10 +276,10 @@ function renderTuner(pitch, reading){
 /* ================= find it — FRET QUEST =================
    The note-memorisation mini game. The detection engine underneath is
    unchanged (tracker → onStableNote → checkAnswer → recordAnswer), but the
-   screen is a game: a pixel hero, one monster at a time carrying the note
-   being asked for, and the bass as the only controller. Three difficulty
-   axes: WORLD (how much neck — the shared tier), PACE (time pressure and
-   hearts), and PROMPT (note names, bass-clef staff, or a mix). */
+   screen is a calm pixel dive: the note being asked for floats mid-water
+   in a bubble, and the bass is the only controller. Three difficulty
+   axes: DEPTH (how much neck — the shared tier), PACE (time pressure and
+   air), and PROMPT (note names, bass-clef staff, or a mix). */
 let q = null, hintLevel = 0, qStart = 0, wrongThisQ = 0, lastProgressAt = 0, outOfTuneThisQ = false;
 /* `score` = questions you eventually found; `clean` = found on the first attempt,
    which is the one the stored accuracy is built from. */
@@ -288,15 +288,15 @@ const sess = { find:{ score:0, clean:0, streak:0, asked:0 }, echo:{ score:0, str
 const GAME = window.BassGame;
 const GV_KEY = 'bassTrainer.game.v1';
 /* Everything the game owns beyond the question itself. XP is persistent —
-   a run ending costs hearts, never progress. */
+   running out of air ends a dive, never progress. */
 const GV = {
   pace:'chill', prompt:'name', xp:0, best:{ steady:0, turbo:0 },
   run:null,
   promptKind:'name',     // what THIS question shows ('mix' resolves per question)
   phase:'idle',          // idle | fight | zap | breach | over
-  spawnAt:0,             // when the monster appeared, for the pace clock
-  monster:null,          // { sp, taunt } — taunt is the last-miss timestamp
-  mx:230, my:0,          // where the monster was last drawn (zap fx start there)
+  spawnAt:0,             // when the note bubble appeared, for the pace clock
+  bubble:null,           // { wobble, drift } — wobble is the last-miss timestamp
+  bx:230, by:58,         // where the bubble was last drawn (pop fx start there)
   zapT:0, breachT:0,
   fx:[],                 // particles and floating toasts
   hearingUntil:0,        // canvas note-bubble while a pluck settles
@@ -335,7 +335,7 @@ function gvJudge(kind){
   GV.xp = GV.run.state.xp;
   gvSave();
   renderHud();
-  if (r.leveled) gvToast('LEVEL UP — ' + GAME.levelTitle(r.level).toUpperCase());
+  if (r.leveled) gvToast('NEW DEPTH — ' + GAME.levelTitle(r.level).toUpperCase());
   else if (r.gain > 0) gvToast('+' + r.gain + ' XP');
   return r;
 }
@@ -352,7 +352,7 @@ function renderHud(){
   if (combo){
     const c = s ? s.combo : 0;
     combo.classList.toggle('hidden', c < 2);
-    combo.textContent = 'COMBO ×' + c;
+    combo.textContent = 'STREAK ×' + c;
   }
   const bar = document.getElementById('gvXpBar');
   if (bar) bar.style.width = Math.round(GAME.levelProgress(GV.xp).frac * 100) + '%';
@@ -443,18 +443,17 @@ function showHint(){
 /* ---- the game's turn results ---- */
 function gvSpawn(){
   if (GV.run && GV.run.state.over) return;   // the over screen owns the scene
-  const kinds = MONSTERS.slice(0, Math.min(tier + 1, MONSTERS.length));
-  GV.monster = { sp: kinds[Math.floor(Math.random() * kinds.length)], taunt:0 };
+  GV.bubble = { wobble:0, drift: Math.random() * Math.PI * 2 };
   GV.phase = 'fight';
   GV.spawnAt = performance.now();
 }
 function gvZap(){
   GV.phase = 'zap';
   GV.zapT = performance.now();
-  if (!REDUCED) gvBurst(GV.mx + 12, GV.my + 10, '#B58BF5');
+  if (!REDUCED) gvBurst(GV.bx, GV.by, 'rgba(246,242,236,.8)');
   if (GV.promptKind === 'staff') drawStaff(document.getElementById('gvStaff'), q.midi, { showName:true });
 }
-/** The pace clock ran out: the monster reaches the hero. A failed recall,
+/** The pace clock ran out: the bubble reached the surface. A failed recall,
     banked exactly like a first-attempt miss (unless a miss already did). */
 function gvBreach(){
   if (!q) return;
@@ -467,7 +466,7 @@ function gvBreach(){
   wrongThisQ++;          // the eventual find (next question) must not count clean
   const r = gvJudge('breach');
   const v = document.getElementById('fVerdict');
-  v.textContent = 'It broke through! That was ' + q.name + ' — ' + q.sn + ' string, fret ' + q.f + '.';
+  v.textContent = 'It floated away — that was ' + q.name + ', ' + q.sn + ' string, fret ' + q.f + '.';
   v.className = 'verdict warn';
   updateFindStats();
   if (r && r.over){ gvGameOver(); return; }
@@ -478,14 +477,14 @@ function gvGameOver(){
   const s = GV.run.state;
   if (s.zaps > (GV.best[GV.pace] || 0)){ GV.best[GV.pace] = s.zaps; gvSave(); }
   const txt = document.getElementById('gvOverText');
-  if (txt) txt.textContent = s.zaps + ' zapped this run · best on ' +
+  if (txt) txt.textContent = s.zaps + ' notes found this dive · best on ' +
     GAME.PACES[GV.pace].label + ': ' + GV.best[GV.pace] +
-    ' · your XP is kept — still ' + GAME.levelTitle(GAME.levelFor(GV.xp)) + '.';
+    ' · your XP surfaces with you — still ' + GAME.levelTitle(GAME.levelFor(GV.xp)) + '.';
   const over = document.getElementById('gvOver');
   if (over) over.classList.remove('hidden');
-  document.getElementById('fQ').textContent = 'Run over — play again?';
+  document.getElementById('fQ').textContent = 'Out of air — dive again?';
   document.getElementById('fSub').textContent =
-    'Chill pace has no hearts, if you would rather practise without the clock.';
+    'Drift pace has no air to lose, if you would rather float without the clock.';
   const wrap = document.getElementById('gvStaffWrap');
   if (wrap) wrap.classList.add('hidden');
 }
@@ -506,97 +505,37 @@ function blit(ctx, sp, x, y, s){
     }
   }
 }
-const HERO = sprite(
-  { h:'#5C4630', s:'#E8B98C', e:'#14110F', j:'#4A5C6E', J:'#5D7285',
-    p:'#33383E', x:'#20232A', b:'#F2A93B', B:'#C77F1F', n:'#C9C3B8' },
-  ['....hhhh....',
-   '...hhhhhh...',
-   '...ssssss...',
-   '...sseess...',
-   '...ssssss...',
-   '....ssss....',
-   '...jJJJJj...',
-   '..jjJJJJjj..',
-   '.ssjjjjjjs..',
-   '..jjbbnnnn..',
-   '..jbBbbn....',
-   '..jbbBb.....',
-   '...pppp.....',
-   '...pp.pp....',
-   '...pp.pp....',
-   '..xxx.xxx...']);
-const MONSTERS = [
-  // World 1 — slime
-  sprite({ g:'#45C486', G:'#2E8F5F', w:'#F6F2EC', p:'#14110F', m:'#14110F' },
-  ['...gggggg...',
-   '..gggggggg..',
-   '.gggggggggg.',
-   '.ggwwggwwgg.',
-   '.ggwpggwpgg.',
-   'gggggggggggg',
-   'ggGGmmmmGGgg',
-   '.gGGGGGGGGg.',
-   '..GGGGGGGG..']),
-  // World 2 — bat
-  sprite({ w:'#6E5B8E', b:'#4A3B66', e:'#F2A93B', f:'#F6F2EC' },
-  ['ww....bb....ww',
-   'www..bbbb..www',
-   'wwwwbbbbbbwwww',
-   '.wwbbebbebbww.',
-   '..wbbbbbbbbw..',
-   '...bbbbbbbb...',
-   '....bfbbfb....',
-   '.....b..b.....']),
-  // World 3 — skeleton
-  sprite({ w:'#E8E2D4', d:'#8C8478', e:'#14110F' },
-  ['....wwww....',
-   '...wwwwww...',
-   '...wewwew...',
-   '...wwwwww...',
-   '....wddw....',
-   '....wwww....',
-   '.....ww.....',
-   '...wwwwww...',
-   '..w.wwww.w..',
-   '..w.wddw.w..',
-   '....wwww....',
-   '.....ww.....',
-   '....w..w....',
-   '....w..w....',
-   '...ww..ww...']),
-  // World 4 — ghost
-  sprite({ v:'#BFD3E6', d:'#8FA6BD', e:'#14110F', m:'#14110F' },
-  ['....vvvv....',
-   '..vvvvvvvv..',
-   '.vvvvvvvvvv.',
-   '.vveevveevv.',
-   '.vvvvvvvvvv.',
-   '.vvvvmmvvvv.',
-   '.vvvvvvvvvv.',
-   '.vvvvvvvvvv.',
-   '.vdvvdvvdvv.',
-   '.v.vv.vv.v..']),
-  // World 5 — imp
-  sprite({ r:'#E4675C', d:'#A33F36', h:'#F2A93B', e:'#14110F', w:'#F6F2EC' },
-  ['.h........h.',
-   '.hh..rr..hh.',
-   '..rrrrrrrr..',
-   '.rrrrrrrrrr.',
-   '.rreerreerr.',
-   '.rrrrrrrrrr.',
-   '..rrwwwwrr..',
-   '...rrrrrr...',
-   '..rrrddrrr..',
-   '..rr.dd.rr..',
-   '..d..dd..d..',
-   '.....dd.....']),
-];
+/* Ambient sea life — scenery, not targets. The fish drift by on their own
+   schedule and never react to anything; nothing in this water wants you. */
+const FISH = sprite({ b:'#E8A15B', d:'#C77F1F', e:'#14110F' },
+  ['..bbbb...',
+   '.bbbbbb.d',
+   'bebbbbbdd',
+   '.bbbbbb.d',
+   '..bbbb...']);
+const FISH2 = sprite({ b:'#6FA8B8', d:'#4E7F8F', e:'#14110F' },
+  ['..bbb..d',
+   'bebbbbdd',
+   '..bbb..d']);
+const TURTLE = sprite({ s:'#3F7D5A', S:'#2E5F45', f:'#7FB08D', e:'#14110F' },
+  ['...ssssss....',
+   '..sSSsSSss...',
+   'fsSSsSSsSSsfe',
+   '..sSSsSSss.f.',
+   '...ssssss....']);
+/* The five depth zones — one per tier. Deeper water is darker, calmer and
+   harder, exactly like the neck. */
 const WORLDS = [
-  { name:'Meadow',           sky:'#1E2A24', far:'#243B2E', ground:'#2E4634', lip:'#3A5940' },
-  { name:'Cavern',           sky:'#1A2028', far:'#232B36', ground:'#2A3340', lip:'#364253' },
-  { name:'Catacombs',        sky:'#241F1B', far:'#2E2721', ground:'#3A322A', lip:'#4A4034' },
-  { name:'Deep Keep',        sky:'#201A2E', far:'#291F3D', ground:'#33294D', lip:'#41345F' },
-  { name:'Chromatic Castle', sky:'#2A1A16', far:'#38221B', ground:'#452A20', lip:'#573528' },
+  { name:'Sunlit Shallows', top:'#1E5B66', bot:'#154550', sand:'#8A7A55', sandLo:'#6E6144',
+    kelp:'#3F8A62', rays:true,  glow:false, fish:3 },
+  { name:'Kelp Forest',     top:'#1A505A', bot:'#123C46', sand:'#7C6E4E', sandLo:'#61553C',
+    kelp:'#357A56', rays:true,  glow:false, fish:2 },
+  { name:'Coral Reef',      top:'#174049', bot:'#0F3038', sand:'#77624A', sandLo:'#5C4B38',
+    kelp:'#2E6B4C', rays:false, glow:false, fish:2, coral:true },
+  { name:'Twilight Zone',   top:'#12303E', bot:'#0B2230', sand:'#4E4A42', sandLo:'#3B3833',
+    kelp:'#26523F', rays:false, glow:false, fish:1 },
+  { name:'The Abyss',       top:'#0B1D2A', bot:'#06141E', sand:'#33322E', sandLo:'#262622',
+    kelp:'#1E4234', rays:false, glow:true,  fish:1 },
 ];
 function gvBurst(x, y, color){
   for (let i = 0; i < 12; i++){
@@ -623,95 +562,146 @@ function gvLoop(on){
   if (on && !GV.raf) GV.raf = requestAnimationFrame(gvFrame);
   if (!on && GV.raf){ cancelAnimationFrame(GV.raf); GV.raf = null; }
 }
+/** A circle built from 2px blocks, optionally rim-only — bubbles, pixel-style. */
+function pxCircle(ctx, cx, cy, r, fill, rim){
+  for (let dy = -r; dy <= r; dy += 2){
+    const w = Math.floor(Math.sqrt(Math.max(0, r * r - dy * dy)));
+    if (fill){ ctx.fillStyle = fill; ctx.fillRect(cx - w, cy + dy, w * 2, 2); }
+    if (rim){ ctx.fillStyle = rim; ctx.fillRect(cx - w, cy + dy, 2, 2);
+              ctx.fillRect(cx + w - 2, cy + dy, 2, 2); }
+  }
+}
 function drawScene(t){
   const cv = document.getElementById('gvScene');
   if (!cv) return;
   const ctx = cv.getContext('2d');
-  const W = cv.width, H = cv.height, GY = 122;
+  const W = cv.width, H = cv.height, SANDY = 132;
   const world = WORLDS[Math.min(tier, WORLDS.length - 1)];
   const now = performance.now();
+  const drift = REDUCED ? 0 : 1;             // ambient motion switch
   ctx.clearRect(0, 0, W, H);
-  ctx.fillStyle = world.sky;  ctx.fillRect(0, 0, W, GY);
-  // fixed "stars"/dust — deterministic, so nothing twinkles or crawls
-  ctx.fillStyle = world.lip;
-  for (let i = 0; i < 14; i++) ctx.fillRect((i * 53 + 17) % W, (i * 31 + 9) % 52, 2, 2);
-  ctx.fillStyle = world.far;
-  for (let i = 0; i < 7; i++){
-    const bw = 34 + (i * 29) % 22, bh = 18 + (i * 41) % 26;
-    ctx.fillRect(i * 50 - 8, GY - bh, bw, bh);
-  }
-  ctx.fillStyle = world.ground; ctx.fillRect(0, GY, W, H - GY);
-  ctx.fillStyle = world.lip;    ctx.fillRect(0, GY, W, 3);
 
-  // hero, breathing gently (still under reduced motion)
-  const bob = REDUCED ? 0 : Math.round(Math.sin(t / 420) * 1.5);
-  blit(ctx, HERO, 28, GY - 32 + bob, 2);
-  // a pluck settling: a note bubble over the hero — canvas, not layout
+  // water: two flat bands and a soft blend line — deeper zone, darker water
+  ctx.fillStyle = world.top; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = world.bot; ctx.fillRect(0, 64, W, H - 64);
+  ctx.fillStyle = world.top; ctx.globalAlpha = .5; ctx.fillRect(0, 64, W, 10); ctx.globalAlpha = 1;
+
+  // sun rays in the shallow zones, slanting gently
+  if (world.rays){
+    ctx.fillStyle = 'rgba(246,242,236,.05)';
+    for (let b = 0; b < 3; b++){
+      const x0 = 40 + b * 104 + (drift ? Math.sin(t / 4000 + b) * 6 : 0);
+      for (let y = 0; y < SANDY; y += 4) ctx.fillRect(x0 + y * 0.3, y, 12 - b * 2, 4);
+    }
+  }
+  // bioluminescent motes in the abyss — the only light down there
+  if (world.glow){
+    ctx.fillStyle = 'rgba(111,200,214,.5)';
+    for (let i = 0; i < 12; i++){
+      const gy = (i * 37 + (drift ? t / 90 : 0)) % (SANDY - 8);
+      ctx.fillRect((i * 61 + 23) % W, SANDY - 8 - gy, 2, 2);
+    }
+  }
+
+  // sea floor
+  ctx.fillStyle = world.sand;   ctx.fillRect(0, SANDY, W, H - SANDY);
+  ctx.fillStyle = world.sandLo; ctx.fillRect(0, SANDY + 8, W, H - SANDY - 8);
+  ctx.fillStyle = 'rgba(246,242,236,.08)'; ctx.fillRect(0, SANDY, W, 2);
+
+  // kelp, swaying from the floor up
+  ctx.fillStyle = world.kelp;
+  for (const kx of [22, 54, 268, 296]){
+    const stalks = 9 + (kx % 3);
+    for (let j = 0; j < stalks; j++){
+      const sway = drift ? Math.sin(t / 1100 + kx + j * 0.55) * (2 + j * 0.4) : 0;
+      ctx.fillRect(kx + sway, SANDY - 6 - j * 6, 3, 6);
+    }
+  }
+  // coral heads on the reef
+  if (world.coral){
+    const CORAL = [['#C96A5A', 120, 10], ['#D9A05B', 176, 8], ['#B58BF5', 220, 6]];
+    for (const [col, cx, ch] of CORAL){
+      ctx.fillStyle = col;
+      ctx.fillRect(cx, SANDY - ch, 4, ch);
+      ctx.fillRect(cx - 5, SANDY - ch + 3, 4, ch - 3);
+      ctx.fillRect(cx + 5, SANDY - ch + 4, 4, ch - 4);
+    }
+  }
+
+  // ambient fish, drifting on their own slow schedules (never targets)
+  const kinds = [FISH, FISH2, TURTLE];
+  for (let i = 0; i < world.fish; i++){
+    const sp = kinds[i % kinds.length];
+    const speed = 26 + i * 9;                        // px per second, leisurely
+    const span = W + 60;
+    const fx = W + 30 - ((drift ? t / 1000 * speed : 60 + i * 90) % span);
+    const fy = 26 + i * 24 + (drift ? Math.sin(t / 900 + i * 2) * 3 : 0);
+    ctx.globalAlpha = .55;
+    blit(ctx, sp, fx, fy, 2);
+    ctx.globalAlpha = 1;
+  }
+
+  // small bubbles rising off the floor, always
+  ctx.fillStyle = 'rgba(246,242,236,.25)';
+  for (let i = 0; i < 5; i++){
+    const by = SANDY - ((drift ? t / 24 : 40) + i * 47) % (SANDY - 12);
+    ctx.fillRect((i * 67 + 31) % W, by, i % 2 ? 2 : 3, i % 2 ? 2 : 3);
+  }
+
+  // a pluck settling: one quiet quaver rising bottom-left — canvas, no reflow
   if (now < GV.hearingUntil){
-    ctx.fillStyle = '#B58BF5';
+    ctx.fillStyle = 'rgba(246,242,236,.6)';
     ctx.font = 'bold 12px monospace'; ctx.textAlign = 'center';
-    ctx.fillText('♪', 40, GY - 40 + bob);
+    ctx.fillText('♪', 26, 96 - (drift ? (t % 600) / 60 : 0));
   }
 
-  // monster position for this frame
-  const m = GV.monster;
-  if (m && GV.phase !== 'over'){
-    const sp = m.sp, mh = sp.h * 2;
-    let mx;
+  /* THE note bubble: the question, floating mid-water. On Drift it just
+     bobs; on a timed pace it rises slowly toward the surface — reaching it
+     is the miss. A wrong answer wobbles it; the right answer pops it. */
+  const b = GV.bubble;
+  if (b && GV.phase !== 'over'){
     const ms = GAME.approachMs(GV.pace, GAME.levelFor(GV.xp));
-    if (GV.phase === 'breach'){
-      // it runs past the hero and off the screen
-      const p = Math.min(1, (now - GV.breachT) / 500);
-      mx = GV.mx - (GV.mx + 40) * p;
-    } else if (ms == null){
-      // chill: walk in, then loiter at a polite distance
-      const entry = Math.min(1, (now - GV.spawnAt) / 700);
-      mx = 300 - 80 * entry + (REDUCED ? 0 : Math.round(Math.sin(t / 380) * 2));
+    let by;
+    const bx = 230 + (drift ? Math.sin(t / 1700 + b.drift) * 8 : 0);
+    if (ms == null){
+      by = 58 + (drift ? Math.sin(t / 1300 + b.drift) * 5 : 0);
     } else {
       const p = Math.min(1, (now - GV.spawnAt) / ms);
-      mx = 300 - (300 - 70) * p;
+      by = 104 - (104 - 14) * p;                     // floor-light up to the surface
     }
-    // a miss makes it lunge and flash — feedback without any text flipping
-    let dx = 0;
-    if (m.taunt && now - m.taunt < 300 && !REDUCED){
-      dx = -Math.round(Math.sin(((now - m.taunt) / 300) * Math.PI) * 6);
-      ctx.fillStyle = 'rgba(228,103,92,.18)';
-      ctx.fillRect(mx - 6, GY - mh - 26, sp.rows[0].length * 2 + 12, mh + 26);
+    if (GV.phase === 'breach'){
+      // it slips up and off the top of the water
+      const p = Math.min(1, (now - GV.breachT) / 500);
+      by = 14 - 34 * p;
     }
+    let wob = 0;
+    if (b.wobble && now - b.wobble < 340 && !REDUCED)
+      wob = Math.round(Math.sin(((now - b.wobble) / 340) * Math.PI * 3) * 3);
     const zapAge = GV.phase === 'zap' ? now - GV.zapT : -1;
-    if (GV.phase !== 'zap' || zapAge < 160){
-      const mbob = REDUCED ? 0 : Math.round(Math.sin(t / 300) * 1.5);
-      blit(ctx, sp, mx + dx, GY - mh + mbob, 2);
-      GV.mx = mx; GV.my = GY - mh;
-      // the sign it carries: the note name, or a quaver for reading mode
+    if (zapAge < 0 || zapAge < 60){                  // popped bubbles leave only sparkle
+      const R = 17;
+      pxCircle(ctx, bx + wob, by, R, 'rgba(246,242,236,.10)', 'rgba(246,242,236,.35)');
+      ctx.fillStyle = 'rgba(246,242,236,.5)';
+      ctx.fillRect(bx + wob - 8, by - 9, 4, 2); ctx.fillRect(bx + wob - 10, by - 7, 2, 4);
       const label = GV.promptKind === 'staff' ? '♪?' : (q ? q.name : '');
       if (label){
-        const sw = 30, sx = mx + sp.rows[0].length - sw / 2 + dx, sy = GY - mh - 24;
-        ctx.fillStyle = '#3A2A12'; ctx.fillRect(sx, sy, sw, 17);
-        ctx.fillStyle = '#F2A93B'; ctx.fillRect(sx, sy, sw, 2);
-        ctx.font = 'bold 12px monospace'; ctx.textAlign = 'center';
-        ctx.fillStyle = '#F2A93B';
-        ctx.fillText(label, sx + sw / 2, sy + 13);
+        ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
+        ctx.fillStyle = '#F6F2EC';
+        ctx.fillText(label, bx + wob, by + 5);
       }
-    }
-    // the zap bolt: hero → monster in the animation's first 160ms
-    if (zapAge >= 0 && zapAge < 160){
-      const p = zapAge / 160;
-      const bx = 54 + (GV.mx - 54) * p, by = GY - 22 - Math.sin(p * Math.PI) * 26;
-      ctx.fillStyle = '#E5D6FF'; ctx.fillRect(bx, by, 4, 4);
-      ctx.fillStyle = '#B58BF5'; ctx.fillRect(bx - 4, by + 1, 4, 2);
+      GV.bx = bx; GV.by = by;
     }
   }
 
-  // particles and toasts
+  // particles (bubble sparkle drifts UP — this is water) and floating toasts
   const keep = [];
   for (const f of GV.fx){
     const age = now - f.born;
-    if (f.kind === 'p' && age < 550){
+    if (f.kind === 'p' && age < 700){
       const s = age / 1000;
       ctx.fillStyle = f.color;
-      ctx.globalAlpha = 1 - age / 550;
-      ctx.fillRect(f.x + f.vx * s, f.y + f.vy * s + 40 * s * s, 3, 3);
+      ctx.globalAlpha = 1 - age / 700;
+      ctx.fillRect(f.x + f.vx * s, f.y + f.vy * s - 26 * s, 2, 2);
       ctx.globalAlpha = 1;
       keep.push(f);
     } else if (f.kind === 't' && age < 1300){
@@ -875,9 +865,9 @@ function onStableNote(reading){
     if (verdict === 'correct'){
       const clean = wrongThisQ === 0;
       vEl.textContent = clean
-        ? ['ZAP! ' + q.name + ' — first try.', q.name + ' — clean hit!',
-           'Direct hit. That was ' + q.name + '.', q.name + '! Monster dispatched.'][Math.floor(Math.random()*4)]
-        : 'There it is — ' + q.name + '. The hunt got there.';
+        ? [q.name + ' — first touch.', q.name + '. Lovely.',
+           'Pop — that was ' + q.name + '.', q.name + ', clean as still water.'][Math.floor(Math.random()*4)]
+        : 'There it is — ' + q.name + '.';
       vEl.className = 'verdict ok';
       sess.find.score++;
       /* One stored answer per QUESTION, graded on the first attempt — the rule the
@@ -905,7 +895,7 @@ function onStableNote(reading){
       vEl.className = 'verdict no';
       countWrong();
     } else {
-      vEl.textContent = 'That was ' + heardName + ' — the monster wants ' + q.name + '.';
+      vEl.textContent = 'That was ' + heardName + ' — looking for ' + q.name + '.';
       vEl.className = 'verdict no';
       countWrong();
     }
@@ -944,8 +934,8 @@ function onStableNote(reading){
 function countWrong(){
   wrongThisQ++;
   lastProgressAt = performance.now();
-  if (GV.monster) GV.monster.taunt = performance.now();   // it lunges; no text flips
-  gvJudge('wrong');                                       // the combo breaks
+  if (GV.bubble) GV.bubble.wobble = performance.now();   // it wobbles; no text flips
+  gvJudge('wrong');                                      // the streak breaks
   if (wrongThisQ === 1){
     sess.find.streak = 0; sess.find.asked++;
     recordAnswer(false, q, performance.now() - qStart);
@@ -1100,7 +1090,7 @@ function setMode(m){
   pendingPreset = null;
   if (m === 'find' && !q) newQuestion();
   /* The scene animates only while it is on screen; the pace clock lives in
-     the same loop, so leaving the tab also freezes the monster honestly. */
+     the same loop, so leaving the tab also freezes the bubble honestly. */
   gvLoop(m === 'find');
   if (m === 'find') GV.spawnAt = performance.now();   // returning ≠ time served
   if (m === 'echo') newEcho();
@@ -1204,7 +1194,7 @@ function renderGameUI(){
   const ws = document.getElementById('gvWorld');
   if (!ws) return;
   ws.innerHTML = TIERS.map((t,i) =>
-    '<option value="' + i + '"' + (i===tier?' selected':'') + '>World ' + (i+1) + ' · ' +
+    '<option value="' + i + '"' + (i===tier?' selected':'') + '>Depth ' + (i+1) + ' · ' +
     WORLDS[i].name + ' — ' + t.label.replace(/^\d+ · /,'') + '</option>').join('');
   const ps = document.getElementById('gvPaceSeg');
   ps.innerHTML = GAME.PACE_ORDER.map(p =>
@@ -1214,7 +1204,7 @@ function renderGameUI(){
     if (b.dataset.p === GV.pace) return;
     GV.pace = b.dataset.p; gvSave();
     renderGameUI();
-    gvNewRun();          // hearts are a per-run idea; a new pace is a new run
+    gvNewRun();          // air is a per-dive idea; a new pace is a new dive
     newQuestion();
   }));
   document.getElementById('gvPaceNote').textContent = GAME.PACES[GV.pace].detail;
@@ -1279,7 +1269,7 @@ document.getElementById('eShow').addEventListener('click', () => {
   playNote(echoTarget);
 });
 renderTierUI();
-gvNewRun();   // XP loaded, hearts full, before the first question can spawn
+gvNewRun();   // XP loaded, air tanks full, before the first question can spawn
 
 // Offer help when the player stops making progress — whether that is silence,
 // or being stuck holding one wrong note (which fires only a single verdict).
@@ -3435,8 +3425,8 @@ function resume(){
      already failed on a note the player never aimed at it. */
   tracker = C.createTracker({ stableMs:150 });
   if (DR.phase === 'running') DR.lastAdvanceAt = performance.now();
-  /* Coming back to the game: the monster's clock must not count the time
-     spent away — that would be a heart lost to a tab switch. */
+  /* Coming back to the game: the bubble's clock must not count the time
+     spent away — that would be air lost to a tab switch. */
   if (mode === 'find'){ GV.spawnAt = performance.now(); gvLoop(true); }
 }
 

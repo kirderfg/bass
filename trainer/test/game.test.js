@@ -149,8 +149,8 @@ test('levels rise with XP and report the moment they turn over', () => {
   const r = run.judge('clean');
   assert.equal(r.leveled, true, 'crossing the boundary must announce itself');
   assert.equal(r.level, 2);
-  assert.equal(G.levelTitle(1), 'Fret Rookie');
-  assert.equal(G.levelTitle(999), 'Bass Legend', 'titles clamp at the top');
+  assert.equal(G.levelTitle(1), 'Rock Pooler');
+  assert.equal(G.levelTitle(999), 'Deep-Sea Legend', 'titles clamp at the top');
   const prog = G.levelProgress(G.XP_PER_LEVEL + 30);
   assert.equal(prog.into, 30);
 });

@@ -13,14 +13,14 @@
 
   /* ================= paces =================
      The game's second difficulty axis, orthogonal to the neck scope
-     ("world"): how much time pressure a question carries. Chill is the
-     default and can never end a run — hearts are a timed-mode idea. */
+     (the depth zone): how much time pressure a question carries. Drift is
+     the default and can never end a dive — air is a timed-mode idea. */
   const PACES = {
-    chill:  { label: 'Chill',  detail: 'No timer, no hearts — take all night.',
+    chill:  { label: 'Drift',     detail: 'No clock, no air to lose — float and learn.',
               approachMs: null,  hearts: null },
-    steady: { label: 'Steady', detail: 'The monster walks. Reach the hero and you lose a heart.',
+    steady: { label: 'Dive',      detail: 'The note bubble slowly rises. If it reaches the surface, one tank of air goes.',
               approachMs: 14000, hearts: 3 },
-    turbo:  { label: 'Turbo',  detail: 'It runs. For players who already know the neck.',
+    turbo:  { label: 'Free-dive', detail: 'A quick current. For divers who already know the neck.',
               approachMs: 7000,  hearts: 3 },
   };
   const PACE_ORDER = ['chill', 'steady', 'turbo'];
@@ -40,8 +40,8 @@
 
   /* ================= XP, combo, levels ================= */
   const XP_PER_LEVEL = 120;
-  const LEVEL_TITLES = ['Fret Rookie', 'String Scout', 'Neck Navigator', 'Fret Ranger',
-                        'Note Slayer', 'Groove Knight', 'Fretboard Wizard', 'Bass Legend'];
+  const LEVEL_TITLES = ['Rock Pooler', 'Snorkeller', 'Reef Diver', 'Kelp Drifter',
+                        'Wreck Explorer', 'Twilight Diver', 'Abyss Diver', 'Deep-Sea Legend'];
   function levelFor(xp) { return 1 + Math.floor(Math.max(0, xp) / XP_PER_LEVEL); }
   function levelTitle(level) {
     return LEVEL_TITLES[Math.min(LEVEL_TITLES.length - 1, Math.max(0, level - 1))];
@@ -52,8 +52,8 @@
     return { into, span: XP_PER_LEVEL, frac: into / XP_PER_LEVEL };
   }
 
-  /** How long the monster takes to cross the screen. Higher levels shave a
-      little off, floored well above "impossible". */
+  /** How long the note bubble takes to reach the surface. Higher levels
+      shave a little off, floored well above "impossible". */
   function approachMs(pace, level) {
     const p = PACES[pace];
     if (!p || p.approachMs == null) return null;
@@ -67,9 +67,9 @@
    * over. Judgement kinds:
    *   'clean'   — right note, first attempt
    *   'dirty'   — right note after hunting
-   *   'wrong'   — a miss (combo breaks; hearts are NOT touched — the
-   *               monster only wins by ARRIVING, i.e. 'breach')
-   *   'breach'  — the timer ran out / the monster reached the hero
+   *   'wrong'   — a miss (streak breaks; air is NOT touched — only time
+   *               running out costs air, i.e. 'breach')
+   *   'breach'  — the clock ran out: the note bubble reached the surface
    *   'skip'    — player asked for the next one
    */
   function createRun(opts) {
@@ -81,7 +81,7 @@
       maxHearts: PACES[pace].hearts,
       combo: 0, bestCombo: 0,
       xp: startXp,
-      zaps: 0,                          // monsters defeated this run
+      zaps: 0,                          // notes found this dive
       over: false,
     };
     function judge(kind) {
