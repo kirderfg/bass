@@ -104,7 +104,7 @@ test('an answer banked in a Live mode is not clobbered by the Learn half', async
     await page.evaluate(() => {
       localStorage.removeItem('bassTheoryTrainer.v1');
       q = { si: 1, f: 3, midi: 43, sn: 'E', name: 'G' };
-      hintLevel = 0; wrongThisQ = 0; qStart = performance.now();
+      wrongThisQ = 0; qStart = performance.now();
       tracker.reset();
     });
     await until(page, () => document.getElementById('fVerdict').className.includes('ok') || null);

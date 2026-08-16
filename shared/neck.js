@@ -15,7 +15,7 @@
   'use strict';
 
   /* Two shipping sizes: `play` for anything tappable (44px+ targets),
-     `read` for hint boards. `micro` exists only inside drill diagrams. */
+     `read` for reference boards. `micro` exists only inside drill diagrams. */
   const SCALES = {
     play:  { openCol:44, nut:7, col:46, row:46, dot:11.5, inlay:5.5, fretNum:20, label:13,   gaugeMul:1,    finger:true  },
     read:  { openCol:26, nut:5, col:34, row:30, dot:9, inlay:4.0, fretNum:16, label:10.5, gaugeMul:0.68, finger:false },
@@ -28,12 +28,10 @@
     deskwide:{ openCol:92, nut:11, col:108, row:84, dot:23, inlay:10.5, fretNum:34, label:21, gaugeMul:1.9, finger:true },
     /* read-scale board, sized for a desktop card rather than a phone hint */
     readbig:{ openCol:38, nut:7, col:46, row:40, dot:12, inlay:5.5, fretNum:20, label:13, gaugeMul:0.9, finger:false },
-    /* ONE string, drawn as a strip: a whole 12-fret neck fits a ~390px column,
-       so a "where along this string?" hint can live in a console slot instead
-       of a scrolling board. `row` is what a single string spends on height —
-       nothing here is per-string, so it buys marker size (dot 11) and air
-       around the window frame rather than rows. */
-    strip: { openCol:24, nut:5, col:30, row:34, dot:11, inlay:4.5, fretNum:17, label:12, gaugeMul:0.9, finger:false },
+    /* There was a `strip` scale here: ONE string, drawn as a strip, sized for
+       the Find-it hint that framed "where along this string?". The hint system
+       is gone and nothing else ever asked for it — a shipping scale nobody
+       renders is a size the next caller has to guess about. */
   };
   // Relative gauges of a real 5-string set (.130 → .045). The low B has to
   // look like the low B; this is the detail that sells the instrument.
@@ -152,7 +150,8 @@
    * Render a neck into `host`.
    *
    * opts: strings (['B','E','A','D','G'] low→high), fromFret, toFret,
-   *       scale ('play'|'read'|'micro'), markers [{si,fret,kind,label,finger}],
+   *       scale ('play'|'read'|'readbig'|'desk'|'micro'), markers
+   *       [{si,fret,kind,label,finger,heat}],
    *       window [lo,hi], windowLabel, dimStrings [si], onTap(si,fret),
    *       scrollToFret, animate
    * marker kinds: root | tone | highlight | ghost | correct | wrong | asked
@@ -419,16 +418,16 @@
       }
     }
 
-    if (opts.bare) {
-      host.appendChild(svg);
-    } else {
-      scroll.appendChild(svg);
-      host.appendChild(labels);
-      host.appendChild(scroll);
-    }
+    /* There was a `bare` mode here — svg only, no label column and no scroll
+       box — added for the Find-it hint strip, which drew a single string into a
+       fixed console slot. The hint is gone and every remaining caller wants the
+       labels and the scroll box, so there is one way to mount a board again. */
+    scroll.appendChild(svg);
+    host.appendChild(labels);
+    host.appendChild(scroll);
 
     // Only mask/scroll-hint when the board genuinely overflows.
-    if (!opts.bare) requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
       if (svg.getBoundingClientRect().width > scroll.clientWidth + 2) {
         scroll.classList.add('is-scrollable');
       }

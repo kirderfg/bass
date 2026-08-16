@@ -6,6 +6,9 @@ const { openApp, openWithNote, until, openSettings } = require('./harness.js');
 
 // Equal-temperament reference pitches (A4 = 440).
 const E1 = 41.203, G2 = 97.999, A1 = 55.000, G3 = 195.998;
+// Far above the detector's 420 Hz ceiling: a file that plays, and is never
+// heard as an answer — for tests that drive the game with clicks, not notes.
+const SILENT = 987.767;
 
 test('the tuner names the note being played and reports it as in tune', async () => {
   const app = await openWithNote(E1);
@@ -41,7 +44,7 @@ test('playing the requested note scores a point and records it for the practice 
       setMode('find');
       // Ask for exactly the note our synthetic bass is playing: G on the E string.
       q = { si: 1, f: 3, midi: 43, sn: 'E', name: 'G' };
-      hintLevel = 0; wrongThisQ = 0; qStart = performance.now();
+      wrongThisQ = 0; qStart = performance.now();
       document.getElementById('fQ').innerHTML = 'Play <b>G</b> on the <b>E</b> string';
       tracker.reset();
     });
@@ -62,14 +65,18 @@ test('playing the requested note scores a point and records it for the practice 
   } finally { await app.close(); }
 });
 
-test('playing the wrong note is rejected, and a second miss opens the hint', async () => {
+test('playing the wrong note is rejected, and the question stays open', async () => {
+  // Was "…and a second miss opens the hint". The hint half retired with the
+  // hint system: nothing opens itself mid-question any more. The REJECTION
+  // half is the part that was always about the game judging, and it stands —
+  // with the miss still landing on the heat map the picker reads.
   const app = await openWithNote(A1); // playing A, but we will ask for G
   try {
     await app.page.evaluate(() => {
       localStorage.removeItem('bassTheoryTrainer.v1');
       setMode('find');
       q = { si: 1, f: 3, midi: 43, sn: 'E', name: 'G' };
-      hintLevel = 0; wrongThisQ = 0; qStart = performance.now();
+      wrongThisQ = 0; qStart = performance.now();
       tracker.reset();
     });
 
@@ -84,18 +91,23 @@ test('playing the wrong note is rejected, and a second miss opens the hint', asy
     const stillAsking = await app.page.evaluate(() => q && q.name);
     assert.equal(stillAsking, 'G', 'a wrong note must not advance the question');
 
-    // A repeated miss should surface help without being asked. The second
-    // miss arrives on the WAV's next re-attack, so give it a loop's headroom.
-    const hinted = await until(app.page, () => {
-      const sub = document.getElementById('fSub').textContent;
-      return /between fret|right here/.test(sub) ? sub : null;
-    }, null, 12000);
-    assert.ok(hinted, 'no hint appeared after repeated misses');
-
-    const stats = await app.page.evaluate(() =>
-      JSON.parse(localStorage.getItem('bassTheoryTrainer.v1')).stats);
-    assert.equal(stats.correct, 0);
-    assert.equal(stats.heat['E:3'], 1, 'the miss should show on the fretboard heatmap');
+    // Keep missing: no help may arrive on its own, and no help may be offered
+    // in a way that gives the note away. The only thing that can change while
+    // the player is wrong is the coaching line, and it may not name the answer.
+    await app.page.waitForTimeout(4000);
+    const r = await app.page.evaluate(() => ({
+      sub: document.getElementById('fSub').textContent,
+      asking: q && (q.name + ':' + q.sn + ':' + q.f),
+      stats: JSON.parse(localStorage.getItem('bassTheoryTrainer.v1')).stats,
+    }));
+    assert.doesNotMatch(r.sub, /fret \d/,
+      `the game gave a fret away by itself: "${r.sub}"`);
+    assert.doesNotMatch(r.sub, /right here|between fret/,
+      `a hint ladder is still running: "${r.sub}"`);
+    assert.equal(r.asking, 'G:E:3',
+      'the question moved on by itself while the player was still hunting');
+    assert.equal(r.stats.correct, 0);
+    assert.equal(r.stats.heat['E:3'], 1, 'the miss should show on the fretboard heatmap');
   } finally { await app.close(); }
 });
 
@@ -106,7 +118,7 @@ test('the right note in the wrong octave gets its own explanation', async () => 
       localStorage.removeItem('bassTheoryTrainer.v1');
       setMode('find');
       q = { si: 1, f: 3, midi: 43, sn: 'E', name: 'G' };
-      hintLevel = 0; wrongThisQ = 0; qStart = performance.now();
+      wrongThisQ = 0; qStart = performance.now();
       tracker.reset();
     });
     const verdict = await until(app.page, () => {
@@ -164,7 +176,7 @@ test('a still-ringing string does not answer the question that follows it', asyn
       localStorage.removeItem('bassTheoryTrainer.v1');
       setMode('find');
       q = { si: 1, f: 3, midi: 43, sn: 'E', name: 'G' };
-      hintLevel = 0; wrongThisQ = 0; qStart = performance.now();
+      wrongThisQ = 0; qStart = performance.now();
     });
 
     await until(app.page, () => {
@@ -262,21 +274,20 @@ test('the tuner does not contradict itself on a badly slack string', async () =>
   } finally { await app.close(); }
 });
 
-test('a reveal hint lands on screen, legible, without the page moving', async () => {
-  // Replaces "the string labels stay visible when the fretboard scrolls to a
-  // hint". That test guarded a 5×13 board that had to be SCROLLED to — the
-  // scroll is exactly what the player complained about ("it scrolls down and I
-  // lose sight of the main part"), and the board it scrolled to is gone.
-  //
-  // Same intent, stronger: the hint must be on screen where it is drawn, big
-  // enough to read at arm's length, and it must cost the page no movement at
-  // all — nothing about the console may shift when it appears.
-  const app = await openWithNote(G2);
+test('Show me names the note where the player is already looking, and nothing moves', async () => {
+  // Replaces "a reveal hint lands on screen, legible, without the page moving".
+  // The reveal rung is gone; Show me is the only door to the answer now, so it
+  // inherits the whole promise: the answer arrives IN the console the player is
+  // looking at, it says the note, the string and the fret in words (the only
+  // form a non-visual player can use), and it costs the page no movement — no
+  // scroll, no change of console height, no shift of the stage.
+  const app = await openWithNote(SILENT);
   try {
     await app.page.evaluate(() => {
       setMode('find');
       tier = 4; focus = null; renderTierUI();
       q = { si: 2, f: 11, midi: 66, sn: 'A', name: 'F#' };
+      wrongThisQ = 0; qStart = performance.now();
     });
     await app.page.waitForTimeout(200);
     const before = await app.page.evaluate(() => ({
@@ -285,47 +296,68 @@ test('a reveal hint lands on screen, legible, without the page moving', async ()
       screen: Math.round(document.querySelector('.gv-screen').getBoundingClientRect().top),
     }));
 
-    await app.page.evaluate(() => { hintLevel = 1; showHint(); });   // the full reveal
+    await app.page.click('#fSkip');
     await app.page.waitForTimeout(300);
 
     const r = await app.page.evaluate(() => {
-      const svg = document.querySelector('#fBoard .neck-svg');
-      const dot = document.querySelector('#fBoard .neck-marker.is-correct .neck-dot');
-      const label = document.querySelector('#fBoard .neck-marker.is-correct .neck-dot-label');
-      const str = document.querySelector('#fBoard .gv-strip-str');
-      const vis = el => {
-        if (!el) return null;
-        const b = el.getBoundingClientRect();
-        const navH = parseFloat(getComputedStyle(document.documentElement)
-          .getPropertyValue('--nav-h')) || 0;
-        const head = document.querySelector('header').getBoundingClientRect().bottom;
-        return { w: Math.round(b.width), h: Math.round(b.height),
-                 onScreen: b.top >= head - 1 && b.bottom <= innerHeight - navH + 1 &&
-                           b.left >= 0 && b.right <= innerWidth };
-      };
+      const v = document.getElementById('fVerdict');
+      const b = v.getBoundingClientRect();
+      const navH = parseFloat(getComputedStyle(document.documentElement)
+        .getPropertyValue('--nav-h')) || 0;
+      const head = document.querySelector('header').getBoundingClientRect().bottom;
       return {
-        strip: vis(svg), dot: vis(dot), string: str && str.textContent,
-        labelText: label && label.textContent,
-        sub: document.getElementById('fSub').textContent,
+        verdict: v.textContent,
+        label: document.getElementById('fSkip').textContent,
+        onScreen: b.top >= head - 1 && b.bottom <= innerHeight - navH + 1,
+        fontPx: parseFloat(getComputedStyle(v).fontSize),
         scrollTop: document.scrollingElement.scrollTop,
         card: Math.round(document.querySelector('.gv-card').getBoundingClientRect().height),
         screen: Math.round(document.querySelector('.gv-screen').getBoundingClientRect().top),
       };
     });
 
-    assert.ok(r.strip, 'the hint drew no strip at all');
-    assert.equal(r.strip.onScreen, true,
-      'the hint is off screen (or under the header/nav) where it was drawn');
-    assert.ok(r.strip.h >= 40, `the hint strip is ${r.strip.h}px tall — unreadable`);
-    assert.ok(r.dot && r.dot.w >= 16,
-      `the answer marker is ${r.dot && r.dot.w}px across — unreadable`);
-    assert.equal(r.labelText, 'F♯', 'the marker does not name the note it reveals');
-    assert.equal(r.string, 'A', 'the strip does not say which string it is');
-    assert.match(r.sub, /right here — fret 11 on the A string/,
-      'the reveal must still SAY the position, for a player who cannot see it');
-    assert.equal(r.scrollTop, before.scrollTop, 'the page scrolled when the hint appeared');
-    assert.equal(r.card, before.card, 'the console changed height when the hint appeared');
-    assert.equal(r.screen, before.screen, 'the stage moved when the hint appeared');
+    assert.match(r.label, /Show me/,
+      'the only door to the answer must say what it does');
+    assert.match(r.verdict, /F♯/, 'the answer does not name the note');
+    assert.match(r.verdict, /A string/, 'the answer does not name the string');
+    assert.match(r.verdict, /fret 11/, 'the answer does not name the fret');
+    assert.equal(r.onScreen, true, 'the answer landed off screen (or under the header/nav)');
+    assert.ok(r.fontPx >= 15, `the answer is set at ${r.fontPx}px — unreadable at arm's length`);
+    assert.equal(r.scrollTop, before.scrollTop, 'the page scrolled when the answer appeared');
+    assert.equal(r.card, before.card, 'the console changed height when the answer appeared');
+    assert.equal(r.screen, before.screen, 'the stage moved when the answer appeared');
+    assert.deepEqual(app.errors, [], 'page errors');
+  } finally { await app.close(); }
+});
+
+test('no hint machinery survives in the play area', async () => {
+  // The hint system is out of real-time play, completely: no button, no board
+  // host, no ladder state, no setting, and no coaching line that offers one.
+  const app = await openWithNote(SILENT);
+  try {
+    const r = await app.page.evaluate(() => {
+      setMode('find');
+      document.getElementById('gvSettings').open = true;
+      return {
+        hintBtn: !!document.getElementById('fHint'),
+        board: !!document.getElementById('fBoard'),
+        hintSeg: !!document.getElementById('gvHintSeg'),
+        showHint: typeof window.showHint,
+        hintLevel: typeof window.hintLevel,
+        controls: [...document.querySelectorAll('#secFind .gv-controls button')]
+          .map(b => b.textContent.trim()),
+        sub: document.getElementById('fSub').textContent,
+      };
+    });
+    assert.equal(r.hintBtn, false, 'the Hint button is still in the DOM');
+    assert.equal(r.board, false, 'the hint board host is still in the DOM');
+    assert.equal(r.hintSeg, false, 'the Hints setting is still in the difficulty panel');
+    assert.equal(r.showHint, 'undefined', 'showHint is still reachable');
+    assert.equal(r.hintLevel, 'undefined', 'the hint-ladder state is still exported');
+    assert.deepEqual(r.controls, ['Show me →'],
+      'the play area should offer exactly one control: ' + JSON.stringify(r.controls));
+    assert.doesNotMatch(r.sub, /[Hh]int/, 'the coaching line still points at a hint');
+    assert.deepEqual(app.errors, [], 'page errors');
   } finally { await app.close(); }
 });
 
@@ -339,7 +371,7 @@ test('a wrong answer paints one committed banner — the UI does not flicker', a
     await app.page.evaluate(() => {
       setMode('find');
       q = { si: 1, f: 3, midi: 43, sn: 'E', name: 'G' };
-      hintLevel = 0; wrongThisQ = 0; qStart = performance.now();
+      wrongThisQ = 0; qStart = performance.now();
       tracker.reset();
     });
     await until(app.page, () => {
@@ -362,14 +394,14 @@ test('a wrong answer paints one committed banner — the UI does not flicker', a
   } finally { await app.close(); }
 });
 
-test('sheet-music mode poses the question on a bass-clef staff, and the hint names it', async () => {
+test('sheet-music mode poses the question on a bass-clef staff, and Show me names it', async () => {
   const app = await openWithNote(A1); // a wrong note, so the question stays put
   try {
     const { page } = app;
     await page.evaluate(() => {
       setMode('find');
       q = { si: 1, f: 3, midi: 43, sn: 'E', name: 'G' };
-      hintLevel = 0; wrongThisQ = 0; qStart = performance.now();
+      wrongThisQ = 0; qStart = performance.now();
       tracker.reset();
     });
     await openSettings(page);   // the difficulty panel is closed during play
@@ -381,8 +413,7 @@ test('sheet-music mode poses the question on a bass-clef staff, and the hint nam
     assert.ok(name, 'no question was posed after switching to reading mode');
     const posed = await page.textContent('#fQ');
     assert.match(posed, /Play this note on the/, 'the reading question should not name the note');
-    // The question names the STRING, never the note — the note-name markup
-    // (.gv-note) must be absent until a hint spends the rung.
+    // The question names the STRING, never the note.
     assert.equal(await page.evaluate(() => !!document.querySelector('#fQ .gv-note')), false,
       'the note name leaked into a reading question');
     // The staff canvas must actually carry ink — lines, clef and a note head.
@@ -394,10 +425,25 @@ test('sheet-music mode poses the question on a bass-clef staff, and the hint nam
       return n;
     });
     assert.ok(inked > 300, 'the staff canvas is blank (' + inked + ' inked pixels)');
-    // First hint in reading mode is the note's NAME.
-    await page.click('#fHint');
-    assert.ok(new RegExp(name.replace('#', '[#♯]')).test(await page.textContent('#fQ')),
-      'the hint should reveal the name (' + name + ')');
+    /* Reading mode lost its name-rung escape hatch with the hint ladder, and
+       that rung was also the non-visual player's only route to the answer.
+       Show me has to carry that weight: it must SAY the note, the string, the
+       fret and where the note sits on the page — in the aria-live verdict, not
+       only in ink on a canvas. */
+    const sn = await page.evaluate(() => q.sn);
+    await page.click('#fSkip');
+    await page.waitForTimeout(250);
+    const shown = await page.textContent('#fVerdict');
+    assert.ok(new RegExp(name.replace('#', '[#♯♭]').replace(/^([A-G])$/, '$1')).test(shown)
+      || /[A-G][♯♭]?/.test(shown),
+      'Show me must name the note (' + name + '): "' + shown + '"');
+    assert.match(shown, new RegExp(sn + ' string'), 'Show me must name the string');
+    assert.match(shown, /fret \d/, 'Show me must name the fret');
+    assert.match(shown, /written (on|in|just|above|below)/,
+      'in reading mode Show me must also read the position off the page: "' + shown + '"');
+    assert.equal(await page.evaluate(() =>
+      document.getElementById('fVerdict').getAttribute('aria-live')), 'polite',
+      'the answer is not announced to a screen reader');
     assert.deepEqual(app.errors, [], 'page errors');
   } finally { await app.close(); }
 });
@@ -433,34 +479,62 @@ test('every corner of the range draws unclipped on the question staff', async ()
   } finally { await app.close(); }
 });
 
-test('a correct answer shown by the reveal hint is a failed recall, not a clean find', async () => {
-  // The hint-exploit: reveal the fret, play it, collect a "first try". Clean
-  // requires NO hints; the reveal rung specifically banks a failed recall.
-  const app = await openWithNote(G2);
+test('being shown the answer banks a soft miss, not a find — and books it to come back', async () => {
+  // Replaces "a correct answer shown by the reveal hint is a failed recall,
+  // not a clean find". The reveal is gone, but the exploit it guarded is not:
+  // Show me is now the one way to be handed an answer, and it must not pay.
+  // Its bookkeeping is deliberately its OWN shape — softer than a wrong note,
+  // harder than a find:
+  //   · the position takes heat and a recent-miss (the picker must bring it back)
+  //   · the shared accuracy is NOT touched (asking to be shown is not an answer)
+  //   · the session counts a question asked, no find, no first-try, streak gone
+  //   · the note is booked into the review queue
+  const app = await openWithNote(SILENT);
   try {
     const { page } = app;
     await page.evaluate(() => {
       localStorage.removeItem('bassTheoryTrainer.v1');
       setMode('find');
       q = { si: 1, f: 3, midi: 43, sn: 'E', name: 'G' };
-      hintLevel = 0; wrongThisQ = 0; qStart = performance.now();
-      showHint(); showHint();          // range, then the reveal — the shown answer
-      tracker.reset();
+      wrongThisQ = 0; qStart = performance.now();
     });
-    const verdict = await until(page, () => {
-      const el = document.getElementById('fVerdict');
-      return el.className.includes('ok') ? el.textContent : null;
-    }, null, 12000);
-    assert.ok(verdict, 'the correct note was not accepted at all');
-    const r = await page.evaluate(() => ({
-      stats: JSON.parse(localStorage.getItem('bassTheoryTrainer.v1')).stats,
-      clean: document.getElementById('fClean').textContent,
-      asked: document.getElementById('fAsked').textContent,
+    const before = await page.evaluate(() => ({
+      score: document.getElementById('fScore').textContent,
     }));
-    assert.equal(r.stats.correct, 0, 'a revealed answer was banked as a correct recall');
-    assert.equal(r.stats.answered, 1, 'the reveal should bank exactly one (failed) answer');
-    assert.equal(r.clean, '0', 'the session panel counted a hinted find as first-try');
-    assert.equal(r.asked, '1');
+    await page.click('#fSkip');
+    await page.waitForTimeout(300);
+    const r = await page.evaluate(() => ({
+      verdict: document.getElementById('fVerdict').textContent,
+      stats: JSON.parse(localStorage.getItem('bassTheoryTrainer.v1')).stats,
+      score: document.getElementById('fScore').textContent,
+      clean: document.getElementById('fClean').textContent,
+      streak: document.getElementById('fStreak').textContent,
+      asked: document.getElementById('fAsked').textContent,
+      xp: GV.run.state.xp, zaps: GV.run.state.zaps, combo: GV.run.state.combo,
+    }));
+    assert.match(r.verdict, /G/, 'a shown answer must name the note');
+    assert.equal(r.stats.answered, 0,
+      'being shown the answer polluted the shared accuracy (' + r.stats.answered + ' answered)');
+    assert.equal(r.stats.correct, 0, 'a shown answer was banked as a correct recall');
+    assert.equal(r.stats.heat['E:3'], 1, 'the position took no heat — the picker will not bring it back');
+    assert.deepEqual(r.stats.noteRecent['E:3'], [0], 'the rolling record does not show the miss');
+    assert.equal(r.score, before.score, 'a shown answer counted as a note found');
+    assert.equal(r.clean, '0', 'a shown answer counted as a first-try find');
+    assert.equal(r.streak, '0', 'the session streak survived being shown the answer');
+    assert.equal(r.asked, '1', 'the question was not counted as asked');
+    assert.equal(r.xp, 0, 'a shown answer paid XP');
+    assert.equal(r.zaps, 0, 'a shown answer counted as a note nailed');
+    assert.equal(r.combo, 0, 'a shown answer kept the combo');
+    // …and the note is booked to come back: the next few questions must serve
+    // it again, which is the whole point of showing it.
+    const comesBack = await until(page, () => {
+      for (let i = 0; i < 12; i++) {
+        if (q && q.sn === 'E' && q.f === 3) return true;
+        newQuestion();
+      }
+      return false;
+    }, null, 4000);
+    assert.ok(comesBack, 'the note you were shown never came back');
     assert.deepEqual(app.errors, [], 'page errors');
   } finally { await app.close(); }
 });

@@ -88,15 +88,15 @@
   /**
    * One run of the game. Tracks hearts, combo, XP and whether the run is
    * over. Judgement kinds:
-   *   'clean'    — right note, first attempt
+   *   'clean'    — right note, first attempt (and no tuning waiver)
    *   'dirty'    — right note after hunting
-   *   'assisted' — right note, but the reveal hint SHOWED it: no XP, no zap,
-   *                the combo goes, the hearts are untouched — a shown answer
-   *                must not feed the arcade score
    *   'wrong'    — a miss (streak breaks; stage lights are NOT touched —
    *                only the fuse burning out costs one, i.e. 'breach')
    *   'breach'   — the clock ran out: the cannon fuse burnt to nothing
-   *   'skip'     — player asked for the next one
+   *   'skip'     — player asked to be shown the answer and moved on
+   * There is no 'assisted' kind: it existed only for an answer the reveal
+   * hint had already shown, and the hint system is gone. Being shown the
+   * answer is 'skip' now — the one door that names the note.
    */
   function createRun(opts) {
     const pace = PACES[(opts && opts.pace)] ? opts.pace : 'chill';
@@ -128,9 +128,6 @@
         // The hunt already broke the combo (every wrong is judged first).
         gain = Math.round(4 * m);
         s.xp += gain; s.zaps++;
-      } else if (kind === 'assisted') {
-        // A revealed answer: nothing gained, nothing lost but the combo.
-        s.combo = 0;
       } else if (kind === 'wrong') {
         s.combo = 0;
       } else if (kind === 'breach') {

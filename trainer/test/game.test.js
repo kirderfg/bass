@@ -263,7 +263,7 @@ test('cleanZaps counts first-try finds only — the metric best runs are made of
   run.judge('clean');
   run.judge('wrong');
   run.judge('dirty');       // hunted find: a zap, but not a clean one
-  run.judge('assisted');    // shown answer: neither
+  run.judge('skip');        // shown answer: neither
   run.judge('breach');
   run.judge('clean');
   assert.equal(run.state.zaps, 3, 'clean + dirty both zap');
@@ -349,19 +349,39 @@ test('levelProgress reports the CURRENT level\'s span, not a flat rate', () => {
   assert.equal(G.levelProgress(-5).into, 0, 'negative XP clamps sanely');
 });
 
-test('an assisted find (the reveal hint) pays nothing and breaks the combo', () => {
+test('being shown the answer pays nothing and breaks the combo', () => {
+  // Was "an assisted find (the reveal hint) pays nothing…". The reveal hint is
+  // gone and so is the 'assisted' kind it existed for, but the honesty it
+  // guarded is exactly the same and now belongs to Show me: a note you were
+  // shown must never feed the arcade score. Same assertions, on 'skip'.
   const run = G.createRun({ pace: 'steady' });
   run.judge('clean'); run.judge('clean');
-  const r = run.judge('assisted', 1.5);
+  const r = run.judge('skip', 1.5);
   assert.equal(r.gain, 0, 'a shown answer earns no XP, whatever the multiplier');
   assert.equal(r.combo, 0, 'the combo goes — it was not a recall');
   assert.equal(r.hearts, 3, 'but the stage lights are untouched');
   assert.equal(run.state.zaps, 2, 'a shown answer is not a note nailed');
+  assert.equal(run.state.cleanZaps, 2, 'and never a first-try find');
   assert.equal(r.over, false);
-  // …and 'dirty' still pays its taste of XP and its zap, unlike 'assisted'.
+  // …and 'dirty' still pays its taste of XP and its zap, unlike a shown one.
   const d = run.judge('dirty');
   assert.equal(d.gain, 4);
   assert.equal(run.state.zaps, 3);
+});
+
+test('the retired judgement kind is really gone — an unknown kind changes nothing', () => {
+  // 'assisted' was the reveal hint's kind and nothing else could produce it.
+  // A rule nothing reaches is worse than no rule, so it was deleted; this
+  // pins that deletion, and that a stray kind cannot quietly score.
+  const run = G.createRun({ pace: 'steady' });
+  run.judge('clean');
+  const before = { xp: run.state.xp, combo: run.state.combo, zaps: run.state.zaps };
+  const r = run.judge('assisted', 1.5);
+  assert.equal(r.gain, 0);
+  assert.equal(run.state.xp, before.xp, 'an unknown judgement paid XP');
+  assert.equal(run.state.combo, before.combo, 'an unknown judgement touched the combo');
+  assert.equal(run.state.zaps, before.zaps, 'an unknown judgement counted a note');
+  assert.equal(r.hearts, 3, 'and never a stage light');
 });
 
 test('turbo gives less time than steady, speeds up with level, and floors sanely', () => {

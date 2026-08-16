@@ -94,7 +94,7 @@ body .mic-card{display:flex; flex-wrap:wrap; align-items:center; gap:10px;
    fractional pixels off a pixel-art edge.
 
    A fixed-height instrument panel, not a document. Every slot below reserves
-   its height in a custom property, so a hint, a staff, a verdict or a fuse
+   its height in a custom property, so a staff, a verdict or a fuse
    numeral SWAPS into space the layout already gave it: the card is the same
    height in every state of the game, at a given viewport, and nothing the
    game does can scroll the page. (That is why there is no scroll-into-view
@@ -102,7 +102,7 @@ body .mic-card{display:flex; flex-wrap:wrap; align-items:center; gap:10px;
 
    Only two numbers adapt, and only to the VIEWPORT, never to game state:
    --gv-stage-w (with the scene's pixel scale, whole-numbered wherever the
-   screen allows it) and --gv-media-h, the coach slot, on viewports too short
+   screen allows it) and --gv-media-h, the staff slot, on viewports too short
    to hold a full-size staff. gvFitScene picks both, once, on entry and on
    resize — never in response to anything the player does inside the game. */
 #secFind{
@@ -116,9 +116,15 @@ body .mic-card{display:flex; flex-wrap:wrap; align-items:center; gap:10px;
   --gv-heard-h:18px;
   --gv-stats-h:56px;   /* a phone wraps the four figures under their label */
 }
+/* A desktop has height to spend and only one place worth spending it: the
+   two lines the player actually looks at. The stage is already at the largest
+   WHOLE pixel scale its column can hold (gvFitScene), so the rest of the
+   screen's slack goes into the question and the verdict rather than into air
+   under the card. Slots grow with their type, so every state still lands in
+   space that was reserved before the game started. */
 @media (min-width:760px){
-  #secFind{ --gv-gap:8px; --gv-hud-h:20px; --gv-q-h:38px;
-    --gv-stats-h:32px; --gv-heard-h:19px; }
+  #secFind{ --gv-gap:10px; --gv-hud-h:20px; --gv-q-h:66px; --gv-sub-h:38px;
+    --gv-verdict-h:72px; --gv-stats-h:32px; --gv-heard-h:22px; }
 }
 /* Short screens (a laptop with browser chrome, a landscape phone): the page
    furniture gives its margins to the console. */
@@ -254,13 +260,13 @@ body .mic-card{display:flex; flex-wrap:wrap; align-items:center; gap:10px;
   .gv-over .btn{min-height:32px; padding:4px 10px; font-size:12px;}
   .gv-over-xp{display:none;}
 }
-/* ---- the coach slot ----
+/* ---- the staff slot ----
    A reserved compartment with exactly one occupant: the staff a reading
-   question is written on, or the single-string hint strip. Reserved because
-   this is the slot whose contents used to be 400px of fretboard arriving
-   mid-question and shoving the stage off the screen. The frame belongs to
-   whatever is IN it (see #fBoard), so an empty slot is quiet space rather
-   than an empty box. */
+   question is written on. Nothing else may ever land here — this is the slot
+   whose contents used to be 400px of hint fretboard arriving mid-question and
+   shoving the stage off the screen. Reserved in BOTH prompt modes, because the
+   console's height must not tell the player which mode they are in; empty, it
+   is quiet space between the question and its verdict, not an empty box. */
 .gv-media{height:var(--gv-media-h); display:flex; align-items:center;
   justify-content:center; overflow:hidden;}
 .gv-staffwrap{display:flex; justify-content:center; margin:0; max-height:100%;}
@@ -276,32 +282,19 @@ body .mic-card{display:flex; flex-wrap:wrap; align-items:center; gap:10px;
   background:var(--s2); border:1px solid var(--line); border-radius:var(--r-sm);}
 #gvClefHelp .gv-staffwrap canvas{width:300px;}
 @media (min-width:1000px){ #gvClefHelp .gv-staffwrap canvas{width:600px;} }
-/* ---- the hint strip ----
-   ONE string — the one the question already named — with the target fret's
-   window on it. The old hint was a 5×13 fretboard (400px tall on a desktop),
-   which answered a question nobody asked: WHICH string. The strip answers the
-   one that was asked, WHERE ALONG IT, in a sixth of the height. The SVG is
-   vector, so max-width scales it down on a narrow phone with no scrolling and
-   no loss — the fret numbers stay real text. */
-/* The frame belongs to the STRIP, not to the slot: an empty bordered box
-   (between runs, or while a staff question is up) reads as something missing. */
-#fBoard{display:flex; align-items:center; justify-content:center; gap:8px;
-  width:100%; max-width:100%; margin:0; padding:5px 9px;
-  background:var(--s0); border:1px solid var(--hair); border-radius:var(--r-sm);}
-#fBoard:empty{display:none;}
-/* The strip FILLS the slot it was given: a six-fret stage draws a big, plainly
-   readable neck rather than a 179px sliver adrift in a 400px box, and a
-   twelve-fret one scales down to fit. Vector, so both are crisp. */
-#fBoard .neck-svg{width:100%; height:auto; flex:0 1 auto;
-  max-height:calc(var(--gv-media-h) - 14px);}
-#fBoard .gv-strip-str{flex:0 0 auto; font-size:13px; font-weight:800; color:var(--t3);
-  letter-spacing:.02em;}
-#fBoard .gv-strip-str.is-lowest{color:var(--low-string);}
 /* ---- the read side of the console: question, coaching line, readout ----
-   Each one is a FIXED box its text is centred inside. The question grows a
-   hint's extra words, the instruction line swaps for a hint sentence and the
-   verdict swaps for a three-line correction — all inside space that was
-   already reserved, so none of them can move the stage. */
+   Each one is a FIXED box its text is centred inside. The instruction line
+   swaps for a stall nudge and the verdict swaps for a three-line correction —
+   both inside space that was already reserved, so neither can move the
+   stage. */
+/* SCROLL ANCHORING OFF, deliberately. A slot's occupant is CENTRED in it, so a
+   coaching line that grows from one text line to two moves its own box up by
+   half a line inside a box that does not move at all. Chrome anchors on that
+   element and compensates — scrolling the page ~8px, while the page is scrolled
+   down (a settings panel open), for a change that moved nothing. The console
+   promises the page never moves during play; this is the browser doing it on
+   the game's behalf, and it is switched off. */
+#secFind .gv-card, #secFind .gv-info, .gv-slot{overflow-anchor:none;}
 .gv-slot{display:flex; align-items:center; justify-content:center; overflow:hidden;}
 .gv-slot > *{width:100%; margin:0;}
 .gv-slot-q{height:var(--gv-q-h);}
@@ -309,16 +302,28 @@ body .mic-card{display:flex; flex-wrap:wrap; align-items:center; gap:10px;
 .gv-slot-verdict{height:var(--gv-verdict-h);}
 .gv-slot-heard{height:var(--gv-heard-h);}
 #secFind .q{padding:0; font-size:20px; line-height:1.15; text-align:center;}
-@media (min-width:760px){ #secFind .q{font-size:23px;} }
+/* TWO lines are reserved for the question at this size: "Play this note on
+   the E string" (the reading mode's wording, and the longest the game asks)
+   wraps in a 352px read column at 1280 — and a slot that fits the short
+   question and clips the long one is not a reservation. */
+@media (min-width:760px){ #secFind .q{font-size:27px;} }
 #secFind .qsub{font-size:13px; line-height:1.3; text-align:center;}
+@media (min-width:760px){ #secFind .qsub{font-size:14px;} }
 /* The readout: verdict over heard-note. No frame — an empty bordered box reads
    as something missing, where empty space reads as quiet. */
 .gv-feedback{padding:0;}
 /* Verdicts land as one committed banner per judged note — the pop replays
    because the class is re-applied per judgement, and nothing else moves. */
 #secFind .verdict{min-height:0; font-size:15.5px; line-height:1.18;}
+@media (min-width:760px){ #secFind .verdict{font-size:18px; line-height:1.22;} }
 #secFind .heard{min-height:0; line-height:1.2;}
+@media (min-width:760px){ #secFind .heard{font-size:14px;} }
+/* One button now, so it gets a body: a lone `small` chip floating in the
+   middle of a desktop console read as an afterthought, and this is the only
+   control the play area has. */
 .gv-controls{justify-content:center; margin:0; min-height:44px; flex-wrap:nowrap;}
+#secFind .gv-controls .btn{min-height:44px; padding:8px 22px;}
+@media (min-width:760px){ #secFind .gv-controls .btn{font-size:15px; padding:10px 28px;} }
 /* Idle dead-space gets a faint quaver instead of a blank band. CSS-generated
    on purpose: the e2e suite samples #fVerdict's TEXT for stability and
    emptiness, and a ::before leaves the text exactly as it was. Gated off
@@ -374,8 +379,9 @@ body .mic-card{display:flex; flex-wrap:wrap; align-items:center; gap:10px;
 /* The stat row measures THIS SITTING only — one quiet label says so, at the
    head of the row it labels. */
 .gv-sesslabel{text-align:center; margin:0; color:var(--t4); font-size:12px;}
-/* One-line captions under the settings segs (Effects/Sound/Hints, and the
-   fret-window reason) — the visible text that replaces touch-less tooltips. */
+/* One-line captions under the settings segs (Effects/Sound, the map's three,
+   and the fret-window reason) — the visible text that replaces touch-less
+   tooltips, which do not exist on a phone. */
 .gv-segcap{margin:4px 0 0; color:var(--t4); max-width:22ch;}
 /* Dead fret windows: aria-disabled, NOT disabled — they keep focus so a
    screen reader can land on them and hear the reason (aria-describedby). */
@@ -395,11 +401,39 @@ body .mic-card{display:flex; flex-wrap:wrap; align-items:center; gap:10px;
 @media (min-width:1000px){ .gv-setnotes{columns:2; column-gap:var(--sp5);} }
 /* Squarer, mono, pixel-flavoured — the DOM buttons on the stage stop
    pretending they belong to a different app than the canvas above them. */
-#secFind #fHint, #secFind #fSkip{font-family:var(--mono); background:var(--s1);
+#secFind #fSkip{font-family:var(--mono); background:var(--s1);
   border-radius:4px;
   box-shadow:inset 0 1px 0 rgba(246,242,236,.05), inset 0 -1px 0 rgba(0,0,0,.35);}
 #secFind #gvRestart{font-family:var(--mono); border-radius:4px;}
-#secFind #fHint:disabled, #secFind #fSkip:disabled{opacity:.45; cursor:default;}
+#secFind #fSkip:disabled{opacity:.45; cursor:default;}
+
+/* ---- the note map ----
+   A reference card, not an instrument panel: it may be as tall as it needs to
+   be, because it lives BELOW the console and is shut unless asked for. The
+   board itself is the shared neck renderer, so its string labels sit outside
+   the scroll box — a phone pans the frets and never loses which string it is
+   looking at. */
+.gv-map > summary{flex-wrap:wrap; row-gap:2px;}
+.gv-map > summary .t-title3{margin-right:auto;}
+.gv-mapnow{color:var(--t3); font-size:12px;}
+.gv-mapbody{margin-top:var(--sp3);}
+.gv-mapopts{display:grid; gap:var(--sp4);
+  grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));}
+.gv-mapboard{margin-top:var(--sp4); max-width:100%;}
+.gv-mapnote{margin:var(--sp3) 0 0; color:var(--t4); max-width:78ch;}
+.gv-mapnote b{color:var(--t2);}
+.gv-mapnote .gv-map-weakkey{color:var(--bad);}
+/* Dimming, at a strength you can still READ: the renderer's own is-outside is
+   tuned for a marker you are meant to ignore, and every dot on this map is
+   meant to be legible — "not on this stage yet" is the message, not "gone". */
+#gvMapBoard .neck-marker.is-outside .neck-dot{fill-opacity:.30; stroke-opacity:.45;}
+#gvMapBoard .neck-marker.is-outside .neck-dot-label{fill-opacity:.62;}
+/* A phone reads the map by panning it — 13 fret columns will not fit 360px at
+   any legible size, and shrinking them to fit is how a reference card becomes
+   unreadable. The scroll box is horizontal only and belongs to the card. */
+@media (max-width:759px){
+  .gv-mapboard .neck-scroll{overflow-x:auto; overflow-y:hidden;}
+}
 #secFind summary{min-height:44px; display:flex; align-items:center; gap:var(--sp2);
   cursor:pointer; list-style:none;}
 #secFind summary::-webkit-details-marker{display:none;}

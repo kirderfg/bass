@@ -135,9 +135,11 @@
       <!-- THE CONSOLE. One card, one constant height, two columns on a desktop
            (stage left, everything you read right) and one column on a phone.
            Every slot below reserves its height whether or not it has content —
-           a hint, a staff, a verdict or a fuse numeral SWAPS into space that
-           was already there. Nothing the game does can move anything, so the
-           page never scrolls during play and the stage is never lost. -->
+           a staff, a verdict or a fuse numeral SWAPS into space that was
+           already there. Nothing the game does can move anything, so the page
+           never scrolls during play and the stage is never lost.
+           There is no in-play help left to reserve room for: the player plays,
+           the game judges, and the verdicts plus Show me do the teaching. -->
       <div class="card gv-card">
         <div class="gv-stage">
           <div class="gv-hud">
@@ -177,9 +179,9 @@
         </div><!-- /.gv-stage -->
 
         <div class="gv-info">
-          <!-- The game's screen-reader channel. #fQ is deliberately NOT live —
-               it mutates mid-question on hints; new questions, XP toasts and the
-               5-second warning are announced here instead. -->
+          <!-- The game's screen-reader channel. #fQ is deliberately NOT live;
+               new questions, XP toasts and the 5-second warning are announced
+               here instead, in one utterance each. -->
           <div class="sr-only" aria-live="polite" id="gvLive"></div>
           <!-- Every line of the console lives in a SLOT of reserved height and is
                centred inside it. The slot is the wrapper, never the element
@@ -187,24 +189,27 @@
                "Play <b>G</b> on the <b>E</b> string" would lose its spaces. -->
           <div class="gv-slot gv-slot-q"><div class="q" id="fQ">—</div></div>
           <div class="gv-slot gv-slot-sub"><div class="qsub" id="fSub" aria-live="polite">Find it on the neck and play it.</div></div>
-          <!-- THE COACH SLOT. One reserved box, one occupant: the staff a reading
-               question is written on, OR the single-string hint strip, OR nothing.
-               They never stack — the strip only ever appears once a hint has
-               already given the note's name away, and the verdict puts the named
-               staff back. Reserving it means a hint costs the layout nothing. -->
+          <!-- THE STAFF SLOT. Reserved whether or not a staff is in it, because
+               the console's height may not depend on which prompt mode is on:
+               switching Names ↔ Sheet music swaps the staff into space that was
+               already there. In Names mode it is quiet air between the question
+               and its verdict — never a place help arrives from. -->
           <div class="gv-media">
             <div class="gv-staffwrap hidden" id="gvStaffWrap">
-              <canvas id="gvStaff" width="170" height="150" role="img" aria-label="sight-reading exercise: a note drawn on a bass clef staff — the Hint button reveals its name"></canvas>
+              <canvas id="gvStaff" width="170" height="150" role="img" aria-label="sight-reading exercise: a note drawn on a bass clef staff"></canvas>
             </div>
-            <div id="fBoard"></div>
           </div>
           <div class="gv-feedback">
             <div class="gv-slot gv-slot-verdict"><div class="verdict" id="fVerdict" aria-live="polite">&nbsp;</div></div>
             <div class="gv-slot gv-slot-heard"><div class="heard" id="fHeard">&nbsp;</div></div>
           </div>
+          <!-- ONE control, and it is the only "I don't know" the game has.
+               "Skip →" undersold it: this names the note, the string and the
+               fret (and where it sits on the staff in reading mode), banks a
+               soft miss and books the note to come back. So it says what it
+               does. The id stays #fSkip — the same door, honestly labelled. -->
           <div class="row gv-controls">
-            <button class="btn small" id="fHint">Hint</button>
-            <button class="btn small" id="fSkip">Skip <span aria-hidden="true">→</span></button>
+            <button class="btn small" id="fSkip">Show me <span aria-hidden="true">→</span></button>
           </div>
         </div><!-- /.gv-info -->
 
@@ -280,11 +285,6 @@
             <div class="seg compact" id="gvSndSeg" role="group" aria-label="Sound" style="margin-top:4px"></div>
             <p class="t-caption gv-segcap">Little cues for hits, misses and the fuse.</p>
           </div>
-          <div class="gv-setgroup">
-            <span class="t-caption">Hints</span>
-            <div class="seg compact" id="gvHintSeg" role="group" aria-label="Hints" style="margin-top:4px"></div>
-            <p class="t-caption gv-segcap">Manual = a hint only when you tap Hint.</p>
-          </div>
           <div class="gv-setgroup gv-setnotes">
             <!-- The XP premium is real and was undisclosed: say it once, plainly. -->
             <p class="t-caption" id="gvXpNote" style="margin:0">Bigger stages, sheet music and faster paces pay more XP.</p>
@@ -292,6 +292,43 @@
             <p class="t-caption" id="gvComboNote" style="margin:var(--sp2) 0 0">COMBO = 1st-try finds in a row this set; the streak tile under the question is your whole session.</p>
             <p class="t-caption" id="gvBestNote" style="margin:var(--sp2) 0 0">Best on this setup: 0</p>
           </div>
+        </div>
+      </details>
+
+      <!-- ================= THE NOTE MAP =================
+           The whole neck, named: five strings × frets 0–12. It is REFERENCE,
+           the same standing as the staff guide below it — collapsed by
+           default, outside the play flow, never opened or pointed at by the
+           game. The console asks; this is where you go to study between sets.
+           Its options are display options, nothing the game consults. -->
+      <details class="card tight gv-map" id="gvMap">
+        <summary>
+          <span class="t-title3">Note map — the whole neck</span>
+          <span class="t-data gv-mapnow" id="gvMapNow">Naturals · this stage</span>
+        </summary>
+        <div class="gv-mapbody">
+          <div class="gv-mapopts">
+            <div class="gv-setgroup">
+              <span class="t-caption">Note names</span>
+              <div class="seg compact" id="gvMapSpellSeg" role="group" aria-label="Note names" style="margin-top:4px"></div>
+              <p class="t-caption gv-segcap">Naturals only is the alphabet under everything else.</p>
+            </div>
+            <div class="gv-setgroup">
+              <span class="t-caption">Show</span>
+              <div class="seg compact" id="gvMapScopeSeg" role="group" aria-label="Show" style="margin-top:4px"></div>
+              <p class="t-caption gv-segcap">This stage dims what the game is not asking you yet.</p>
+            </div>
+            <div class="gv-setgroup">
+              <span class="t-caption">My weak spots</span>
+              <div class="seg compact" id="gvMapWeakSeg" role="group" aria-label="My weak spots" style="margin-top:4px"></div>
+              <p class="t-caption gv-segcap">Marks the positions you have actually missed.</p>
+            </div>
+          </div>
+          <!-- The board draws here (BassNeck.render): its string labels sit
+               outside the scroll box, so a phone can pan the frets without
+               losing which string it is reading. -->
+          <div class="gv-mapboard neck" id="gvMapBoard"></div>
+          <p class="t-caption gv-mapnote hidden" id="gvMapNote"></p>
         </div>
       </details>
 

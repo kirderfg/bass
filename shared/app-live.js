@@ -297,16 +297,17 @@ function renderTuner(pitch, reading){
    FIRE across the stage front. Three difficulty axes: STAGE (how much
    neck — the shared tier), PACE (the cannon fuse and the stage lights),
    and PROMPT (note names, bass-clef staff, or a mix). */
-let q = null, hintLevel = 0, qStart = 0, wrongThisQ = 0, lastProgressAt = 0, outOfTuneThisQ = false;
+let q = null, qStart = 0, wrongThisQ = 0, lastProgressAt = 0, outOfTuneThisQ = false;
 /* An out-of-tune reading ON the target fret (or its accepted octave twin) told
    the player where the note is — a free confirmation. The eventual in-tune
    correct still counts as found, but never as a first-try recall. */
 let tuneWaivedThisQ = false;
-/* Has the FINAL hint rung — the one that shows the exact fret — been used on
-   this question? A correct answer after that is a shown answer, not a recall. */
-let revealedThisQ = false;
-/* The no-pressure pace points at the Hint button instead of auto-opening it;
-   once per question is plenty. */
+/* How many out-of-tune readings this question has drawn. The second one
+   escalates the coaching: one bad reading is a finger a millimetre off, two in
+   a row on the same question is usually the STRING — and that is a Tuner job. */
+let outOfTuneCount = 0;
+/* A stalled player gets one pointer at Show-me per question; more than that is
+   nagging someone who is thinking. */
 let nudgedThisQ = false;
 /* Question counter + the in-session review queue: a missed note books itself
    a comeback a few questions out (see BassGame.createReviewQueue). */
@@ -334,9 +335,11 @@ const GV = {
   pace:'chill', prompt:'name', xp:0, best:{},
   calm:false,            // "Effects: Calm" — forces the reduced-motion path
   sound:true,            // WebAudio cues (all far above the 420 Hz detector)
-  hints:'auto',          // 'auto' = the stall/miss ladder opens hints itself
-                         // (never the reveal); 'manual' = nudge only
   frets:'all',           // fret-region focus: all | low | mid | high
+  /* The note map's display options (the reference card below the console —
+     never anything the game consults). spell: natural | sharp | flat;
+     stage: dim what this stage does not ask; weak: overlay your own misses. */
+  map:{ spell:'natural', stage:true, weak:false },
   run:null,
   runBestKey:null,       // the best-run key SNAPSHOTTED at run start (A settings
                          // change mid-run starts a new run, so a run can never
@@ -386,9 +389,6 @@ if (typeof matchMedia === 'function'){
   const rmq = matchMedia('(prefers-reduced-motion: reduce)');
   if (rmq.addEventListener) rmq.addEventListener('change', e => { OS_REDUCED = e.matches; updateReduced(); });
 }
-/** How many hint rungs this question's prompt has: reading mode gets three
-    (name → range → reveal), name mode two (range → reveal). */
-function maxHintRungs(){ return GV.promptKind === 'staff' ? 3 : 2; }
 /** Difficulty premium on XP: pace × stage × prompt, SCALED by how much of the
     stage's unfocused pool the current focus filters leave askable — a 6-note
     focus pool must not collect the full "bigger stage" premium (the premium
@@ -418,8 +418,12 @@ function gvLoad(){
     GV.xp = Math.max(0, s.xp | 0);
     GV.calm = !!s.calm;
     GV.sound = s.sound !== false;   // default ON
-    if (s.hints === 'manual' || s.hints === 'auto') GV.hints = s.hints;
     if (FRET_WINS.hasOwnProperty(s.frets)) GV.frets = s.frets;
+    if (s.map){
+      if (MAP_SPELLS.indexOf(s.map.spell) >= 0) GV.map.spell = s.map.spell;
+      GV.map.stage = s.map.stage !== false;
+      GV.map.weak = !!s.map.weak;
+    }
     // Keyed pace|tier|prompt since the multiplier landed; the old plain
     // 'steady'/'turbo' keys ride along harmlessly and missing keys read as 0.
     GV.best = Object.assign({}, s.best);
@@ -428,7 +432,7 @@ function gvLoad(){
 function gvSave(){
   try { localStorage.setItem(GV_KEY, JSON.stringify({
     pace:GV.pace, prompt:GV.prompt, xp:GV.xp, best:GV.best,
-    calm:GV.calm, sound:GV.sound, hints:GV.hints, frets:GV.frets })); } catch(e){}
+    calm:GV.calm, sound:GV.sound, frets:GV.frets, map:GV.map })); } catch(e){}
 }
 /* Fret-region focus for the question pool. Windows overlap on purpose —
    fret 5 belongs to both hands' territory. */
@@ -439,6 +443,10 @@ const FRET_WINS = {
   high: { label:'7–12',  range:[7, 12] },
 };
 const FRET_ORDER = ['all', 'low', 'mid', 'high'];
+/* How the note map spells what it draws. Naturals-only is the default: the
+   seven letters are the map a beginner is actually building, and the five
+   accidentals drawn beside them are noise until those letters are solid. */
+const MAP_SPELLS = ['natural', 'sharp', 'flat'];
 gvLoad();
 updateReduced();
 
@@ -454,13 +462,14 @@ function dispHeard(name){ return (qFlat && FLAT_DISP[name]) ? FLAT_DISP[name] : 
 /** 'an A', 'an E', 'an F♯' — the article covers sharps too (prefix test). */
 function article(name){ return /^[AEF]/.test(name) ? 'an' : 'a'; }
 /** The game's screen-reader channel: a visually-hidden polite live region.
-    #fQ itself must never be live — it mutates mid-question on hints. */
+    #fQ itself is not live — the question is announced here, once, with the
+    XP toast that preceded it batched in front of it. */
 function srAnnounce(text){
   const el = document.getElementById('gvLive');
   if (el) el.textContent = text;
 }
 /** The one writer of #fSub. #fSub is aria-live, so every write is announced —
-    subWrite always writes (hints and nudges are news), subWriteIfChanged skips
+    subWrite always writes (a stall nudge is news), subWriteIfChanged skips
     when the text is already up, so the static per-question instruction is not
     re-announced on every new question. */
 function subWrite(html){
@@ -538,9 +547,8 @@ function gvNewRun(){
   // The over screen's idle-♪ gate lifts with the overlay.
   const secEl = document.getElementById('secFind');
   if (secEl) secEl.classList.remove('gv-overon');
-  // Back on stage: the controls the over screen disabled come back.
-  const hint = document.getElementById('fHint'), skip = document.getElementById('fSkip');
-  if (hint) hint.disabled = false;
+  // Back on stage: the control the over screen disabled comes back.
+  const skip = document.getElementById('fSkip');
   if (skip) skip.disabled = false;
   renderHud();
 }
@@ -632,7 +640,7 @@ function fretWinPositions(range){
    screen by the settings card itself — the fix for a layout that overflowed.
    The console is fixed-height and always on screen now, so scrolling the page
    on the player's behalf would only ever take something away from them. The
-   game scrolls NOTHING: no new run, no hint, no verdict, no lights-out. */
+   game scrolls NOTHING: no new run, no verdict, no lights-out. */
 function pool(){
   const t = tierNow();
   let strs = t.strings;
@@ -677,9 +685,9 @@ function newQuestion(){
   const dueKey = reviewQ.next(qCount, lastKey, k => p.some(it => it.sn + ':' + it.f === k));
   q = dueKey ? p.find(it => it.sn + ':' + it.f === dueKey)
              : GAME.weightedPick(p, noteView(), lastKey, Math.random);
-  hintLevel = 0; wrongThisQ = 0; outOfTuneThisQ = false; qStart = performance.now();
-  tuneWaivedThisQ = false;
-  revealedThisQ = false; nudgedThisQ = false;
+  wrongThisQ = 0; outOfTuneThisQ = false; qStart = performance.now();
+  tuneWaivedThisQ = false; outOfTuneCount = 0;
+  nudgedThisQ = false;
   saidFiveThisQ = false; tickedFuseThisQ = false;
   lastProgressAt = qStart;
   tracker.reset();   // clears the settle clock only — a ringing note stays consumed
@@ -711,20 +719,16 @@ function newQuestion(){
   const v = document.getElementById('fVerdict');
   v.innerHTML = '&nbsp;'; v.className = 'verdict';
   document.getElementById('fHeard').innerHTML = '&nbsp;';
-  // (the coach slot is renderPrompt's: the staff, or the unmarked strip)
+  // (the staff slot is renderPrompt's)
   gvSpawn();
   updateFindStats();
 }
-/** Show or hide the question staff. The coach slot holds ONE thing at a time
-    — the staff, or the hint strip — and the slot's height is reserved either
-    way, so swapping them costs the layout nothing. */
+/** Show or hide the question staff. Its slot keeps its reserved height whether
+    the staff is in it or not, so switching prompt modes — the only thing that
+    empties it — cannot change the console's height by a pixel. */
 function gvShowStaff(on){
   const wrap = document.getElementById('gvStaffWrap');
   if (wrap) wrap.classList.toggle('hidden', !on);
-  if (on){
-    const board = document.getElementById('fBoard');
-    if (board) board.innerHTML = '';
-  }
 }
 function renderPrompt(){
   const wrap = document.getElementById('gvStaffWrap');
@@ -748,83 +752,7 @@ function renderPrompt(){
     // the string letter stays chrome-violet.
     document.getElementById('fQ').innerHTML = 'Play <b class="gv-note">' + disp(q.name) + '</b> on the <b>' + q.sn + '</b> string';
     subWriteIfChanged('Find it on the neck and play it.', 'name');
-    /* The coach slot opens on the string being hunted, unmarked: a picture the
-       hint can land on rather than a box the hint has to fill. */
-    drawBoard({ idle:true });
-  }
-}
-/** `auto === true` marks the stall/miss ladder's own calls: the auto-ladder
-    caps at the RANGE rung — the reveal is only ever reachable through the
-    Hint button, on any pace. (The button passes a click Event, so the flag is
-    compared strictly.) */
-function showHint(auto){
-  const isAuto = auto === true;
-  if (!q) return;
-  if (GV.run && GV.run.state.over) return;   // LIGHTS OUT: the restart button owns the screen
-  /* While a verdict settles (zap, breach, or a skip's hold) the question is
-     already answered — a hint for it would be noise over the correction. */
-  if (GV.phase === 'zap' || GV.phase === 'breach' || GV.phase === 'hold') return;
-  if (outOfTuneThisQ){
-    /* They found the right note; the problem is intonation, not the fret —
-       so this branch wins WHATEVER rung the ladder is on. Both hypotheses
-       stay open: a finger a few mm off pulls the same cents as a slack
-       string, and "it is your tuning" sent players off to retune a bass
-       that was fine. Two lines, because the coaching line is a fixed slot
-       now: the Tuner sentence was the third and said the least. */
-    subWrite('Right note, but it rings off — check <b>your fretting hand, or that ' +
-      'string’s tuning</b>.');
-    lastProgressAt = performance.now();
-    outOfTuneThisQ = false;
-    return;
-  }
-  const rungs = maxHintRungs();
-  if (isAuto && hintLevel >= rungs - 1) return;   // auto never reaches the reveal
-  const firstUse = hintLevel === 0;
-  hintLevel = Math.min(isAuto ? rungs - 1 : rungs, hintLevel + 1);
-  lastProgressAt = performance.now();
-  /* Reading a hint is not fuse time: a budgeted ~1.5s hold on the same
-     spawnAt-slide rail the wrong-verdict freeze rides (and the same budget,
-     so hint-spam cannot stall the fuse any more than wrong-spam can). */
-  if (GV.phase === 'fight' && (!GV.fuseBudget || GV.fuseBudget.left('wrong') > 0)){
-    GV.freezeUntil = Math.max(GV.freezeUntil, performance.now() + 1500);
-  }
-  /* Honesty about the price — but ONLY when the player opens the hint
-     themselves with the first-try credit still intact. After a miss the
-     credit is already gone, and an out-of-tune reading on the target fret
-     already waived it (the tuning waiver) — pricing either is a false bill. */
-  const cost = firstUse && wrongThisQ === 0 && !tuneWaivedThisQ
-    ? ' (a hint waives first-try credit)' : '';
-  /* No "see the board below" any more, and nothing is scrolled to: the strip
-     draws in the coach slot the player is already looking at, one row under
-     this sentence. Pointing at it would be pointing at itself. */
-  /* Reading mode gets a three-rung ladder: NAME → range → reveal. The name
-     alone converts the question into one the player may already know how to
-     answer — so that rung gives nothing else away. Name mode: range → reveal. */
-  if (GV.promptKind === 'staff'){
-    document.getElementById('fQ').innerHTML = 'Play <b class="gv-note">' + dispQ() + '</b> on the <b>' + q.sn + '</b> string';
-    if (hintLevel === 1){
-      subWrite('It’s ' + article(dispQ()) + ' ' + dispQ() + ' — now find it on the neck yourself.' + cost);
-      return;
-    }
-  }
-  if (hintLevel < rungs){
-    /* A window CONTAINING the answer, at a random offset — always q.f±2
-       taught players to aim dead-centre of every hint. On a short neck
-       (stage 1's six frets) a 5-fret window is most of the board, so the
-       window shrinks to 3 frets there. */
-    const mf = tierNow().maxFret;
-    const span = mf <= 5 ? 2 : 4;              // window = span + 1 frets
-    let lo = q.f - Math.floor(Math.random() * (span + 1));
-    lo = Math.max(0, Math.min(lo, mf - span, q.f));
-    const hi = Math.min(mf, lo + span);
-    drawBoard({ range:[lo, hi] });
-    subWrite('Hint: it’s between fret ' + lo + ' and ' + hi + '.' + cost);
-  } else {
-    revealedThisQ = true;   // a shown answer — the correct that follows is not a recall
-    drawBoard({ reveal:true });
-    /* The reveal SPEAKS the location too: a screen-reader player cannot read
-       the highlighted strip, and "right here" points at nothing they can hear. */
-    subWrite('It is right here — fret ' + q.f + ' on the ' + q.sn + ' string.' + cost);
+    gvShowStaff(false);
   }
 }
 
@@ -850,8 +778,8 @@ function gvZap(){
   GV.zapHit = false;   // the spark burst waits for the ball to LAND (drawScene)
   if (GV.promptKind === 'staff'){
     drawStaff(document.getElementById('gvStaff'), q.midi, { showName:true, flat:qFlat });
-    /* The named staff comes back over any hint strip: the answer is in, so
-       the picture the player should leave with is the one on the page. */
+    /* The answer is in: the picture the player should leave with is the
+       named note on the page. */
     gvShowStaff(true);
   }
 }
@@ -883,8 +811,8 @@ function gvBreach(){
     pageRead = ' — written ' + GAME.staffPosName(
       GAME.staffSpec(q.midi, qFlat ? { prefer:'flat' } : undefined).pos);
     drawStaff(document.getElementById('gvStaff'), q.midi, { showName:true, flat:qFlat });
-    /* The named staff comes back over any hint strip: the answer is in, so
-       the picture the player should leave with is the one on the page. */
+    /* The answer is in: the picture the player should leave with is the
+       named note on the page. */
     gvShowStaff(true);
   }
   v.textContent = 'The fuse burnt out — that was ' + dispQ() + ', ' +
@@ -944,11 +872,9 @@ function gvGameOver(lastNote){
   subWrite('');
   const v = document.getElementById('fVerdict');
   v.innerHTML = '&nbsp;'; v.className = 'verdict';
-  // The coach slot empties with the question it belonged to.
+  // The staff slot empties with the question it belonged to.
   gvShowStaff(false);
-  document.getElementById('fBoard').innerHTML = '';
-  // Dead controls read as dead: Hint and Skip disable until the restart.
-  document.getElementById('fHint').disabled = true;
+  // A dead control reads as dead: Show me disables until the restart.
   document.getElementById('fSkip').disabled = true;
   updateBestNote();
   /* LIGHTS OUT is drawn inside a stage that has not moved since the run
@@ -1167,14 +1093,14 @@ document.addEventListener('visibilitychange', () => {
      · the scene's integer pixel scale (1× / 2× / 3× of the 320×150 backing
        store: every game pixel must be a whole number of screen pixels, so
        the choice is which whole number, not whether);
-     · --gv-media-h, the coach slot, on viewports too short to hold a
+     · --gv-media-h, the staff slot, on viewports too short to hold a
        full-size staff.
 
    Width alone used to pick the scale, which is how a 1280×800 laptop ended
-   up with a 962×452 stage and a console 792px tall before a hint had even
-   been asked for. Height is the other half of the answer now: walk a ladder
-   of (coach slot, scene size) pairs, best first, and take the first rung
-   whose whole console fits between the header and the nav. */
+   up with a 962×452 stage and a console 792px tall. Height is the other half
+   of the answer now: walk a ladder of (staff slot, scene size) pairs, best
+   first, and take the first rung whose whole console fits between the header
+   and the nav. */
 const GV_MEDIA_STEPS = [154, 138, 122, 106, 96, 84];
 const GV_INFO_MIN = 300;    // the read column never squeezes below this
 function gvNavH(){
@@ -2150,77 +2076,151 @@ function drawClefRef(){
     ctx.fillText(name, nx, cv.height - 4);
   });
 }
-/** The hint picture: ONE string — the one the question already named — with
-    the answer's neighbourhood framed on it.
 
-    It used to be the whole 5×13 fretboard: 146px on a phone, 400px on a
-    desktop, arriving mid-question and pushing the stage off the screen. Most
-    of it was answering a question nobody asked, because the question names the
-    string. So the strip draws the target string only (`strings:[q.sn]`, which
-    is why every marker indexes si:0) and spends its height on marker size
-    instead of rows. It lives in the console's reserved coach slot, so drawing
-    it moves nothing.
+/* ================= the note map =================
+   The whole neck, named: 5 strings × frets 0–12, every position carrying the
+   note that lives there. It is REFERENCE, not help — a collapsed card below
+   the console, the same standing as the staff guide beside it. Nothing in the
+   play loop reads it, opens it or points at it; the player opens it when they
+   want to study the neck, and closes it when they want to be asked.
 
-    `bare` (svg only, no label column and no scroll box): the strip is sized to
-    fit its column, and CSS scales the SVG — vector, so nothing blurs and
-    nothing scrolls — while the string's name is one DOM chip beside it.
-
-    `idle` draws the same strip with nothing marked on it, which is what a
-    name-mode question shows from the moment it is posed: the slot is never an
-    empty box, the player can see the string they are hunting on, and a hint
-    then lands its window on a picture that is ALREADY THERE — the difference
-    between the two states is the answer, not the furniture. */
-function drawBoard(opts){
-  const t = tierNow(), host = document.getElementById('fBoard');
-  if (!q){ host.innerHTML = ''; return; }
+   Three display options, because one map cannot be right for everyone:
+     · Names — Naturals only (the seven letters a beginner is building),
+       Sharps (C♯) or Flats (D♭). Same fret, same sound, two spellings; the
+       reading mode asks in both, so the map can teach in both.
+     · This stage — dims everything the current stage never asks (other
+       strings, frets past its ceiling, the accidentals below stage 5), so the
+       map matches the questions instead of overwhelming them.
+     · My weak spots — the positions your own misses are piling up on
+       (stats.heat + the rolling per-position record the picker uses), drawn
+       in the miss colour ON TOP of their names. */
+function mapMarkers(){
+  const st = loadShared().stats || {};
+  const heat = st.heat || {}, recent = st.noteRecent || {};
+  /* "What this stage asks" is not re-derived here: pool() IS that answer, and
+     it already carries the string focus and the fret window as well as the
+     stage. A second copy of the rule would drift from the questions. */
+  const askable = new Set(pool().map(it => it.sn + ':' + it.f));
   const markers = [];
-  let win, label;
-  if (opts.idle){
-    /* The whole string is "the window" while nothing has been hinted: same
-       geometry as a hint, so the strip is the same picture in both states and
-       the hint reads as the viewfinder CLOSING IN on the answer rather than as
-       a new object arriving. */
-    win = [0, t.maxFret]; label = false;
-  } else if (opts.reveal){
-    markers.push({ si:0, fret:q.f, kind:'correct', label:dispQ() });
-    win = [q.f, q.f];
-    /* No pill on the reveal: a one-fret window is narrower than its own label,
-       so the badge on the answer's dot ended up printed over the words. The
-       named dot and the framed fret number are the label. */
-    label = false;
-  } else {
-    // The search area, framed and question-marked — where, not which.
-    for (let f = opts.range[0]; f <= opts.range[1]; f++){
-      markers.push({ si:0, fret:f, kind:'asked', label:'?' });
+  let weakSeen = 0;
+  for (let si = 0; si < TUNING.names.length; si++){
+    const sn = TUNING.names[si];
+    for (let f = 0; f <= 12; f++){
+      const name = C.NAMES[(((TUNING.midi[si] + f) % 12) + 12) % 12];
+      const isNat = NATURALS.has(name);
+      if (!isNat && GV.map.spell === 'natural') continue;   // naturals-only: draw nothing there
+      const key = sn + ':' + f;
+      const weak = (heat[key] | 0) > 0 || (recent[key] || []).indexOf(0) >= 0;
+      if (weak) weakSeen++;
+      markers.push({
+        si, fret:f,
+        kind: (GV.map.weak && weak) ? 'heat' : (isNat ? 'tone' : 'ghost'), heat:1,
+        label: isNat ? name : (GV.map.spell === 'flat' ? FLAT_DISP[name] : disp(name)),
+        /* Not a marker property the renderer knows — read back below to dim
+           what this stage never asks. */
+        out: GV.map.stage && !askable.has(key),
+      });
     }
-    win = opts.range;
-    /* No pill here either: at the strip's scale the label's badge sits on top
-       of the ? markers it is labelling. The frame, the question marks and the
-       fret numbers under them say "somewhere in here" without it — and the
-       sentence above says it in words. */
-    label = false;
   }
-  BassNeck.render(host, {
-    strings: [q.sn], fromFret:0, toFret:t.maxFret, scale:'strip', bare:true,
-    markers, window: win, windowLabel: label,
-    title: opts.idle ? ('the ' + q.sn + ' string, frets 0 to ' + t.maxFret)
-         : opts.reveal ? (dispQ() + ' is on the ' + q.sn + ' string, fret ' + q.f)
-         : 'the ' + q.sn + ' string, frets ' + opts.range.join(' to '),
+  return { markers, weakSeen, askable };
+}
+/** The askable set, in words: "E A strings, frets 0–5, naturals only" — read
+    off the pool itself, so the sentence can never describe a different neck
+    than the one the dimming drew. */
+function askableWords(askable){
+  const strs = TUNING.names.filter(sn => [...askable].some(k => k.split(':')[0] === sn));
+  const frets = [...askable].map(k => +k.split(':')[1]);
+  const lo = Math.min.apply(null, frets), hi = Math.max.apply(null, frets);
+  const anyAcc = [...askable].some(k => {
+    const si = TUNING.names.indexOf(k.split(':')[0]);
+    return !NATURALS.has(C.NAMES[(((TUNING.midi[si] + +k.split(':')[1]) % 12) + 12) % 12]);
   });
-  /* The string's name, beside the strip the way the board's label column
-     names its rows — a lone strip of wood does not say which string it is. */
-  const chip = document.createElement('span');
-  chip.className = 'gv-strip-str neck-label' +
-    (q.sn === TUNING.names[0] ? ' is-lowest' : '');
-  chip.textContent = q.sn;
-  host.insertBefore(chip, host.firstChild);
-  gvShowStaff(false);   // one occupant per slot: the strip has it now
+  return strs.join(' ') + (strs.length === 1 ? ' string' : ' strings') +
+    ', frets ' + lo + '–' + hi + (anyAcc ? ', sharps included' : ', naturals only');
+}
+function renderNoteMap(){
+  const card = document.getElementById('gvMap');
+  const host = document.getElementById('gvMapBoard');
+  if (!card || !host) return;
+  // Collapsed is the default and the resting state: nothing to draw, and a
+  // <details> that is shut has no width to lay a board out in anyway.
+  if (!card.open){ host.innerHTML = ''; return; }
+  const { markers, weakSeen, askable } = mapMarkers();
+  const scale = matchMedia('(min-width:1000px)').matches ? 'desk'
+              : matchMedia('(min-width:760px)').matches ? 'readbig' : 'read';
+  const spellWord = GV.map.spell === 'natural' ? 'naturals only'
+                  : GV.map.spell === 'flat' ? 'flat names' : 'sharp names';
+  BassNeck.render(host, {
+    strings: TUNING.names, fromFret:0, toFret:12, scale, markers,
+    title: 'Note map: the five strings B E A D G, frets 0 to 12, ' + spellWord,
+  });
+  /* The renderer dims what falls outside a WINDOW; this map's "outside" is a
+     stage — some of it strings, some of it frets, some of it the accidentals a
+     stage below the fifth never asks for. Same visual language, applied after
+     the draw rather than bent into a window the board does not have. */
+  markers.forEach(m => {
+    if (!m.out) return;
+    const g = host.querySelector('.neck-marker[data-s="' + m.si + '"][data-f="' + m.fret + '"]');
+    if (g) g.classList.add('is-outside');
+  });
+  const note = document.getElementById('gvMapNote');
+  if (note){
+    const bits = [];
+    if (GV.map.stage){
+      const scope = askableWords(askable);
+      /* Nothing dimmed is a fact worth saying: a caption explaining a dimming
+         the player cannot see reads as a bug in the map. */
+      bits.push(markers.some(m => m.out)
+        ? 'Dimmed = not asked on <b>Stage ' + (tier + 1) + '</b> (' + scope + ').'
+        : '<b>Stage ' + (tier + 1) + '</b> asks all of these — ' + scope + ' — so nothing is dimmed.');
+    }
+    if (GV.map.weak){
+      bits.push(weakSeen
+        ? '<b class="gv-map-weakkey">Red</b> = positions you have missed — ' + weakSeen +
+          ' of them so far.'
+        : 'No misses on record yet, so nothing is marked red — play a set and come back.');
+    }
+    if (GV.map.spell !== 'natural'){
+      bits.push('Every ♯ has a ♭ name for the same fret: <b>C♯ = D♭</b>.');
+    }
+    note.innerHTML = bits.join(' ');
+    note.classList.toggle('hidden', !bits.length);
+  }
+  const now = document.getElementById('gvMapNow');
+  if (now){
+    now.textContent = (GV.map.spell === 'natural' ? 'Naturals' :
+                       GV.map.spell === 'flat' ? 'Flats ♭' : 'Sharps ♯') +
+      (GV.map.stage ? ' · this stage' : ' · whole neck') +
+      (GV.map.weak ? ' · weak spots' : '');
+  }
 }
 function updateFindStats(){
   document.getElementById('fScore').textContent = sess.find.score;
   document.getElementById('fClean').textContent = sess.find.clean;
   document.getElementById('fStreak').textContent = sess.find.streak;
   document.getElementById('fAsked').textContent = sess.find.asked;
+}
+
+/** The whole out-of-tune verdict, and it ESCALATES inside one question.
+    A first bad reading is usually a finger a millimetre off the fret, so the
+    first line keeps both hypotheses open. A second one on the same question —
+    after the player has already adjusted — is usually the string itself, and
+    that is a Tuner job. That sentence used to arrive through the Hint button
+    ("it is your tuning that is off — open the Tuner tab"); with the hint gone
+    it rides the verdict here, or a player with a flat string would be told to
+    move their finger forever.
+    The escalation REPLACES the line rather than extending it: the verdict has
+    a reserved height, and a second sentence bolted onto the first overflowed
+    it at every viewport (measured: 110px of text in a 72px slot). Plain text —
+    the verdict is written with textContent. */
+function tuneVerdict(reading, lead){
+  outOfTuneCount++;
+  const c = Math.abs(Math.round(reading.cents));
+  const dir = reading.cents < 0 ? 'flat' : 'sharp';
+  return outOfTuneCount >= 2
+    ? 'Still ' + c + ' cents ' + dir + ' — that is the string, not your finger. Open the Tuner tab.'
+    : lead + ' But it is ' + c + ' cents (nearly half a fret) ' + dir +
+      ' — check your finger placement, or that string may need tuning.';
 }
 
 function onStableNote(reading){
@@ -2250,47 +2250,34 @@ function onStableNote(reading){
        the heat map and the "in under 2 seconds" checkpoint already assume.
        Hunting used to bank a wrong AND then a correct, so four questions all
        answered right came out as 50% of 8. countWrong() has already banked
-       this question if the first attempt missed. And CLEAN means unaided:
-       a correct after any hint scores as found, never as a first-try recall. */
+       this question if the first attempt missed. CLEAN is simply: first
+       attempt, and no tuning waiver. */
     const acceptCorrect = (label, playedFret) => {
       /* And not after an out-of-tune reading on the target fret: that verdict
          already confirmed the position, so the eventual in-tune correct is a
          dirty find, not a first-try recall. */
-      const clean = wrongThisQ === 0 && hintLevel === 0 && !tuneWaivedThisQ;
+      const clean = wrongThisQ === 0 && !tuneWaivedThisQ;
       /* Octave twins are ACCEPTED at another fret — the record must follow the
          fret actually played, or the picker trains the wrong position. */
       const played = (playedFret != null && playedFret !== q.f)
         ? Object.assign({}, q, { f: playedFret }) : q;
       const playedKey = played.sn + ':' + played.f;
-      /* A REVEALED find gets its own verdict voice: the bookkeeping (no XP,
-         no zap, failed recall) is honest, so the copy must be too — "there it
-         is" would congratulate the player on reading a highlight. */
-      vEl.textContent = revealedThisQ
-        ? 'That’s the one I showed you — no credit this time.'
-        : label;
+      vEl.textContent = label;
       vEl.className = 'verdict ok';
-      /* 'found' means found: a revealed answer was shown, not found. */
-      if (!revealedThisQ) sess.find.score++;
+      sess.find.score++;
       if (clean){
         sess.find.clean++; sess.find.streak++; sess.find.asked++;
         recordAnswer(true, played, performance.now() - qStart);
       } else if (wrongThisQ === 0){
-        /* Hint-assisted find: the question was asked and the streak is gone,
-           but only the REVEAL rung banks a shared answer — a shown answer is
-           a failed recall; a range hint is guided practice, which still books
-           a quiet comeback (review only — no heat, no recent-miss write). */
+        /* No miss, but no first-try credit either — an out-of-tune reading on
+           the target fret already confirmed the position. The question was
+           asked and the streak is gone; the position books a quiet comeback
+           (review only — no heat, no recent-miss write), because a note that
+           needed two goes is a note worth asking again. */
         sess.find.asked++; sess.find.streak = 0;
-        if (revealedThisQ){
-          recordAnswer(false, played, performance.now() - qStart);
-          reviewQ.add(playedKey, qCount);
-        } else if (hintLevel > 0){
-          reviewQ.add(playedKey, qCount);
-        }
+        reviewQ.add(playedKey, qCount);
       }
-      /* The arcade score keeps the same distinction: a REVEALED answer is
-         'assisted' — no XP, no zap, no toast — while a plain hunted find
-         stays 'dirty' with its small payout. */
-      gvJudge(clean ? 'clean' : (revealedThisQ ? 'assisted' : 'dirty'));
+      gvJudge(clean ? 'clean' : 'dirty');
       if (GV.promptKind === 'staff') staffAnswered = true;   // the pointer's job is done
       if (clean) gvCue('ding');
       gvZap();
@@ -2304,17 +2291,15 @@ function onStableNote(reading){
       const near = Math.abs(heardCents) >= 25
         ? ' (a touch ' + (heardCents < 0 ? 'flat' : 'sharp') + ', but it counts)'
         : '';
-      acceptCorrect((wrongThisQ === 0 && hintLevel === 0 && !tuneWaivedThisQ
+      acceptCorrect((wrongThisQ === 0 && !tuneWaivedThisQ
         ? (near ? 'FIRE! ' + dn + ' rings the bell.'   // "dead on" would argue with the tail
            : ['FIRE! ' + dn + ' rings the bell.', dn + ' — dead on.',
               'BOOM — that was ' + dn + '.', dn + '. The bell tolls.'][Math.floor(Math.random()*4)])
         : 'There it is — ' + dn + '.') + near);
     } else if (verdict === 'out-of-tune'){
-      vEl.textContent = 'Right note! But it is ' + Math.abs(Math.round(reading.cents)) + ' cents (nearly half a fret) ' +
-        (reading.cents < 0 ? 'flat' : 'sharp') +
-        ' — check your finger placement, or that string may need tuning.';
+      vEl.textContent = tuneVerdict(reading, 'Right note!');
       vEl.className = 'verdict warn';
-      outOfTuneThisQ = true;   // holds the fuse (~4s budget); the Hint button escalates
+      outOfTuneThisQ = true;   // holds the fuse (~4s budget)
       /* Fighting intonation IS progress — the stall nudge must not fire over
          a player mid-adjustment. */
       lastProgressAt = performance.now();
@@ -2335,10 +2320,8 @@ function onStableNote(reading){
         if (Math.abs(reading.cents) <= C.CENTS_TOLERANCE){
           acceptCorrect(dispQ() + ' — that’s the other one: it also lives at fret ' + twinF + '. Both count.', twinF);
         } else {
-          vEl.textContent = 'Right note — that’s the other ' + dispQ() + ', at fret ' + twinF +
-            '! But it is ' + Math.abs(Math.round(reading.cents)) + ' cents (nearly half a fret) ' +
-            (reading.cents < 0 ? 'flat' : 'sharp') +
-            ' — check your finger placement, or that string may need tuning.';
+          vEl.textContent = tuneVerdict(reading,
+            'Right note — that’s the other ' + dispQ() + ', at fret ' + twinF + '!');
           vEl.className = 'verdict warn';
           outOfTuneThisQ = true;
           lastProgressAt = performance.now();   // same rule: intonation work is progress
@@ -2359,8 +2342,8 @@ function onStableNote(reading){
         countWrong({ soft:true });
       } else if (GV.promptKind === 'staff'){
         /* Reading mode teaches NOTATION, so the correction reads the page,
-           not the neck: no fret number (the reveal rung still gives it) —
-           and ledger-line advice only where ledger lines exist to count. */
+           not the neck: no fret number — Show me is where a fret number comes
+           from — and ledger-line advice only where ledger lines exist. */
         const flatOpt = qFlat ? { prefer:'flat' } : undefined;
         const hasLedgers = GAME.staffSpec(q.midi, flatOpt).ledgers.length > 0
           || GAME.staffSpec(reading.midi, flatOpt).ledgers.length > 0;
@@ -2375,9 +2358,9 @@ function onStableNote(reading){
         vEl.className = 'verdict no';
         countWrong();
       } else {
-        /* Name mode, non-twin octave miss: direction only — the reveal rung
-           remains the only place the fret is shown. The octave count is
-           honest: a two-octave slip is not "an octave". */
+        /* Name mode, non-twin octave miss: direction only — Show me remains
+           the only place the fret is shown. The octave count is honest: a
+           two-octave slip is not "an octave". */
         /* Same hedge as the upward sibling above: a downward octave slip on a
            five-string is very often a DIFFERENT string, not the same one. */
         vEl.textContent = 'That’s ' + article(dispHeard(heardName)) + ' ' + dispHeard(heardName) +
@@ -2436,7 +2419,7 @@ function countWrong(opts){
   lastProgressAt = performance.now();
   gvCue('buzz');                                         // a dull thud with the 'no' verdict
   /* A wrong note supersedes the tuning theory: the stale "it is your tuning"
-     hint must not keep outranking the ladder for a note that simply missed. */
+     reading must not keep holding the fuse for a note that simply missed. */
   outOfTuneThisQ = false;
   /* Fuse fairness on timed paces: reading the correction is not fuse time.
      The freeze rides the same spawnAt-slide the out-of-tune hold uses — but
@@ -2459,10 +2442,6 @@ function countWrong(opts){
       reviewQ.add(q.sn + ':' + q.f, qCount);   // a recorded miss books a comeback
     }
   }
-  /* The second miss opens help by itself — on the Auto setting only, and the
-     auto-ladder tops out at the RANGE rung: the reveal stays behind the
-     Hint button (see showHint's `auto` cap). */
-  if (wrongThisQ >= 2 && GV.hints !== 'manual' && hintLevel < maxHintRungs() - 1) showHint(true);
   updateFindStats();
 }
 /* Day-stamped answers, in the shared store, so the practice plan's "This week"
@@ -2893,24 +2872,58 @@ function renderGameUI(){
     }));
   }
   syncSeg(snd, 'data-snd', k => (k === 'true') === GV.sound);
-  // Hints: Auto (the stall/miss ladder opens the name/range rungs itself —
-  // never the reveal) or Manual (no auto-hints at all; nudge only). Persisted.
-  const hs = document.getElementById('gvHintSeg');
-  if (hs && !hs.dataset.built){
-    hs.dataset.built = '1';
-    hs.innerHTML = [['auto','Auto'], ['manual','Manual']].map(([k, label]) =>
-      '<button data-h="' + k + '">' + label + '</button>').join('');
-    hs.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
-      GV.hints = b.dataset.h === 'manual' ? 'manual' : 'auto';
-      gvSave(); renderGameUI();
-    }));
-  }
-  syncSeg(hs, 'data-h', k => k === GV.hints);
   updateSetupNow();
   updateBestNote();
   drawClefRef();
+  renderNoteMap();   // the map follows the stage it is dimming against
   gvFitScene();   // entering/re-rendering the game: keep the pixels integer
 }
+
+/** The note map's own controls. Built once, synced in place — same rule as the
+    difficulty panel's segments, so a click never costs the button its focus. */
+function renderMapUI(){
+  const sp = document.getElementById('gvMapSpellSeg');
+  if (sp && !sp.dataset.built){
+    sp.dataset.built = '1';
+    sp.innerHTML = [['natural','Naturals only'], ['sharp','Sharps ♯'], ['flat','Flats ♭']]
+      .map(([k, label]) => '<button data-sp="' + k + '">' + label + '</button>').join('');
+    sp.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+      GV.map.spell = b.dataset.sp; gvSave(); renderMapUI(); renderNoteMap();
+    }));
+  }
+  syncSeg(sp, 'data-sp', k => k === GV.map.spell);
+  const sc = document.getElementById('gvMapScopeSeg');
+  if (sc && !sc.dataset.built){
+    sc.dataset.built = '1';
+    sc.innerHTML = [['stage','This stage'], ['all','Whole neck']]
+      .map(([k, label]) => '<button data-sc="' + k + '">' + label + '</button>').join('');
+    sc.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+      GV.map.stage = b.dataset.sc === 'stage'; gvSave(); renderMapUI(); renderNoteMap();
+    }));
+  }
+  syncSeg(sc, 'data-sc', k => (k === 'stage') === GV.map.stage);
+  const wk = document.getElementById('gvMapWeakSeg');
+  if (wk && !wk.dataset.built){
+    wk.dataset.built = '1';
+    wk.innerHTML = [['off','Off'], ['on','Show']]
+      .map(([k, label]) => '<button data-wk="' + k + '">' + label + '</button>').join('');
+    wk.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+      GV.map.weak = b.dataset.wk === 'on'; gvSave(); renderMapUI(); renderNoteMap();
+    }));
+  }
+  syncSeg(wk, 'data-wk', k => (k === 'on') === GV.map.weak);
+}
+/* Opening the map is when it gets drawn: a shut <details> has no width to lay
+   a fretboard out in, and a board nobody has asked for is work nobody wanted. */
+(function wireMap(){
+  const card = document.getElementById('gvMap');
+  if (!card) return;
+  renderMapUI();
+  card.addEventListener('toggle', () => { if (card.open) renderNoteMap(); });
+  // The board's size follows the viewport (desk / readbig / read), so a
+  // rotated phone or a resized window redraws it — only while it is open.
+  window.addEventListener('resize', () => { if (card.open) renderNoteMap(); });
+})();
 
 /* One button, one click: it grants the mic AND starts what you came for. The
    mode is set BEFORE the panel is shown, so the panel never appears for a
@@ -2937,15 +2950,16 @@ document.getElementById('tierSel').addEventListener('change', e => {
 document.getElementById('gvWorld').addEventListener('change', e => {
   tier = +e.target.value; focus = null; persistTier(); renderTierUI(); gvNewRun(); newQuestion();
 });
-document.getElementById('fHint').addEventListener('click', showHint);
 document.getElementById('fSkip').addEventListener('click', () => {
   if (GV.run && GV.run.state.over) return;   // Play again is the only door now
   if (!q) return;
   if (GV.phase === 'zap' || GV.phase === 'breach' || GV.phase === 'hold') return;   // a verdict is settling
-  /* A skip teaches and records: say what it was, break the session streak,
-     bank a SOFT miss (position heat + recent, but not the shared accuracy —
-     walking away is not a wrong answer), book the comeback, THEN move on
-     slowly enough that the correction line can actually be read. */
+  /* SHOW ME is the only "I don't know" the game has, and it is a teaching
+     door, not a trapdoor: it names the note, the string and the fret (and the
+     written position in reading mode), breaks the session streak, banks a SOFT
+     miss (position heat + recent, but not the shared accuracy — asking to be
+     shown is not a wrong answer), books the comeback, and holds the correction
+     as long as a burnt fuse does so it can actually be read. */
   const v = document.getElementById('fVerdict');
   /* A reading question's correction reads the page too, and shows the named
      staff — the same teaching the breach and zap paths give. */
@@ -2954,8 +2968,8 @@ document.getElementById('fSkip').addEventListener('click', () => {
     skipPage = ' — written ' + GAME.staffPosName(
       GAME.staffSpec(q.midi, qFlat ? { prefer:'flat' } : undefined).pos);
     drawStaff(document.getElementById('gvStaff'), q.midi, { showName:true, flat:qFlat });
-    /* The named staff comes back over any hint strip: the answer is in, so
-       the picture the player should leave with is the one on the page. */
+    /* The answer is in: the picture the player should leave with is the
+       named note on the page. */
     gvShowStaff(true);
   }
   /* A skip must not refill the fuse: whatever was left is what the next
@@ -2967,8 +2981,8 @@ document.getElementById('fSkip').addEventListener('click', () => {
   if (carrying){
     GV.carryFuseMs = Math.max(0, msLeft - (performance.now() - GV.spawnAt) - 1000);
   }
-  v.textContent = 'Skipped — that was ' + dispQ() + ', ' + q.sn + ' string, fret ' + q.f +
-    skipPage + (carrying ? ' — the fuse carries over.' : '.');
+  v.textContent = 'That one was ' + dispQ() + ' — ' + q.sn + ' string, fret ' + q.f +
+    skipPage + (carrying ? ' — the fuse carries over.' : '. It will come back.');
   v.className = 'verdict warn';
   sess.find.streak = 0;
   sess.find.asked++;                         // a skipped question was still posed
@@ -2986,7 +3000,7 @@ document.getElementById('fSkip').addEventListener('click', () => {
     });
   }
   reviewQ.add(key, qCount);
-  gvJudge('skip');                           // walks away; the combo goes too
+  gvJudge('skip');                           // shown, not found: the combo goes
   /* A distinct HOLD phase, not a fake breach: no smoke, no misfire fiction —
      the cannon just settles (drawScene dips the barrel 1px) while the
      correction line shows. Judging stays closed until the next question. */
@@ -3010,11 +3024,11 @@ document.getElementById('fSub').addEventListener('click', e => {
 document.getElementById('gvRestart').addEventListener('click', () => {
   gvNewRun();
   newQuestion();
-  /* The overlay that held focus is gone — send focus somewhere real (the
-     Hint button, just re-enabled) instead of letting it fall to <body>,
-     which strands a screen reader at the top of the document. */
-  const h = document.getElementById('fHint');
-  if (h) h.focus();
+  /* The overlay that held focus is gone — send focus somewhere real (Show me,
+     just re-enabled: the only control the play area has) instead of letting it
+     fall to <body>, which strands a screen reader at the top of the document. */
+  const s = document.getElementById('fSkip');
+  if (s) s.focus();
 });
 document.getElementById('ePlay').addEventListener('click', () => { if (echoTarget != null) playNote(echoTarget); });
 document.getElementById('eNext').addEventListener('click', newEcho);
@@ -3043,20 +3057,15 @@ setInterval(() => {
   const fuseMs = GAME.approachMs(GV.pace, GAME.levelFor(GV.xp));
   const nudgeAt = (fuseMs != null && fuseMs < 10000) ? 5000 : 10000;
   if (stalledFor <= (wrongThisQ > 0 ? 4500 : nudgeAt)) return;
-  /* Before any miss, silence is often DELIBERATE work — reading the neck,
-     counting frets, thinking down a 14-second fuse. On EVERY pace that
-     earns only the free nudge (no rung spent, once per question); the
-     player keeps full clean credit. Only a question already missed gets
-     the 4.5s auto-ladder — and only on the Auto hints setting: Manual
-     gets the nudge and nothing else. */
-  if (wrongThisQ === 0 || GV.hints === 'manual'){
-    if (!nudgedThisQ){
-      nudgedThisQ = true;
-      subWrite('Stuck? The Hint button is just below.');
-    }
-    return;
+  /* Silence is often DELIBERATE work — reading the neck, counting frets,
+     thinking down a 14-second fuse — so this is a pointer, once per question,
+     and never a spoiler: the answer stays behind a button the player presses.
+     It names what Show me actually does, because the honest price (a soft
+     miss, and the note comes back) is what makes it worth pressing. */
+  if (!nudgedThisQ){
+    nudgedThisQ = true;
+    subWrite('Stuck? <b>Show me</b> names it and moves you on — it comes back later.');
   }
-  if (hintLevel < maxHintRungs() - 1) showHint(true);   // auto caps at the range rung
 }, 700);
 
 /* ==================================================================
@@ -5224,15 +5233,18 @@ window.BassLive = { mount, showMode, armMic: startListening, suspend, resume, pr
 
 /* ---- test seam ----
    trainer/test/integration.test.js drives this half the way a player cannot:
-   it plants the question it is about to "play" (q, echoTarget), jumps the hint
-   level, resets the pitch tracker between notes. Those names were globals when
+   it plants the question it is about to "play" (q, echoTarget) and resets the
+   pitch tracker between notes. Those names were globals when
    this file was a <script> in its own page; now that both apps share one
    document they cannot be, so the seam the suite holds on to is published here
    deliberately. Accessors, not copies — the suite ASSIGNS q and echoTarget and
    the app has to see the write. */
 [['q',        () => q,        v => { q = v; }],
- ['hintLevel',() => hintLevel,v => { hintLevel = v; }],
  ['wrongThisQ',()=> wrongThisQ,v => { wrongThisQ = v; }],
+ /* The stall clock: trainer/test/polish.test.js measures the console with the
+    stall nudge painted, and waiting ten real seconds for it in each of sixteen
+    states would make one assertion three minutes long. */
+ ['lastProgressAt',()=> lastProgressAt,v => { lastProgressAt = v; }],
  ['qStart',   () => qStart,   v => { qStart = v; }],
  ['echoTarget',()=> echoTarget,v => { echoTarget = v; }],
  ['echoWrongThisTarget', () => echoWrongThisTarget, v => { echoWrongThisTarget = v; }],
@@ -5244,13 +5256,16 @@ window.BassLive = { mount, showMode, armMic: startListening, suspend, resume, pr
 ].forEach(([name, get, set]) =>
   Object.defineProperty(window, name, { configurable:true, get, set }));
 window.setMode = setMode;
-window.showHint = showHint;
 window.renderTierUI = renderTierUI;
 /* The console's height must not move when a verdict paints, and the longest
    verdict the game can write is a burnt fuse's correction — three facts and a
    lights count. Waiting a real fuse out per case would make that test minutes
    long; this poses the same painted state directly. */
 window.gvBreach = gvBreach;
+/* Same reason, for the review queue: proving that a note you were SHOWN comes
+   back means advancing several questions, and playing them for real would make
+   one assertion a minute long. */
+window.newQuestion = newQuestion;
 window.A = A;
 window.GV = GV;   // scene state, so a harness can pin an exact animation frame
 /* trainer/test/shell.test.js asks what happened to the click, the drill run and

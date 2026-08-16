@@ -436,11 +436,13 @@ test('leaving Ear mode takes its "playing the note" pill with it', async () => {
    THE CONSOLE. Find-it's card is an instrument panel, not a document:
    at a given viewport it is the SAME HEIGHT in every state of the game,
    it sits between the sticky header and the nav without scrolling, and
-   nothing the game does — a hint, a new question, a verdict, a settings
-   change — is allowed to move the page. This is the defect that shipped:
-   a reveal hint drew a 400px fretboard and the page auto-scrolled 152px,
-   so the player lost sight of the stage at the exact moment they were
-   being taught something.
+   nothing the game does — a new question, a verdict, being shown the
+   answer, a settings change — is allowed to move the page. This is the
+   defect that shipped: a reveal hint drew a 400px fretboard and the page
+   auto-scrolled 152px, so the player lost sight of the stage at the exact
+   moment they were being taught something. The hint rungs are gone from
+   the state matrix below with the hints themselves; what remains is every
+   state the game can still be in.
    ------------------------------------------------------------------ */
 const CONSOLE_VIEWPORTS = [
   { width: 1280, height: 800 },    // the desktop this is played on
@@ -484,8 +486,9 @@ test('the game console is one fixed height that fits the screen, in every state'
         return m;
       };
 
-      /* --- A: every combination of prompt × hint rung × verdict, at two paces,
-             and the whole play area is on screen in all of them. --- */
+      /* --- A: every state the game can be in — pace × prompt × {fresh, a
+             verdict painted, the answer shown, lights out} — and the whole
+             play area is on screen in all of them. --- */
       for (const pace of ['chill', 'steady']) {
         for (const prompt of ['name', 'staff']) {
           await page.evaluate(([p, r]) => {
@@ -493,17 +496,24 @@ test('the game console is one fixed height that fits the screen, in every state'
             document.querySelector(`#gvPromptSeg button[data-r="${r}"]`).click();
           }, [pace, prompt]);
           await page.waitForTimeout(150);
-          for (const rungs of [0, 1, 2, 3]) {
-            // a fresh question, then climb the hint ladder that far
-            await page.evaluate(() => document.getElementById('gvRestart').click());
-            for (let i = 0; i < rungs; i++) await page.evaluate(() => showHint());
-            await page.waitForTimeout(100);
-            await look(`${pace}/${prompt}/hint${rungs}`);
-            // …and the same state with a verdict painted (the longest one)
-            await page.evaluate(() => gvBreach());
-            await page.waitForTimeout(100);
-            await look(`${pace}/${prompt}/hint${rungs}+verdict`);
-          }
+          // a fresh question
+          await page.evaluate(() => document.getElementById('gvRestart').click());
+          await page.waitForTimeout(120);
+          await look(`${pace}/${prompt}/fresh`);
+          // the stall nudge: the one thing that rewrites the coaching line
+          await page.evaluate(() => { lastProgressAt = performance.now() - 60000; });
+          await page.waitForTimeout(900);
+          await look(`${pace}/${prompt}/nudge`);
+          // being shown the answer — the longest thing Show me can write
+          await page.evaluate(() => document.getElementById('fSkip').click());
+          await page.waitForTimeout(150);
+          await look(`${pace}/${prompt}/shown`);
+          // …and the longest verdict of all: a burnt fuse's correction
+          await page.evaluate(() => document.getElementById('gvRestart').click());
+          await page.waitForTimeout(120);
+          await page.evaluate(() => gvBreach());
+          await page.waitForTimeout(120);
+          await look(`${pace}/${prompt}/verdict`);
         }
       }
       for (const m of seen) {
@@ -511,7 +521,7 @@ test('the game console is one fixed height that fits the screen, in every state'
           at + m.state + ': the HUD is under the sticky header');
         assert.ok(m.ctlBot <= m.floor,
           at + m.state + ': the console runs past the nav — ' +
-          `Hint/Skip end at ${m.ctlBot}, the screen ends at ${m.floor}`);
+          `Show me ends at ${m.ctlBot}, the screen ends at ${m.floor}`);
       }
 
       /* --- B: nothing the game does moves the page. --- */
@@ -584,6 +594,285 @@ test('the difficulty panel is closed during play, and says what it is hiding', a
     // The clef card stays collapsed reference material, below the settings.
     assert.equal(await page.evaluate(() => document.getElementById('gvClefHelp').open), false,
       'the staff reference opens itself');
+    assert.deepEqual(app.errors, [], 'page errors');
+  } finally { await app.close(); }
+});
+
+/* ------------------------------------------------------------------
+   THE NOTE MAP. The whole neck, named — a reference card below the
+   console, alongside the difficulty panel and the staff guide. It is
+   not help: it is shut unless the player opens it, it never opens
+   itself, and nothing in the play loop points at it. Opened, it has to
+   be the whole instrument (5 strings × 13 frets) and it has to be able
+   to spell what it draws three ways, because that is how the game asks.
+   ------------------------------------------------------------------ */
+test('the note map is a closed reference card that opens onto the whole neck', async () => {
+  const app = await openApp(SILENT, '/index.html#find', DESK);
+  try {
+    const { page } = app;
+    await page.click('#startBtn');
+    await page.waitForSelector('#secFind:not(.hidden)', { timeout: 5000 });
+
+    // Closed by default, and below the console — never inside the play flow.
+    assert.equal(await page.evaluate(() => document.getElementById('gvMap').open), false,
+      'the note map opens itself');
+    assert.equal(await page.isVisible('#gvMapBoard .neck-svg'), false,
+      'the map draws a board before it has been opened');
+    const order = await page.evaluate(() => {
+      const bot = el => el.getBoundingClientRect().bottom;
+      return {
+        console: bot(document.querySelector('#secFind .gv-card')),
+        map: document.getElementById('gvMap').getBoundingClientRect().top,
+        summary: document.querySelector('#gvMap > summary').textContent.trim(),
+      };
+    });
+    assert.ok(order.map >= order.console - 1, 'the map is not below the console');
+    assert.match(order.summary, /Note map/, 'the map card does not say what it is');
+
+    // Opened: five strings, thirteen frets, every position named.
+    await page.click('#gvMap > summary');
+    await page.waitForSelector('#gvMapBoard .neck-svg', { state: 'visible', timeout: 3000 });
+    const m = await page.evaluate(() => {
+      const labels = [...document.querySelectorAll('#gvMapBoard .neck-labels .neck-label')]
+        .map(l => l.textContent);
+      const frets = [...document.querySelectorAll('#gvMapBoard .neck-fretnum')]
+        .map(t => t.textContent);
+      const dots = [...document.querySelectorAll('#gvMapBoard .neck-marker')];
+      return {
+        labels, frets,
+        strings: new Set(dots.map(d => d.getAttribute('data-s'))).size,
+        names: dots.map(d => d.querySelector('.neck-dot-label').textContent),
+        title: document.querySelector('#gvMapBoard .neck-svg title').textContent,
+      };
+    });
+    assert.deepEqual(m.labels.slice().sort(), ['A', 'B', 'D', 'E', 'G'],
+      'the map does not name all five strings: ' + JSON.stringify(m.labels));
+    assert.deepEqual(m.frets, ['0','1','2','3','4','5','6','7','8','9','10','11','12'],
+      'the map does not run fret 0 to 12: ' + JSON.stringify(m.frets));
+    assert.equal(m.strings, 5, 'the map draws notes on ' + m.strings + ' strings, not 5');
+    // Naturals only is the default: 7 letters per octave, no accidentals drawn.
+    assert.deepEqual([...new Set(m.names)].sort(), ['A','B','C','D','E','F','G'],
+      'the default map should draw the naturals only: ' + JSON.stringify([...new Set(m.names)]));
+    // Open E, fret 0 on the E string, must say E — the map has to be RIGHT.
+    const openE = await page.evaluate(() => {
+      const g = document.querySelector('#gvMapBoard .neck-marker[data-s="1"][data-f="0"]');
+      return g && g.querySelector('.neck-dot-label').textContent;
+    });
+    assert.equal(openE, 'E', 'the open E is not named E on the map');
+    assert.match(m.title, /five strings|frets 0 to 12/,
+      'the board carries no description for a screen reader');
+    assert.deepEqual(app.errors, [], 'page errors');
+  } finally { await app.close(); }
+});
+
+test('the map spells the neck three ways: naturals, sharps and flats', async () => {
+  const app = await openApp(SILENT, '/index.html#find', DESK);
+  try {
+    const { page } = app;
+    await page.click('#startBtn');
+    await page.waitForSelector('#secFind:not(.hidden)', { timeout: 5000 });
+    await page.click('#gvMap > summary');
+    await page.waitForSelector('#gvMapBoard .neck-svg', { state: 'visible', timeout: 3000 });
+
+    const read = () => page.evaluate(() => {
+      const dots = [...document.querySelectorAll('#gvMapBoard .neck-marker')];
+      const at = (s, f) => {
+        const g = document.querySelector(`#gvMapBoard .neck-marker[data-s="${s}"][data-f="${f}"]`);
+        return g && g.querySelector('.neck-dot-label').textContent;
+      };
+      return {
+        count: dots.length,
+        names: [...new Set(dots.map(d => d.querySelector('.neck-dot-label').textContent))],
+        // E string fret 1 is F, fret 2 is F♯ / G♭ — one natural, one accidental.
+        eF: at(1, 1), eAcc: at(1, 2),
+        pressed: [...document.querySelectorAll('#gvMapSpellSeg button')]
+          .map(b => b.getAttribute('aria-pressed')),
+      };
+    });
+
+    const nat = await read();
+    assert.equal(nat.eAcc, null, 'naturals-only still draws the accidentals');
+    assert.equal(nat.eF, 'F', 'the E string fret 1 is not named F');
+    assert.deepEqual(nat.pressed, ['true', 'false', 'false'],
+      'the spelling segment does not report which option is on');
+
+    await page.click('#gvMapSpellSeg button[data-sp="sharp"]');
+    await page.waitForTimeout(150);
+    const sharp = await read();
+    assert.ok(sharp.count > nat.count,
+      `sharps should add the five accidentals (${nat.count} → ${sharp.count})`);
+    assert.equal(sharp.eAcc, 'F♯', 'the sharp spelling is not drawn');
+    assert.ok(sharp.names.some(n => /♯/.test(n)), 'no sharp names on the sharp map');
+    assert.ok(!sharp.names.some(n => /♭/.test(n)), 'flat names on the sharp map');
+    assert.deepEqual(sharp.pressed, ['false', 'true', 'false']);
+
+    await page.click('#gvMapSpellSeg button[data-sp="flat"]');
+    await page.waitForTimeout(150);
+    const flat = await read();
+    assert.equal(flat.count, sharp.count, 'the same positions must be drawn either way');
+    assert.equal(flat.eAcc, 'G♭', 'the flat spelling is not drawn');
+    assert.ok(flat.names.some(n => /♭/.test(n)), 'no flat names on the flat map');
+    assert.ok(!flat.names.some(n => /♯/.test(n)), 'sharp names on the flat map');
+    assert.deepEqual(flat.pressed, ['false', 'false', 'true']);
+    assert.equal(flat.eF, 'F', 'a natural changed name when the spelling changed');
+
+    // The setting survives a reload — a reference card that forgets is a chore.
+    await page.reload();
+    await page.waitForTimeout(400);
+    await page.click('#startBtn');
+    await page.waitForSelector('#secFind:not(.hidden)', { timeout: 5000 });
+    await page.click('#gvMap > summary');
+    await page.waitForSelector('#gvMapBoard .neck-svg', { state: 'visible', timeout: 3000 });
+    assert.equal((await read()).eAcc, 'G♭', 'the map forgot its spelling');
+    assert.deepEqual(app.errors, [], 'page errors');
+  } finally { await app.close(); }
+});
+
+test('the map dims what this stage does not ask, and can light up your own misses', async () => {
+  const app = await openApp(SILENT, '/index.html#find', DESK);
+  try {
+    const { page } = app;
+    await page.click('#startBtn');
+    await page.waitForSelector('#secFind:not(.hidden)', { timeout: 5000 });
+    // Stage 1 is the E and A strings, frets 0–5: everything else is dimmed.
+    await page.evaluate(() => {
+      localStorage.removeItem('bassTheoryTrainer.v1');
+      tier = 0; focus = null; renderTierUI();
+      document.getElementById('gvMap').open = true;
+    });
+    await page.waitForSelector('#gvMapBoard .neck-svg', { state: 'visible', timeout: 3000 });
+    const dimmed = await page.evaluate(() => {
+      const out = s => {
+        const g = document.querySelector(`#gvMapBoard .neck-marker[data-s="${s[0]}"][data-f="${s[1]}"]`);
+        return g && g.classList.contains('is-outside');
+      };
+      return {
+        inStage: out([1, 3]),      // E string fret 3 (G) — asked on stage 1
+        pastFret: out([1, 8]),     // E string fret 8 (C) — past this stage's ceiling
+        otherString: out([4, 5]),  // G string fret 5 (C) — not on this stage at all
+        note: document.getElementById('gvMapNote').textContent,
+      };
+    });
+    assert.equal(dimmed.inStage, false, 'a position this stage asks is dimmed');
+    assert.equal(dimmed.pastFret, true, 'a fret past this stage is not dimmed');
+    assert.equal(dimmed.otherString, true, 'a string this stage never asks is not dimmed');
+    assert.match(dimmed.note, /Stage 1/, 'the map does not say what it is dimming against');
+
+    // Whole neck: nothing dimmed.
+    await page.click('#gvMapScopeSeg button[data-sc="all"]');
+    await page.waitForTimeout(150);
+    assert.equal(await page.evaluate(() =>
+      !!document.querySelector('#gvMapBoard .neck-marker.is-outside')), false,
+      'the whole-neck view still dims positions');
+
+    // Weak spots: the overlay marks positions this player has actually missed.
+    await page.evaluate(() => {
+      const st = JSON.parse(localStorage.getItem('bassTheoryTrainer.v1') || '{}');
+      st.stats = Object.assign({ answered: 0, correct: 0, byString: {}, heat: {} }, st.stats);
+      st.stats.heat['A:5'] = 3;
+      localStorage.setItem('bassTheoryTrainer.v1', JSON.stringify(st));
+      document.querySelector('#gvMapWeakSeg button[data-wk="on"]').click();
+    });
+    await page.waitForTimeout(150);
+    const weak = await page.evaluate(() => ({
+      missed: !!document.querySelector('#gvMapBoard .neck-marker[data-s="2"][data-f="5"].is-heat'),
+      clean: !!document.querySelector('#gvMapBoard .neck-marker[data-s="2"][data-f="3"].is-heat'),
+      label: (document.querySelector('#gvMapBoard .neck-marker[data-s="2"][data-f="5"] .neck-dot-label') || {}).textContent,
+      note: document.getElementById('gvMapNote').textContent,
+    }));
+    assert.equal(weak.missed, true, 'a position this player keeps missing is not marked');
+    assert.equal(weak.clean, false, 'a position never missed was marked as weak');
+    assert.equal(weak.label, 'D', 'a marked weak spot lost its note name');
+    assert.match(weak.note, /missed/, 'the map does not explain the red marks');
+    assert.deepEqual(app.errors, [], 'page errors');
+  } finally { await app.close(); }
+});
+
+test('lights out hands focus to the restart, and the restart hands it back to a live control', async () => {
+  // The console has ONE control in the play area now. Game over disables it and
+  // moves focus to "Back on stage"; restarting must hand focus to something
+  // that exists and is enabled — it used to be the Hint button, and a focus
+  // call on a removed element drops a screen reader at the top of the document.
+  const app = await openApp(SILENT, '/index.html#find', DESK);
+  try {
+    const { page } = app;
+    await page.click('#startBtn');
+    await page.waitForSelector('#secFind:not(.hidden)', { timeout: 5000 });
+    await openSettings(page);
+    await page.click('#gvPaceSeg button[data-p="steady"]');   // a pace with stage lights
+    await page.click('#gvSettings > summary');
+    await page.waitForTimeout(200);
+    for (let i = 0; i < 3; i++) {
+      await page.evaluate(() => gvBreach());
+      await page.waitForTimeout(200);
+    }
+    await page.waitForSelector('#gvOver:not(.hidden)', { timeout: 3000 });
+    await page.waitForTimeout(600);   // the announcement-safe focus delay
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'gvRestart',
+      'lights out did not put focus on the way back');
+    assert.equal(await page.evaluate(() => document.getElementById('fSkip').disabled), true,
+      'a dead control is still focusable during lights out');
+    await page.evaluate(() => document.getElementById('gvRestart').click());
+    await page.waitForTimeout(200);
+    const after = await page.evaluate(() => ({
+      focused: document.activeElement.id,
+      disabled: document.getElementById('fSkip').disabled,
+    }));
+    assert.equal(after.disabled, false, 'the control did not come back with the run');
+    assert.equal(after.focused, 'fSkip',
+      'restarting stranded focus (on ' + (after.focused || '<body>') + ')');
+    assert.deepEqual(app.errors, [], 'page errors');
+  } finally { await app.close(); }
+});
+
+test('a string that keeps ringing off gets sent to the Tuner, in the verdict itself', async () => {
+  // This guidance used to arrive through the Hint button: ask for a hint while
+  // an out-of-tune reading was up and the game said "it is your tuning that is
+  // off — open the Tuner tab". With no Hint button, a player whose D string is
+  // flat would be told to move their finger forever. So the verdict escalates:
+  // the first bad reading keeps both hypotheses open (finger OR string), and a
+  // second one on the same question names the string and the Tuner tab.
+  const app = await openApp(SILENT, '/index.html#find', DESK);
+  try {
+    const { page } = app;
+    await page.click('#startBtn');
+    await page.waitForSelector('#secFind:not(.hidden)', { timeout: 5000 });
+    await page.evaluate(() => { A.muteUntil = 0; });
+    const first = await page.evaluate(() => {
+      onStableNote({ midi: q.midi, hz: 100, cents: 45 });
+      return document.getElementById('fVerdict').textContent;
+    });
+    assert.match(first, /Right note/, 'a 45-cent miss should still be the right note');
+    assert.match(first, /45 cents/, 'the first reading does not say how far out it is');
+    assert.match(first, /finger placement/,
+      'the first reading should blame the finger first: "' + first + '"');
+    assert.doesNotMatch(first, /Tuner/,
+      'one bad reading is not enough to send someone off to retune: "' + first + '"');
+
+    const second = await page.evaluate(() => {
+      onStableNote({ midi: q.midi, hz: 100, cents: 45 });
+      return document.getElementById('fVerdict').textContent;
+    });
+    assert.match(second, /Tuner tab/,
+      'a second bad reading must point at the Tuner: "' + second + '"');
+    assert.match(second, /string, not your finger/,
+      'the escalation must say WHY it changed its mind: "' + second + '"');
+    // …and it must still fit the verdict's reserved height — the escalation
+    // replaces the line rather than growing it.
+    const fits = await page.evaluate(() => {
+      const v = document.getElementById('fVerdict');
+      return v.scrollHeight <= v.closest('.gv-slot').clientHeight;
+    });
+    assert.equal(fits, true, 'the escalated verdict overflows its reserved slot');
+    // A fresh question forgets the theory: the next note starts from scratch.
+    await page.evaluate(() => newQuestion());
+    const afterNew = await page.evaluate(() => {
+      A.muteUntil = 0;
+      onStableNote({ midi: q.midi, hz: 100, cents: 45 });
+      return document.getElementById('fVerdict').textContent;
+    });
+    assert.doesNotMatch(afterNew, /Tuner/,
+      'the tuning theory leaked into the next question: "' + afterNew + '"');
     assert.deepEqual(app.errors, [], 'page errors');
   } finally { await app.close(); }
 });
