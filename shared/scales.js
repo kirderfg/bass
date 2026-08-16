@@ -140,6 +140,103 @@
   }
 
   /**
+   * The finger each note of a box wants, as a 1–4 number (1 = index).
+   *
+   * Both boxes span four frets, so the rule is simply one finger per fret,
+   * counted from the LOWEST fret the shape touches — which is the anchor for
+   * the minor pentatonic and one fret below it for the major (its second
+   * string reaches back). Sliding the shape cannot change these numbers;
+   * that is what makes them worth memorising.
+   */
+  function boxFingers(scaleKey) {
+    const box = BOXES[scaleKey];
+    if (!box) return [];
+    let low = 0;
+    for (const [, over] of box.offsets) low = Math.min(low, over);
+    return box.offsets.map(([, over]) => over - low + 1);
+  }
+
+  /* ================= how far a run goes =================
+     A run is the box played in an ORDER. Going up is where everyone starts;
+     coming down is a separate skill (the hand knows the shape, the ear has
+     to lead), and up-and-back is both in one breath. */
+  const RUN_SHAPES = ['up', 'down', 'updown'];
+
+  /**
+   * The target list for one run: the box, in the order the run asks for it.
+   * @param spec {scaleKey, si, fret, tuning, shape:'up'|'down'|'updown'}
+   * @returns targets — 6 for 'up'/'down', 11 for 'updown' (the turn at the
+   *          top is played once, and the run comes home to the root).
+   */
+  function runTargets(spec) {
+    const box = boxShape(spec);
+    if (!box.length) return [];
+    const shape = spec && spec.shape;
+    if (shape === 'down') return box.slice().reverse();
+    if (shape === 'updown') return box.concat(box.slice(0, box.length - 1).reverse());
+    return box;
+  }
+
+  /**
+   * Place every chord of a progression at once.
+   * @returns ({si,fret}|null)[] — one per chord, null where the stage cannot
+   *          hold that chord's box. The caller uses this to reject a key
+   *          BEFORE posing it, so a loop can never strand mid-way.
+   */
+  function anchorChords(chords, spec) {
+    return (chords || []).map(ch => anchorFor(Object.assign({
+      rootPc: ch.rootPc, scaleKey: ch.scaleKey,
+    }, spec)));
+  }
+
+  /* ================= the stage ladder =================
+     Five stages, one table — the whole difficulty curve of scale mode:
+
+       1  one box, one root      a vamp on the key chord, minor pentatonic
+       2  same shape, four roots the loop moves; the shape never changes
+       3  the major box joins    the chords tell the truth, so both boxes
+       4  more positions, keys   the B string opens, major keys too, and the
+                                 run comes back DOWN
+       5  mixed families, faster six up and five back, anywhere on the neck
+
+     `strings` are ANCHOR strings (indices into the tuning): the shape reaches
+     two strings above its anchor, so a five-string can anchor on 0, 1 or 2.
+     `power` voices the loop as 5 chords (every chord minor pentatonic);
+     `vamp` stays on the first chord instead of walking the loop;
+     `positions:'any'` lets the same root be placed on whichever string can
+     host it, rather than always the lowest one;
+     `fuse` is what the rung does to the clock — the ladder gets FASTER as it
+     climbs, so the last rungs are the same shapes with less time to find
+     them. It only ever shortens (≤1), and never below two thirds. */
+  const STAGES = [
+    { name: 'One box, one root',
+      blurb: 'A vamp on the key chord: the same minor-pentatonic box until the shape lives in your hand.',
+      scales: ['minPent'], power: true, vamp: true, modes: ['minor'],
+      strings: [1, 2], minFret: 1, maxFret: 10, shape: 'up', positions: 'lowest', fuse: 1 },
+    { name: 'Same shape, four roots',
+      blurb: 'The whole four-chord loop. Same shape every time — all you do is move it.',
+      scales: ['minPent'], power: true, vamp: false, modes: ['minor'],
+      strings: [1, 2], minFret: 1, maxFret: 10, shape: 'up', positions: 'lowest', fuse: 1 },
+    { name: 'The major box joins',
+      blurb: 'The chords say what they are now, and a major chord wants the major pentatonic.',
+      scales: ['minPent', 'majPent'], power: false, vamp: false, modes: ['minor'],
+      strings: [1, 2], minFret: 1, maxFret: 12, shape: 'up', positions: 'lowest', fuse: 0.95 },
+    { name: 'More positions, more keys',
+      blurb: 'Major keys join, the low B opens up, and the box may sit anywhere it fits — then the run comes back down.',
+      scales: ['minPent', 'majPent'], power: false, vamp: false, modes: ['minor', 'major'],
+      strings: [0, 1, 2], minFret: 1, maxFret: 12, shape: 'down', positions: 'any', fuse: 0.9 },
+    { name: 'Mixed families, up and back',
+      blurb: 'Minor and major keys, any position: six notes up and five back, in one run.',
+      scales: ['minPent', 'majPent'], power: false, vamp: false, modes: ['minor', 'major'],
+      strings: [0, 1, 2], minFret: 1, maxFret: 12, shape: 'updown', positions: 'any', fuse: 0.85 },
+  ];
+  /** The stage at `i`, clamped — a stored stage from another mode's ladder
+      must never index off the end of this one. */
+  function stage(i) {
+    return STAGES[Math.min(STAGES.length - 1, Math.max(0, i | 0))];
+  }
+
+  /**
    * One run through a box: six notes, in order.
    *
    * Unlike a drill — which halts on the first wrong note and reports
@@ -168,5 +265,7 @@
     };
   }
 
-  return { CHORDS, BOXES, SHAPES, NAMES, scaleForChord, progression, anchorFor, boxShape, createScaleRun };
+  return { CHORDS, BOXES, SHAPES, NAMES, STAGES, RUN_SHAPES,
+           scaleForChord, progression, anchorFor, anchorChords, boxShape,
+           boxFingers, runTargets, stage, createScaleRun };
 });

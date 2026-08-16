@@ -394,10 +394,16 @@
         b.textContent = drawKind === 'correct' ? '✓' : '✕';
         grp.appendChild(b);
       }
-      // An illegible fingering badge is worse than none, so small boards drop it.
+      /* An illegible fingering badge is worse than none, so small boards drop
+         it — and on a big board it grows WITH the dot it hangs off. Pinned at
+         6.5/9 it was designed for `play` (dot 11.5) and sat half-swallowed
+         inside a `desk` dot; the floors keep `play` pixel-identical. */
       if (m.finger && S.finger) {
-        grp.appendChild(el('circle', { cx: f.center + 9, cy: cy + 9, r: 6.5, class: 'neck-finger-bg' }));
-        const ft = el('text', { x: f.center + 9, y: cy + 9, class: 'neck-finger' });
+        const fr = Math.max(6.5, S.dot * 0.56);
+        const fo = Math.max(9, S.dot * 0.78);
+        grp.appendChild(el('circle', { cx: f.center + fo, cy: cy + fo, r: fr, class: 'neck-finger-bg' }));
+        const ft = el('text', { x: f.center + fo, y: cy + fo, class: 'neck-finger',
+                                style: 'font-size:' + (fr * 1.46).toFixed(1) + 'px' });
         ft.textContent = m.finger;
         grp.appendChild(ft);
       }

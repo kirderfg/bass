@@ -131,6 +131,20 @@ body .mic-card{display:flex; flex-wrap:wrap; align-items:center; gap:10px;
    "Play this note on the E string" wraps in a 352px column. */
 #secFind.gv-nostaff{ --gv-q-h:38px; }
 @media (min-width:760px){ #secFind.gv-nostaff{ --gv-q-h:48px; } }
+/* ---- scale mode's own constants ----
+   The contract is one height per (viewport × MODE × prompt mode), and scale
+   mode is a different mode: it never draws a staff, it draws a chart (and,
+   once the answer is given away, the box) in that same reserved compartment,
+   and it adds one row of pips under the stage. Every one of these is a fixed
+   number, so scale mode is as motionless within itself as Notes is. */
+#secFind{ --gv-mode-h:44px; --gv-pips-h:0px; }
+/* A phone's read column is narrow, so the chord's clamp tops out around 45px
+   and the instruction line is one short sentence: both slots are cut to what
+   they actually hold, and the stage keeps the difference. */
+#secFind.gv-scales{ --gv-pips-h:18px; --gv-q-h:52px; --gv-sub-h:30px; }
+@media (min-width:760px){
+  #secFind.gv-scales{ --gv-pips-h:22px; --gv-q-h:70px; --gv-sub-h:34px; --gv-verdict-h:76px; }
+}
 /* Short screens (a laptop with browser chrome, a landscape phone): the page
    furniture gives its margins to the console. */
 @media (max-height:720px){
@@ -429,6 +443,123 @@ body .mic-card{display:flex; flex-wrap:wrap; align-items:center; gap:10px;
   box-shadow:inset 0 1px 0 rgba(246,242,236,.05), inset 0 -1px 0 rgba(0,0,0,.35);}
 #secFind #gvRestart{font-family:var(--mono); border-radius:4px;}
 #secFind #fSkip:disabled{opacity:.45; cursor:default;}
+
+/* ---- the mode strip ----
+   The console's head: the screen's title on the left, and what the game is
+   asking for on the right. It is in the instrument's voice (mono, bevelled,
+   squared off) rather than a settings panel's, because choosing it is part of
+   playing — but it rides the TITLE'S LINE, not a row of its own: on this
+   screen height is the scarce axis, and a row of its own comes straight out of
+   the stage. Fixed height and NEVER wrapping — a strip that wraps is a console
+   that changes height — so a narrow phone pans it sideways instead. The two
+   live modes lead, so they are the two always in view. */
+.gv-head{display:flex; align-items:center; gap:var(--sp3); flex-wrap:nowrap;
+  min-width:0;}
+.gv-head h2{margin-right:auto; flex:0 0 auto;}
+.gv-modes{display:flex; align-items:center; gap:6px; flex:0 1 auto;
+  min-width:0; height:var(--gv-mode-h); margin:0; overflow-x:auto; overflow-y:hidden;
+  flex-wrap:nowrap; scrollbar-width:none;}
+.gv-modes::-webkit-scrollbar{display:none;}
+.gv-modes button{flex:0 0 auto; min-height:38px; min-width:44px; padding:6px 14px;
+  font-family:var(--mono); font-size:13px; font-weight:700; letter-spacing:.06em;
+  text-transform:uppercase; color:var(--t3); cursor:pointer;
+  background:var(--s1); border:1px solid var(--line); border-radius:4px;
+  box-shadow:inset 0 1px 0 rgba(246,242,236,.05), inset 0 -1px 0 rgba(0,0,0,.35);
+  transition:background var(--fast), color var(--fast), border-color var(--fast);}
+/* 44px of TARGET on touch, where the finger is the pointer; the 38px box keeps
+   the strip from eating the console's height on a desktop, and the row itself
+   is 44 tall so the hit area is never short. */
+@media (pointer:coarse){ .gv-modes button{min-height:44px;} }
+.gv-modes button:hover:not([aria-disabled="true"]){background:var(--s3); color:var(--t2);}
+.gv-modes button[aria-pressed="true"]{background:var(--s4); color:var(--root);
+  border-color:var(--root); box-shadow:inset 0 -2px 0 var(--root);}
+/* The roadmap entries: dimmed, focusable, and they say "soon" out loud rather
+   than relying on being grey. */
+.gv-modes button.soon{opacity:.45; cursor:default; letter-spacing:.04em;}
+.gv-modes button.soon small{font-size:9px; letter-spacing:.08em; margin-left:5px;
+  color:var(--t4);}
+.gv-modesep{flex:0 0 1px; align-self:stretch; margin:6px 4px;
+  background:var(--line);}
+/* ---- scale mode's progress pips ----
+   One pip per note of the run. Filled pips are the scene's amber; empty ones
+   are an outlined socket — filled/empty must survive a monochrome screen, so
+   the difference is a ring versus a solid, not two colours. */
+.gv-pips{display:flex; align-items:center; justify-content:center; gap:6px;
+  height:var(--gv-pips-h); margin:0; overflow:hidden;}
+#secFind:not(.gv-scales) .gv-pips{display:none;}
+.gv-pips i{display:block; width:12px; height:12px; border-radius:50%;
+  border:2px solid var(--line-hi); background:transparent;}
+.gv-pips i.on{background:var(--root); border-color:var(--root);
+  box-shadow:0 0 6px rgba(242,169,59,.55);}
+/* The note the run is waiting for: a hollow pip with a bright rim, so "you are
+   here" is visible without motion. */
+.gv-pips i.at{border-color:var(--root);}
+@media (min-width:760px){ .gv-pips i{width:14px; height:14px;} }
+/* ---- scale mode in the media compartment ----
+   Exactly one of these two is in the slot at a time, and the slot's height is
+   the same either way. */
+.gv-chart{display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:6px; width:100%; height:100%; max-height:100%; overflow:hidden;}
+/* Not uppercased: roman numerals carry their meaning in their CASE — i is a
+   minor chord and I is a major one, and "I-VII-VI-VII" would be a lie. */
+.gv-chart-key{font-family:var(--mono); font-size:11.5px; letter-spacing:.08em;
+  color:var(--t4); white-space:nowrap;}
+.gv-chart-bars{display:flex; gap:6px; width:100%; justify-content:center;}
+.gv-chart-bar{flex:0 1 76px; min-width:0; padding:8px 4px; text-align:center;
+  background:var(--s1); border:1px solid var(--line); border-radius:4px;
+  font-family:var(--mono); font-size:19px; font-weight:750; color:var(--t3);
+  box-shadow:inset 0 1px 0 rgba(246,242,236,.05), inset 0 -1px 0 rgba(0,0,0,.35);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.gv-chart-bar.on{color:var(--root); border-color:var(--root); background:var(--s4);
+  box-shadow:inset 0 -2px 0 var(--root);}
+.gv-chart-bar.done{color:var(--t4);}
+.gv-chart-caption{font-size:11.5px; color:var(--t4); margin:0; text-align:center;}
+@media (min-width:760px){
+  .gv-chart-bar{flex:0 1 92px; font-size:23px; padding:12px 6px;}
+  .gv-chart-caption{font-size:12.5px;}
+}
+.gv-boxwrap{display:flex; justify-content:center; align-items:center; margin:0;
+  max-height:100%;}
+/* Drawn at 1:1 wherever the column allows it; where a short screen scales it
+   DOWN, it is smoothed rather than pixelated — same rule the question staff
+   follows, and for the same reason: dropping rows would take fret numbers and
+   string lines out of the picture. */
+.gv-boxwrap canvas{width:auto; height:auto; max-width:100%;
+  max-height:calc(var(--gv-media-h) - 8px); image-rendering:auto;
+  background:var(--s2); border:1px solid var(--line); border-radius:var(--r-sm);}
+/* The chord IS the question in scale mode, so it gets the whole read column:
+   sized against that column, one line, as large as it can be. */
+#secFind.gv-scales .gv-info{container-type:inline-size;}
+#secFind.gv-scales .q{font-size:clamp(30px, 13cqw, 56px); font-family:var(--mono);
+  font-weight:750; letter-spacing:.02em; color:var(--root); line-height:1.08;}
+/* Scale mode's settings: the axes that only mean something to Notes (how the
+   note is written, which strings, which frets) are not dimmed — they are gone,
+   because they do not exist here. */
+#secFind.gv-scales .gv-notesonly{display:none;}
+#secFind:not(.gv-scales) .gv-scalesonly{display:none;}
+
+/* ---- the scale card ----
+   Reference, like the note map: below the console, shut by default, and free
+   to be as tall as it needs. */
+.gv-scalecard > summary{flex-wrap:wrap; row-gap:2px;}
+.gv-scalecard > summary .t-title3{margin-right:auto;}
+.gv-scalenow{color:var(--t3); font-size:12px;}
+.gv-scalebody{margin-top:var(--sp3);}
+/* Twelve roots in one dense band — they are one control, not twelve. */
+#gvScRootSeg button{min-width:40px; padding:8px 6px; font-family:var(--mono);}
+.gv-rootgroup{grid-column:1 / -1;}
+.gv-scalechips{display:flex; flex-wrap:wrap; gap:6px; margin:var(--sp4) 0 0;}
+.gv-scalechips span{display:inline-flex; align-items:baseline; gap:5px;
+  padding:5px 10px; border-radius:var(--r-pill); background:var(--s2);
+  border:1px solid var(--line); font-family:var(--mono); font-size:14px;
+  font-weight:700; color:var(--t2);}
+.gv-scalechips span.root{color:var(--root); border-color:var(--root);}
+.gv-scalechips span small{font-size:11px; color:var(--t4); font-weight:600;}
+.gv-scaleplay{margin-top:var(--sp3); align-items:center;}
+.gv-scaleplay .t-caption{color:var(--t4);}
+@media (max-width:759px){
+  #gvScBoard .neck-scroll{overflow-x:auto; overflow-y:hidden;}
+}
 
 /* ---- the note map ----
    A reference card, not an instrument panel: it may be as tall as it needs to

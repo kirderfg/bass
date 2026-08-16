@@ -170,3 +170,170 @@ test('a box always rises in pitch — the run can be judged as an ascent', () =>
     }
   }
 });
+
+/* ================= the fingering =================
+   The box is one finger per fret, so the finger a note wants is decided by
+   the shape alone — the study card draws these numbers, and they must be the
+   same numbers whatever fret the shape has slid to. */
+
+test('the box names a finger per note — one finger per fret, index at the low end', () => {
+  // The minor pentatonic box is the index/pinky, index/ring, index/ring shape
+  // every bassist is taught; the major pentatonic box starts on the middle
+  // finger, because its second note sits a fret BELOW the anchor's string.
+  assert.deepEqual(S.boxFingers('minPent'), [1, 4, 1, 3, 1, 3]);
+  assert.deepEqual(S.boxFingers('majPent'), [2, 4, 1, 4, 1, 4]);
+  assert.deepEqual(S.boxFingers('nope'), []);
+});
+
+test('fingers never leave the hand — 1 to 4, and they follow the frets', () => {
+  for (const scaleKey of ['minPent', 'majPent']) {
+    const fingers = S.boxFingers(scaleKey);
+    const box = S.boxShape({ scaleKey, si: 1, fret: 5, tuning: FIVE });
+    assert.equal(fingers.length, box.length);
+    const lowest = Math.min.apply(null, box.map(t => t.fret));
+    box.forEach((t, i) => {
+      assert.ok(fingers[i] >= 1 && fingers[i] <= 4, `${scaleKey} wants finger ${fingers[i]}`);
+      assert.equal(fingers[i], t.fret - lowest + 1,
+        `${scaleKey} note ${i} is not one finger per fret`);
+    });
+  }
+});
+
+/* ================= how long a run is =================
+   A run is the box played in an order. Low stages go up only; a later stage
+   asks for it descending, and the last one asks for both. */
+
+test('an ascending run is simply the box', () => {
+  const spec = { scaleKey: 'minPent', si: 1, fret: 5, tuning: FIVE };
+  assert.deepEqual(S.runTargets(Object.assign({ shape: 'up' }, spec)),
+                   S.boxShape(spec));
+  // No shape named is the same promise as 'up' — a caller that forgets must
+  // not get a run that plays backwards.
+  assert.deepEqual(S.runTargets(spec), S.boxShape(spec));
+});
+
+test('a descending run is the same six notes, top down', () => {
+  const spec = { scaleKey: 'minPent', si: 1, fret: 5, tuning: FIVE };
+  const down = S.runTargets(Object.assign({ shape: 'down' }, spec));
+  assert.equal(down.length, 6);
+  assert.deepEqual(down.map(t => t.midi), S.boxShape(spec).map(t => t.midi).reverse());
+  for (let i = 1; i < down.length; i++) {
+    assert.ok(down[i].midi < down[i - 1].midi, 'a descending run must fall');
+  }
+});
+
+test('up-and-back turns at the top and never plays the turn twice', () => {
+  const spec = { scaleKey: 'majPent', si: 1, fret: 8, tuning: FIVE };
+  const box = S.boxShape(spec);
+  const both = S.runTargets(Object.assign({ shape: 'updown' }, spec));
+  assert.equal(both.length, 11, 'six up, five back');
+  assert.deepEqual(both.slice(0, 6).map(t => t.midi), box.map(t => t.midi));
+  assert.deepEqual(both.slice(6).map(t => t.midi),
+                   box.slice(0, 5).map(t => t.midi).reverse());
+  assert.notEqual(both[5].midi, both[6].midi, 'the top note is not repeated');
+  assert.equal(both[both.length - 1].midi, box[0].midi, 'it comes home to the root');
+});
+
+test('a run of any shape is still judged one note at a time', () => {
+  // The run judge does not know or care which shape built the list — it is
+  // the same park-and-retry either way.
+  const targets = S.runTargets({ scaleKey: 'minPent', si: 1, fret: 5,
+                                 tuning: FIVE, shape: 'updown' });
+  const run = S.createScaleRun(targets);
+  for (let i = 0; i < targets.length - 1; i++) assert.equal(run.push(targets[i].midi).status, 'advanced');
+  assert.equal(run.push(targets[targets.length - 1].midi).status, 'done');
+  assert.equal(run.result().total, 11);
+});
+
+/* ================= the stage ladder =================
+   Five stages, one table: what the chords are allowed to be, how much neck
+   the box may use, and which direction the run goes. The game's whole
+   difficulty curve is this table, so it is tested rather than trusted. */
+
+test('the ladder is five stages, and asking past the ends is safe', () => {
+  assert.equal(S.STAGES.length, 5);
+  assert.equal(S.stage(-3), S.STAGES[0]);
+  assert.equal(S.stage(99), S.STAGES[4]);
+  assert.equal(S.stage(2), S.STAGES[2]);
+});
+
+test('the ladder starts on one shape and one root, then opens up', () => {
+  const [one, two, three] = S.STAGES;
+  assert.deepEqual(one.scales, ['minPent'], 'stage 1 is the one box');
+  assert.equal(one.vamp, true, 'stage 1 stays on the key chord');
+  assert.equal(two.vamp, false, 'stage 2 moves the same shape around the loop');
+  assert.deepEqual(two.scales, ['minPent'], 'stage 2 is still all minor');
+  assert.ok(three.scales.indexOf('majPent') >= 0, 'the major box joins at stage 3');
+  // …and once it has joined it never leaves.
+  for (const st of S.STAGES.slice(2)) assert.ok(st.scales.indexOf('majPent') >= 0);
+});
+
+test('the ladder never takes neck away as it climbs', () => {
+  for (let i = 1; i < S.STAGES.length; i++) {
+    const prev = S.STAGES[i - 1], st = S.STAGES[i];
+    assert.ok(st.maxFret >= prev.maxFret, `stage ${i + 1} lost frets`);
+    assert.ok(st.strings.length >= prev.strings.length, `stage ${i + 1} lost strings`);
+    for (const si of prev.strings) assert.ok(st.strings.indexOf(si) >= 0);
+    for (const m of prev.modes) assert.ok(st.modes.indexOf(m) >= 0);
+  }
+});
+
+test('the run only turns around once the box is known', () => {
+  // Up only at the bottom of the ladder; descending unlocks later; and the
+  // last stage asks for both directions in one run.
+  const shapes = S.STAGES.map(st => st.shape);
+  assert.deepEqual(shapes.slice(0, 3), ['up', 'up', 'up']);
+  assert.ok(S.RUN_SHAPES.indexOf(shapes[3]) > 0, 'stage 4 stops going up only');
+  assert.equal(shapes[4], 'updown', 'stage 5 is up and back');
+  for (const s of shapes) assert.ok(S.RUN_SHAPES.indexOf(s) >= 0, 'unknown run shape: ' + s);
+});
+
+test('the ladder gets faster as it climbs, and never absurdly so', () => {
+  // "Mixed families, FASTER": the last rungs ask for the same shapes with less
+  // time on the clock. It may only ever shorten, and never past two thirds —
+  // a stage that cannot be finished is not a stage.
+  for (let i = 0; i < S.STAGES.length; i++) {
+    const f = S.STAGES[i].fuse;
+    assert.ok(f > 0.66 && f <= 1, `stage ${i + 1}'s fuse factor is ${f}`);
+    if (i) assert.ok(f <= S.STAGES[i - 1].fuse, `stage ${i + 1} gave time back`);
+  }
+  assert.ok(S.STAGES[4].fuse < S.STAGES[0].fuse, 'the top of the ladder is no faster');
+});
+
+test('an anchor is found for every chord of a progression the stage may pose', () => {
+  // The game picks a key, then has to place a box for all four chords. A
+  // stage whose table cannot host a key it is allowed to choose would strand
+  // the player mid-loop, so every stage must fit every key it can be given.
+  for (let i = 0; i < S.STAGES.length; i++) {
+    const st = S.STAGES[i];
+    for (const mode of st.modes) {
+      for (let keyPc = 0; keyPc < 12; keyPc++) {
+        for (const pick of [0, 0.5, 0.99]) {
+          const p = S.progression({ keyPc, mode, power: st.power }, () => pick);
+          const anchors = S.anchorChords(p.chords, {
+            tuning: FIVE, anchorStrings: st.strings,
+            minFret: st.minFret, maxFret: st.maxFret,
+          });
+          assert.equal(anchors.length, 4);
+          anchors.forEach((a, k) => assert.ok(a,
+            `stage ${i + 1}: ${p.chords[k].symbol} in ${p.key} ${mode} does not fit`));
+        }
+      }
+    }
+  }
+});
+
+test('a stage only ever asks for the scales it claims', () => {
+  for (let i = 0; i < S.STAGES.length; i++) {
+    const st = S.STAGES[i];
+    const seen = new Set();
+    for (const mode of st.modes)
+      for (let keyPc = 0; keyPc < 12; keyPc++)
+        for (const pick of [0, 0.5, 0.99]){
+          const p = S.progression({ keyPc, mode, power: st.power }, () => pick);
+          (st.vamp ? p.chords.slice(0, 1) : p.chords).forEach(ch => seen.add(ch.scaleKey));
+        }
+    assert.deepEqual([...seen].sort(), st.scales.slice().sort(),
+      `stage ${i + 1} claims ${st.scales} but asks ${[...seen]}`);
+  }
+});

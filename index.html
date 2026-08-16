@@ -131,7 +131,28 @@
          screen streamed raw detector output ("hearing G2…", verdicts
          swapping as the note decayed) and read as flicker. -->
     <section id="secFind" class="hidden">
-      <h2>Find it</h2>
+      <!-- THE CONSOLE'S HEAD: the screen's title, and beside it THE MODE STRIP —
+           what the game is asking of you. Notes asks for one note; Scales shows
+           a chord and asks for its whole box. It rides the title's line rather
+           than a row of its own because the console's height is the scarcest
+           thing on this screen: a row here would come straight out of the stage
+           (measured: a 380px phone lost its whole-pixel stage to it).
+           The three dim entries are not controls — they are the roadmap, so the
+           strip does not silently change shape the day they arrive. They stay
+           focusable (aria-disabled, never disabled) and say "soon" out loud.
+           One line, always: a narrow phone scrolls the strip sideways rather
+           than wrapping it, because a wrapping strip moves the console. -->
+      <div class="gv-head">
+        <h2>Find it</h2>
+        <div class="gv-modes" id="gvModes" role="group" aria-label="What the game asks for">
+          <button data-gm="notes" aria-pressed="true">Notes</button>
+          <button data-gm="scales" aria-pressed="false">Scales</button>
+          <span class="gv-modesep" aria-hidden="true"></span>
+          <button class="soon" data-soon="1" aria-disabled="true">Chromatic <small>soon</small></button>
+          <button class="soon" data-soon="1" aria-disabled="true">Octaves <small>soon</small></button>
+          <button class="soon" data-soon="1" aria-disabled="true">Rhythm <small>soon</small></button>
+        </div>
+      </div>
       <!-- THE CONSOLE. One card, one constant height, two columns on a desktop
            (stage left, everything you read right) and one column on a phone.
            Every slot below reserves its height whether or not it has content —
@@ -169,6 +190,12 @@
               <p class="t-caption gv-over-xp" id="gvOverXp"></p>
             </div>
           </div>
+          <!-- SCALE MODE'S PROGRESS ROW: one pip per note of the run, filling
+               as each note lands. Scale mode only, and its height is reserved
+               there whether the run has started or not. The pips are never the
+               only signal — the verdict line counts the same notes in words,
+               and this row carries the count as its label. -->
+          <div class="gv-pips" id="gvPips" role="img" aria-label="no notes landed yet"></div>
           <!-- The readable fuse plus, in the last five seconds, a plain seconds
                numeral — the bar alone is a guess at arm's length. -->
           <div class="gv-fusewrap">
@@ -197,6 +224,15 @@
           <div class="gv-media">
             <div class="gv-staffwrap hidden" id="gvStaffWrap">
               <canvas id="gvStaff" width="170" height="150" role="img" aria-label="sight-reading exercise: a note drawn on a bass clef staff"></canvas>
+            </div>
+            <!-- SCALE MODE occupies the same reserved compartment, and only
+                 ever with one of these two: the chart you are playing (four
+                 chords, the current one lit) while the run is live, and the
+                 box itself once the answer has been given away. Same slot,
+                 same height — the console cannot move either way. -->
+            <div class="gv-chart hidden" id="gvChart" role="img" aria-label="chord loop"></div>
+            <div class="gv-boxwrap hidden" id="gvBoxWrap">
+              <canvas id="gvBox" width="300" height="132" role="img" aria-label="the moveable box for this chord, drawn on the neck"></canvas>
             </div>
           </div>
           <div class="gv-feedback">
@@ -248,7 +284,7 @@
         <div class="gv-setupbody">
           <div class="gv-setgroup">
             <label style="display:block">
-              <span class="t-caption">Stage — how much of the neck is in play</span>
+              <span class="t-caption" id="gvStageLabel">Stage — how much of the neck is in play</span>
               <select id="gvWorld" style="margin-top:4px"></select>
             </label>
             <!-- The stage's band name, out of the select where phones truncate it. -->
@@ -259,16 +295,16 @@
             <div class="seg compact" id="gvPaceSeg" role="group" aria-label="Pace" style="margin-top:4px"></div>
             <p class="t-caption" id="gvPaceNote" style="margin:var(--sp2) 0 0"></p>
           </div>
-          <div class="gv-setgroup">
+          <div class="gv-setgroup gv-notesonly">
             <span class="t-caption">The note is shown as</span>
             <div class="seg compact" id="gvPromptSeg" role="group" aria-label="The note is shown as" style="margin-top:4px"></div>
             <p class="t-caption gv-segcap">Mixed flips a coin between names and sheet music each question.</p>
           </div>
-          <div class="gv-setgroup">
+          <div class="gv-setgroup gv-notesonly">
             <span class="t-caption">Strings</span>
             <div class="seg compact" id="gvFocusSeg" role="group" aria-label="Strings" style="margin-top:4px"></div>
           </div>
-          <div class="gv-setgroup">
+          <div class="gv-setgroup gv-notesonly">
             <span class="t-caption">Frets</span>
             <div class="seg compact" id="gvFretSeg" role="group" aria-label="Frets" style="margin-top:4px"></div>
             <!-- Why a window is off — visible text, because title tooltips
@@ -284,6 +320,13 @@
             <span class="t-caption">Sound</span>
             <div class="seg compact" id="gvSndSeg" role="group" aria-label="Sound" style="margin-top:4px"></div>
             <p class="t-caption gv-segcap">Little cues for hits, misses and the fuse.</p>
+          </div>
+          <!-- Scale mode's stage ladder, in one place: what this rung asks for,
+               and what the next one adds. Notes mode has its own five meanings
+               for the same control, so only one of the two is ever shown. -->
+          <div class="gv-setgroup gv-scalesonly">
+            <span class="t-caption">The scale ladder</span>
+            <p class="t-caption gv-segcap" id="gvScaleLadder" style="max-width:34ch"></p>
           </div>
           <div class="gv-setgroup gv-setnotes">
             <!-- The XP premium is real and was undisclosed: say it once, plainly. -->
@@ -329,6 +372,49 @@
                losing which string it is reading. -->
           <div class="gv-mapboard neck" id="gvMapBoard"></div>
           <p class="t-caption gv-mapnote hidden" id="gvMapNote"></p>
+        </div>
+      </details>
+
+      <!-- ================= THE SCALE CARD =================
+           Scale mode's reference, standing beside the note map: pick a root
+           and a scale and look at it, either as the MOVEABLE BOX the game
+           grades — with the finger for every note on the dot — or as every
+           place that scale lives between frets 0 and 12. Same standing as the
+           map: collapsed, outside the play flow, never opened by the game. -->
+      <details class="card tight gv-scalecard" id="gvScaleStudy">
+        <summary>
+          <span class="t-title3">Scale card — the box, and the whole neck</span>
+          <span class="t-data gv-scalenow" id="gvScaleNow">A minor pentatonic · box</span>
+        </summary>
+        <div class="gv-scalebody">
+          <div class="gv-mapopts">
+            <div class="gv-setgroup gv-rootgroup">
+              <span class="t-caption">Root</span>
+              <div class="seg compact" id="gvScRootSeg" role="group" aria-label="Root" style="margin-top:4px"></div>
+              <p class="t-caption gv-segcap">Every ♯ has a ♭ name for the same fret: <b>C♯ = D♭</b>.</p>
+            </div>
+            <div class="gv-setgroup">
+              <span class="t-caption">Scale</span>
+              <div class="seg compact" id="gvScTypeSeg" role="group" aria-label="Scale" style="margin-top:4px"></div>
+            </div>
+            <div class="gv-setgroup">
+              <span class="t-caption">Show</span>
+              <div class="seg compact" id="gvScViewSeg" role="group" aria-label="Show" style="margin-top:4px"></div>
+              <p class="t-caption gv-segcap">The box is the shape the game grades.</p>
+            </div>
+            <div class="gv-setgroup">
+              <span class="t-caption">Dots say</span>
+              <div class="seg compact" id="gvScLabelSeg" role="group" aria-label="Dots say" style="margin-top:4px"></div>
+              <p class="t-caption gv-segcap">Degrees are the recipe: R ♭3 4 5 ♭7.</p>
+            </div>
+          </div>
+          <p class="gv-scalechips" id="gvScChips"></p>
+          <div class="gv-mapboard neck" id="gvScBoard"></div>
+          <p class="t-caption gv-mapnote" id="gvScNote"></p>
+          <div class="row gv-scaleplay">
+            <button class="btn small" id="gvScPlay">▶ Hear it</button>
+            <span class="t-caption" id="gvScRecipe"></span>
+          </div>
         </div>
       </details>
 
@@ -700,6 +786,10 @@
 <!-- Fret Quest's rules (paces, XP, the adaptive picker, staff geometry),
      kept pure so trainer/test/game.test.js can require() them in Node. -->
 <script src="shared/game.js"></script>
+<!-- Scale mode's rules (which scale a chord asks for, the progressions, the
+     moveable box, the run judge and the stage ladder), kept pure so
+     trainer/test/scales.test.js can require() them in Node. -->
+<script src="shared/scales.js"></script>
 <!-- the Live Trainer's own rules for mastery and its song list. The Theory
      half reads them too, so "This week" reports the same verdicts Drills and
      Songs reached. -->
