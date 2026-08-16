@@ -1,8 +1,13 @@
 /* ==================================================================
-   Bass Live Trainer — the Live half of the app: Tuner, Find it, Ear
-   training, Drills and Songs. Everything here needs the bass plugged
-   in, so everything here waits for the mic to be armed, and the mic
-   is not armed until the player asks for one of these modes.
+   Bass Live Trainer — the Live half of the app: the game (Play), the
+   Tuner and Songs. Everything here needs the bass plugged in, so
+   everything here waits for the mic to be armed, and the mic is not
+   armed until the player asks for one of these modes.
+
+   It carried two more modes until the app was refocused on the game:
+   Ear training and the pattern Drills. Both are gone — Drills' job is
+   the game's Scales mode, and the roadmap in the mode strip says what
+   is coming for the rest.
 
    Lifted verbatim out of trainer/index.html when the two apps became
    one page. It is wrapped in an IIFE because both apps now share one
@@ -14,20 +19,37 @@
 "use strict";
 const C = window.BassCore;
 
-/* ================= shared state (same store as the Theory Trainer) ================= */
-const LS_KEY = 'bassTheoryTrainer.v1';
+/* ================= what the game remembers about YOU =================
+   Which positions you fumble, which boxes you fumble, and how recently.
+   The adaptive picker reads it and brings weak spots back sooner; the
+   note map paints it as the weak-spot overlay.
+
+   This lived in bassTheoryTrainer.v1 while a Note quiz and a practice
+   plan read the same numbers off it — accuracy, streaks, per-day counts,
+   an ear-training tally. None of those screens exist any more, so the
+   store is the game's alone and carries only the three things the game
+   actually consults. */
+const LS_KEY = 'bassTrainer.gamemem.v1';
 function loadShared(){
   try { return JSON.parse(localStorage.getItem(LS_KEY)) || {}; } catch(e){ return {}; }
 }
 function saveStats(mutate){
   const st = loadShared();
-  st.stats = Object.assign({ answered:0, correct:0, bestStreak:0, byString:{}, heat:{}, tierRecent:{}, speed:[] }, st.stats);
+  st.stats = Object.assign({ heat:{}, noteRecent:{}, scaleRecent:{}, scaleHeat:{} }, st.stats);
   mutate(st.stats);
   try { localStorage.setItem(LS_KEY, JSON.stringify(st)); } catch(e){}
 }
 
 const TUNING = { midi:[23,28,33,38,43], names:['B','E','A','D','G'] };
 const NATURALS = new Set(['C','D','E','F','G','A','B']);
+const pcOf = (midi) => ((midi % 12) + 12) % 12;
+/** Today, in the player's OWN timezone — toISOString() is UTC, which rolls the
+    date over mid-evening for anyone east of Greenwich. Songs date their plays
+    with it. */
+function todayISO(){
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0,10);
+}
 const TIERS = [
   { label:'1 · E + A strings, frets 0–5', strings:['E','A'], maxFret:5, accidentals:false },
   { label:'2 · E + A strings, frets 0–12', strings:['E','A'], maxFret:12, accidentals:false },
@@ -35,15 +57,13 @@ const TIERS = [
   { label:'4 · add the low B string', strings:['B','E','A','D','G'], maxFret:12, accidentals:false },
   { label:'5 · everything + sharps', strings:['B','E','A','D','G'], maxFret:12, accidentals:true }
 ];
-// Difficulty is shared with the Theory Trainer, so reaching tier 3 there
-// means starting at tier 3 here (and live answers land in that tier's stats).
-let tier = Math.min(TIERS.length - 1, Math.max(0, ((loadShared().trainer || {}).tier) | 0));
+// How much neck the Notes game asks about. It used to be shared with the
+// Theory Trainer's quiz — reaching tier 3 there started you at tier 3
+// here — and with that quiz retired it is the game's own setting, kept in
+// the game's own store beside the pace and the prompt mode.
+let tier = 0;
 let focus = null, mode = 'tuner';
-function persistTier(){
-  const st = loadShared();
-  st.trainer = Object.assign({}, st.trainer, { tier });
-  try { localStorage.setItem(LS_KEY, JSON.stringify(st)); } catch(e){}
-}
+function persistTier(){ gvSave(); }
 
 /* ================= audio ================= */
 const A = { ctx:null, analyser:null, stream:null, buf:null, timer:null, rate:44100, level:0, muteUntil:0 };
@@ -63,7 +83,7 @@ const DRIFT_MAX_CENTS = 60;
 
 /* Has the mic ever been granted? Once it has, no Live mode ever gates again:
    the stream and the AudioContext are kept alive across tab switches so that
-   coming back from the practice plan is instant, and only the analyser loop
+   coming back from a Learn tab is instant, and only the analyser loop
    is stopped meanwhile. */
 let armed = false;
 
@@ -236,17 +256,13 @@ function renderTuneList(activeName){
   }).join('');
   if (host.dataset.sig !== html){ host.innerHTML = html; host.dataset.sig = html; }
 }
-/* Every string green means tonight's "Tune up" is genuinely done, so say so and
-   tick it off. The Learn half owns the item; this only reports the fact. */
+/* Every string green means tuning is genuinely done, so say so. It used to also
+   tick "Tune up" off a twelve-week practice plan; that plan is retired, and the
+   end of the job is worth marking on its own. */
 function reportTuned(){
-  const names = TUNING.names;
-  const all = names.every(n => tunedStrings[n]);
+  const all = TUNING.names.every(n => tunedStrings[n]);
   const done = document.getElementById('tuneDone');
   if (done) done.classList.toggle('hidden', !all);
-  if (all && !reportTuned.sent && window.BassTheory && BassTheory.markTuned){
-    reportTuned.sent = true;      // once per page: markTuned is once per day
-    BassTheory.markTuned();
-  }
 }
 
 function renderTuner(pitch, reading){
@@ -289,7 +305,7 @@ function renderTuner(pitch, reading){
   centsEl.style.color = inTune ? 'var(--good)' : 'var(--root)';
 }
 
-/* ================= find it — FRET QUEST =================
+/* ================= PLAY — FRET QUEST =================
    The note-memorisation mini game. The detection engine underneath is
    unchanged (tracker → onStableNote → checkAnswer → recordAnswer), but the
    screen is a pixel rock stage: the note being asked for hangs on the
@@ -324,7 +340,7 @@ let qFlat = false;
 const FLAT_DISP = { 'C#':'D♭', 'D#':'E♭', 'F#':'G♭', 'G#':'A♭', 'A#':'B♭' };
 /* `score` = questions you eventually found; `clean` = found on the first attempt,
    which is the one the stored accuracy is built from. */
-const sess = { find:{ score:0, clean:0, streak:0, asked:0 }, echo:{ score:0, streak:0 } };
+const sess = { find:{ score:0, clean:0, streak:0, asked:0 } };
 
 const GAME = window.BassGame;
 const reviewQ = GAME.createReviewQueue();
@@ -454,6 +470,10 @@ function gvLoad(){
     /* window.BassScales, not the SCL alias: gvLoad runs long before that
        const is initialised, and a TDZ throw here would lose every setting. */
     GV.scaleTier = Math.min(window.BassScales.STAGES.length - 1, Math.max(0, s.scaleTier | 0));
+    /* The Notes ladder's rung. It lived in the Theory Trainer's store while a
+       quiz shared the same difficulty; it belongs here now, beside every other
+       thing the game remembers. */
+    tier = Math.min(TIERS.length - 1, Math.max(0, s.tier | 0));
     GV.strings5 = s.strings5 !== false;
     if (s.map){
       if (MAP_SPELLS.indexOf(s.map.spell) >= 0) GV.map.spell = s.map.spell;
@@ -475,7 +495,7 @@ function gvSave(){
   try { localStorage.setItem(GV_KEY, JSON.stringify({
     pace:GV.pace, prompt:GV.prompt, xp:GV.xp, best:GV.best, gameMode:GV.gameMode,
     calm:GV.calm, sound:GV.sound, frets:GV.frets, map:GV.map, study:GV.study,
-    scaleTier:GV.scaleTier, strings5:GV.strings5 })); } catch(e){}
+    scaleTier:GV.scaleTier, tier:tier, strings5:GV.strings5 })); } catch(e){}
 }
 /* Fret-region focus for the question pool. Windows overlap on purpose —
    fret 5 belongs to both hands' territory. */
@@ -490,9 +510,8 @@ const FRET_ORDER = ['all', 'low', 'mid', 'high'];
    seven letters are the map a beginner is actually building, and the five
    accidentals drawn beside them are noise until those letters are solid. */
 const MAP_SPELLS = ['natural', 'sharp', 'flat'];
-/* The scales the study card can draw. The table itself (intervals, degrees,
-   what each one is for) lives with the drills further down — one scale
-   vocabulary for the whole app. */
+/* The scales the study card can draw. The table itself (intervals and degrees)
+   is SCALES, further down — one scale vocabulary for the whole app. */
 const STUDY_TYPES = ['minPent', 'natMinor', 'majPent', 'major', 'blues'];
 gvLoad();
 updateReduced();
@@ -842,8 +861,8 @@ const SC = {
 };
 function scaleMode(){ return GV.gameMode === 'scales'; }
 /** WHICH RUNG the stage control is on, for the game being played. The one
-    control has two ladders behind it — Notes mode's neck (shared with the
-    Theory Trainer) and scale mode's own — and they are stored apart, so
+    control has two ladders behind it — Notes mode's neck and scale mode's
+    own stage — and they are stored apart, so
     arriving in scale mode from a high Notes stage starts at the bottom. */
 function gvTier(){ return scaleMode() ? GV.scaleTier : tier; }
 /** The stage ladder's rung for the current stage. */
@@ -1500,7 +1519,7 @@ function gvBreach(){
   reviewQ.add(q.sn + ':' + q.f, qCount);   // a burnt fuse is a miss: book a comeback
   if (wrongThisQ === 0){
     sess.find.streak = 0; sess.find.asked++;
-    recordAnswer(false, q, performance.now() - qStart);
+    recordAnswer(false, q);
   }
   wrongThisQ++;          // the eventual find (next question) must not count clean
   const r = gvJudge('breach');
@@ -1603,7 +1622,7 @@ function gvGameOver(lastNote){
 /* ---- pixel scene ----
    One low-resolution canvas, scaled up by CSS with image-rendering:pixelated.
    Sprites are string grids — a char per pixel — so there are no assets to
-   load and no build step. Drawn only while Find it is on screen. */
+   load and no build step. Drawn only while the game is on screen. */
 function sprite(map, rows){ return { rows, map, h: rows.length }; }
 function blit(ctx, sp, x, y, s){
   for (let r = 0; r < sp.rows.length; r++){
@@ -3101,7 +3120,7 @@ function onStableNote(reading){
       sess.find.score++;
       if (clean){
         sess.find.clean++; sess.find.streak++; sess.find.asked++;
-        recordAnswer(true, played, performance.now() - qStart);
+        recordAnswer(true, played);
       } else if (wrongThisQ === 0){
         /* No miss, but no first-try credit either — an out-of-tune reading on
            the target fret already confirmed the position. The question was
@@ -3216,36 +3235,12 @@ function onStableNote(reading){
       vEl.className = 'verdict no';
       countWrong();
     }
-  } else if (mode === 'drill'){
-    // Terminal feedback: the run judges the ORDER, and says nothing until it stops.
-    drillPush(reading.midi, performance.now());
   } else if (mode === 'songs'){
     // A play-along, not a test: this notes whether you were on the section's
     // root and says so quietly. It never halts and never buzzes. A running
     // setlist owns the floor; otherwise the single-song roadmap does.
     if (ST.run && ST.t0 != null && !ST.finished) setPush(reading.midi);
     else songPush(reading.midi);
-  } else if (mode === 'echo'){
-    if (echoTarget == null) return;
-    const targetName = C.NAMES[((echoTarget % 12) + 12) % 12];
-    const same = (((reading.midi - echoTarget) % 12) + 12) % 12 === 0;
-    const vEl = document.getElementById('eVerdict');
-    document.getElementById('eHeard').textContent = 'you played ' + heardName + C.hzToNote(reading.hz).octave;
-    if (same){
-      vEl.textContent = 'Correct — the note was ' + targetName + '.';
-      vEl.className = 'verdict ok';
-      sess.echo.score++; sess.echo.streak++;
-      if (echoWrongThisTarget === 0) recordEcho(true);
-      setTimeout(newEcho, 1600);
-    } else {
-      vEl.textContent = 'You played ' + heardName + ' — that is not it. Tap “Let me hear it” to hear it again.';
-      vEl.className = 'verdict no';
-      sess.echo.streak = 0;
-      recordEcho(false);
-      document.getElementById('eShow').classList.remove('hidden');
-    }
-    document.getElementById('eScore').textContent = sess.echo.score;
-    document.getElementById('eStreak').textContent = sess.echo.streak;
   }
 }
 /** One wrong-note judgement. `opts.soft` (the out-of-range octave twin) keeps
@@ -3276,86 +3271,35 @@ function countWrong(opts){
   if (wrongThisQ === 1){
     sess.find.streak = 0; sess.find.asked++;
     if (!soft){
-      recordAnswer(false, q, performance.now() - qStart);
+      recordAnswer(false, q);
       reviewQ.add(q.sn + ':' + q.f, qCount);   // a recorded miss books a comeback
     }
   }
   updateFindStats();
 }
-/* Day-stamped answers, in the shared store, so the practice plan's "This week"
-   card can compare this week with last week instead of counting a streak.
-   Bounded to 60 days — two comparisons' worth. */
-function bumpDaily(st, ok){
-  const daily = st.daily || (st.daily = {});
-  const k = todayISO();
-  const day = daily[k] || (daily[k] = { a:0, c:0 });
-  day.a++; if (ok) day.c++;
-  const keys = Object.keys(daily).sort();
-  while (keys.length > 60) delete daily[keys.shift()];
-}
-function recordAnswer(ok, question, elapsedMs){
+/** Bank a judged note against the position it was asked at — the only two
+    things the game remembers about you, and the only two it reads back:
+    `heat` paints the note map's weak-spot overlay, `noteRecent` tells the
+    adaptive picker which positions to bring round again sooner.
+
+    It used to bank six more figures — running accuracy, best streak,
+    per-string tallies, day-stamped counts, per-tier windows, answer speed —
+    for a Note quiz screen and a practice plan that read them. Both are
+    retired; the writes went with them. */
+function recordAnswer(ok, question){
   saveStats(st => {
-    st.answered++; if (ok) st.correct++;
-    bumpDaily(st, ok);
-    const bs = st.byString[question.sn] || (st.byString[question.sn] = { a:0, c:0, recent:[] });
-    bs.a++; if (ok) bs.c++;
-    bs.recent = bs.recent || [];
-    bs.recent.push(ok ? 1 : 0);
-    if (bs.recent.length > 20) bs.recent.shift();
-    if (!ok){
-      const key = question.sn + ':' + question.f;
-      st.heat[key] = (st.heat[key] || 0) + 1;
-    }
-    /* Rolling last-6 per POSITION, for the game's adaptive picker: the notes
-       being missed come back sooner. Bounded: ≤65 positions × 6 entries. */
-    st.noteRecent = st.noteRecent || {};
-    const nr = st.noteRecent[question.sn + ':' + question.f] ||
-               (st.noteRecent[question.sn + ':' + question.f] = []);
+    const key = question.sn + ':' + question.f;
+    if (!ok) st.heat[key] = (st.heat[key] || 0) + 1;
+    /* Rolling last-6 per POSITION. Bounded: ≤65 positions × 6 entries. */
+    const nr = st.noteRecent[key] || (st.noteRecent[key] = []);
     nr.push(ok ? 1 : 0);
     if (nr.length > 6) nr.shift();
-    if (ok && sess.find.streak > (st.bestStreak || 0)) st.bestStreak = sess.find.streak;
-    st.tierRecent = st.tierRecent || {};
-    const tr = st.tierRecent[tier] || (st.tierRecent[tier] = []);
-    tr.push(ok ? 1 : 0); if (tr.length > 20) tr.shift();
-    st.speed = st.speed || [];
-    st.speed.push(Math.min(30, elapsedMs / 1000)); if (st.speed.length > 20) st.speed.shift();
   });
 }
 
-/* ================= echo ================= */
-let echoTarget = null, echoStart = 0, echoWrongThisTarget = 0;
-function recordEcho(ok){
-  // One record per target: repeated guesses at the same note are practice,
-  // not extra wrong answers dragging down the shared accuracy figure.
-  if (!ok){
-    echoWrongThisTarget++;
-    if (echoWrongThisTarget > 1) return;
-  }
-  saveStats(st => {
-    st.answered++; if (ok) st.correct++;
-    bumpDaily(st, ok);
-    st.ear = st.ear || { a:0, c:0 };
-    st.ear.a++; if (ok) st.ear.c++;
-    st.speed = st.speed || [];
-    st.speed.push(Math.min(30, (performance.now() - echoStart) / 1000));
-    if (st.speed.length > 20) st.speed.shift();
-  });
-}
-function newEcho(){
-  const p = pool();
-  if (!p.length) return;
-  let pick;
-  do { pick = p[Math.floor(Math.random() * p.length)].midi; }
-  while (p.length > 1 && pick === echoTarget);
-  echoTarget = pick;
-  echoStart = performance.now();
-  echoWrongThisTarget = 0;
-  const v = document.getElementById('eVerdict');
-  v.innerHTML = '&nbsp;'; v.className = 'verdict';
-  document.getElementById('eHeard').innerHTML = '&nbsp;';
-  document.getElementById('eShow').classList.add('hidden');
-  playNote(echoTarget);
-}
+/* The app's own voice — the scale card's "Hear it" plays the box back
+   through it. It was written for Ear training, which is retired; the
+   synth outlived the mode that needed it. */
 function playNote(midi){
   if (!A.ctx) return;
   // Ignore the microphone until our own note has died away, so the app
@@ -3376,67 +3320,49 @@ function playNote(midi){
 }
 
 /* ================= ui wiring ================= */
-/* The five Live modes are five of the app's nine nav destinations now, so the
-   nav is what shows which one is on; the mode segment inside the page is gone. */
+/* Three Live modes, three of the app's five nav destinations, so the nav is
+   what shows which one is on. `find` is the game; the nav calls it Play and
+   the router translates — see the note on MODE_OF in index.html. */
 const MODES = {
-  tuner: { title:'Tuner',        cta:'Start listening & tune up' },
-  find:  { title:'Find it',      cta:'Start listening & find the note' },
-  echo:  { title:'Ear training', cta:'Start listening & start ear training' },
-  drill: { title:'Drills',       cta:'Start listening & run the drill' },
-  songs: { title:'Songs',        cta:'Start listening & follow the song' }
+  tuner: { title:'Tuner', cta:'Start listening & tune up' },
+  find:  { title:'Play',  cta:'Start listening & play' },
+  songs: { title:'Songs', cta:'Start listening & follow the song' }
 };
 function highlightNav(m){
+  /* The nav button for the game says `play`; every other mode's nav name and
+     internal name are the same word. */
+  const nav = m === 'find' ? 'play' : m;
   document.querySelectorAll('#tabbar button').forEach(b =>
-    b.classList.toggle('on', b.dataset.tab === m));
+    b.classList.toggle('on', b.dataset.tab === nav));
 }
-/** What THIS mode writes to, in one sentence under the mic card. It is not
-    only a per-tab fact any more: the game's two modes bank differently, so
-    switching the mode strip re-states it too (an unchanged sentence there
-    would tell a scale player their runs feed the note quiz). */
+/** What THIS mode keeps, in one sentence under the mic card. It is not only a
+    per-tab fact: the game's two modes bank differently, so switching the mode
+    strip re-states it too. */
 function gvFeedNote(m){
   const feed = document.getElementById('feedNote');
   if (!feed) return;
-  // The tuner has no answers — you turn pegs — and it sits in the always-visible
-  // card, so the quiz sentence was shown on a screen it did not describe.
-  feed.textContent = (m === 'find' && scaleMode())
-    ? 'Scale runs keep their own record — XP, your best run and the stage lights — and do not feed the Note quiz stats or the Practice checkpoints.'
-    : m === 'tuner'
-    ? 'Getting all five strings into the green ticks “Tune up” off tonight’s practice list.'
-    : m === 'drill'
-    ? 'Drills keep their own record — review dates, tempo and mastery live with the drill itself, and do not feed the Note quiz stats or the Practice checkpoints.'
+  feed.textContent = m === 'tuner'
+    ? 'The tuner keeps nothing — you turn pegs, and the app only tells you which way.'
     : m === 'songs'
-    ? 'Songs keep their own record too — plays and best root accuracy live with the song, and do not feed the Note quiz stats or the Practice checkpoints.'
-    : 'Answers here feed the same progress stats as the Note quiz on the Practice tab.';
+    ? 'Songs keep their own record — plays and best root accuracy live with the song, apart from the game’s levels.'
+    : scaleMode()
+    ? 'Scale runs bank their own XP, their own best run and their own stage — separately from Notes, because a six-note run and a single note are not the same achievement.'
+    : 'Every note you find banks XP toward the next level, and the ones you fumble come back sooner.';
 }
 function setMode(m){
   mode = m;
   highlightNav(m);
   document.getElementById('secTuner').classList.toggle('hidden', m !== 'tuner');
   document.getElementById('secFind').classList.toggle('hidden', m !== 'find');
-  document.getElementById('secEcho').classList.toggle('hidden', m !== 'echo');
-  document.getElementById('secDrill').classList.toggle('hidden', m !== 'drill');
   document.getElementById('secSongs').classList.toggle('hidden', m !== 'songs');
-  const dc = document.getElementById('difficultyCard');
-  // The tier/focus card serves Ear training only now: Fret Quest carries its
-  // own settings card inside #secFind. A drill or a song has its own scope.
-  dc.classList.toggle('hidden', m !== 'echo');
-  const sec = document.getElementById('secEcho');
-  if (m === 'echo' && sec && sec.nextSibling !== dc) sec.parentNode.insertBefore(dc, sec.nextSibling);
-  // Say what this mode actually writes to, naming tabs the player can actually
-  // click: the two apps were merged, so "the Theory Trainer" named nothing.
-  // Drills keep their own record, so claiming they feed the quiz would be false.
+  // Say what this mode actually keeps, in the vocabulary of the screen you
+  // are on — the game's levels, the song's own record, or nothing at all.
   gvFeedNote(m);
   tracker.reset();
-  /* The mute window belongs to Ear — it exists so the app cannot hear its own
-     note. Left set across a tab switch, the Tuner opened saying "playing the
-     note — listen…" about a note it never played, until the window expired.
-     Cleared BEFORE the echo branch below, which sets a fresh one on entry. */
+  /* The mute window stops the app hearing its own voice — the scale card's
+     "Hear it" sets one. Left set across a tab switch, the Tuner opened saying
+     "playing the note — listen…" about a note it never played. */
   A.muteUntil = 0;
-  // A pending preset is consumed by THIS switch, matching mode or not: it was
-  // stored for one navigation, and surviving it would configure a later,
-  // unrelated visit that never asked for it.
-  const pre = pendingPreset;
-  pendingPreset = null;
   if (m === 'find' && !(scaleMode() ? SC.run : q)) newQuestion();
   /* The scene animates only while it is on screen; the pace clock lives in
      the same loop, so leaving the tab also freezes the fuse honestly. */
@@ -3447,103 +3373,28 @@ function setMode(m){
     GV.graceUntil = performance.now() + 600;
     gvFitScene();                     // the section just unhid: sizes are real now
   }
-  if (m === 'echo') newEcho();
-  /* Same honesty as suspend(): checking the tuner mid-drill stops the click,
-     so the run must give up its claim on it — otherwise the notes played
-     after returning would be scored "against the click" on a grid that went
-     silent, and the hint would keep promising one-note-per-click. The
-     Learn-tab hop already did this; the Live-tab hop said nothing.
-     BEFORE songTeardown below: that also calls metStop() unconditionally, and
-     once the timer is gone there is no telling whose click just died. */
-  if (m !== 'drill' && MET.timer){
-    metStop();
-    if (DR.phase === 'running' && DR.met){ DR.clickLost = true; DR.metOrigin = null; }
-  }
-  // Leaving Songs stops its clock and its click; leaving Drills stops theirs.
+  // Leaving Songs stops its clock and its click.
   // (setMode is not called while a song is running, so this never cuts one off.)
   if (m !== 'songs') songTeardown();
-  // Applied before enterDrills, so the picker renders already configured.
-  if (pre && m === 'drill' && pre.drill){
-    pickerFromCfg(pre.drill);
-    /* The preset names NEW work, so a previous drill may not keep the screen:
-       enterDrills below re-shows any existing run, which put "Drill the C box"
-       on the last drill's finished verdict — with the configured picker hidden
-       underneath, reachable only through "Change drill". So take that same
-       path (drillReset) here: it is also exactly what "Change drill" does to a
-       run still mid-flight, and a finished run loses nothing — endRep banked
-       its results when the verdict was drawn. */
-    if (DR.item || DR.phase !== 'idle') drillReset();
-  }
-  if (m === 'drill') enterDrills();
   if (m === 'songs') enterSongs();
-  // After enterSongs: the list has to exist before an entry can be pointed at.
-  if (pre && m === 'songs' && pre.song) highlightSong(pre.song);
-  // {setlist:true}: the week-11/12 "Open the Setlist card" links used to land
-  // ~2,900px above the card they name — ring it the way {song} rings a song.
-  if (pre && m === 'songs' && pre.setlist) highlightSetlist();
-  // {memory:true}: a "Play it from memory" link arms the toggle for the next
-  // song opened (see songOpen) — the mode the label names is one press away.
-  if (pre && m === 'songs' && pre.memory) memoryArm = pre.song || '*';
 }
-/** A spec stored by the Learn half just before it navigates here, so a plan
-    link lands CONFIGURED — the drill picker pre-picked, or the named song
-    scrolled to and ringed — instead of merely on the right tab. Consumed by
-    the next setMode. */
-let pendingPreset = null;
-function preset(spec){
-  pendingPreset = spec && typeof spec === 'object' ? spec : null;
-}
-/** Scroll an element into view and ring it briefly — the shared tail of every
-    "this link means THAT thing" preset. */
-function ringTarget(el, block){
-  if (!el) return;
-  el.classList.add('is-target');
-  // Deferred: the shell scrolls to the top AFTER showMode returns, and a
-  // synchronous scrollIntoView here would be undone by it.
-  requestAnimationFrame(() => el.scrollIntoView({ block: block || 'center' }));
-  // A pointer, not a state: it goes away on its own, or on the first touch.
-  const drop = () => { el.classList.remove('is-target'); clearTimeout(t); };
-  const t = setTimeout(drop, 4000);
-  document.getElementById('secSongs').addEventListener('pointerdown', drop, { once:true });
-}
-/** Scroll one song entry into view and ring it briefly. */
-function highlightSong(id){
-  const btn = document.querySelector('#sgList [data-song="' + id + '"]');
-  const item = btn && btn.closest('.sg-item');
-  if (!item) return;
-  document.querySelectorAll('#sgList .sg-item.is-target').forEach(e => e.classList.remove('is-target'));
-  ringTarget(item);
-}
-/** Scroll to and ring the Setlist card the same way. block:'start' because the
-    card is taller than a phone screen — centring it would hide its heading. */
-function highlightSetlist(){
-  const card = document.getElementById('sgSetCard');
-  if (!card || card.classList.contains('hidden')) return;
-  ringTarget(card, 'start');
-}
-/* Which song the NEXT songOpen should arm with "From memory" already on
-   ('*' = whichever is opened). Set by a {memory:true} plan preset, consumed by
-   the first open — songOpen resets the toggle per song on purpose, and a plan
-   link is allowed to override that for exactly one open. */
-let memoryArm = null;
+/* The Learn half used to hand this a spec just before navigating, so a
+   practice-plan link could land CONFIGURED — a named song scrolled to and
+   ringed, the drill picker pre-picked, the memory toggle pre-flipped. The plan
+   that wrote those links is retired and no markup carries a data-live rider
+   any more, so the whole mechanism went with it. The stub stays because the
+   shell still hands BassLive a `preset` in its published surface, and a
+   half-removed API is worse than an honest no-op. */
+function preset(){ /* nothing configures a mode from outside any more */ }
+/** The stage and string settings, wherever they are shown. Ear training kept a
+    second copy of these two controls outside the console; with that mode
+    retired the game's own settings card is the only place they live, so this
+    is the tuner's string list plus a re-render of the console. */
 function renderTierUI(){
-  const sel = document.getElementById('tierSel');
-  sel.innerHTML = TIERS.map((t,i) =>
-    '<option value="' + i + '"' + (i===tier?' selected':'') + '>Tier ' + t.label + '</option>').join('');
-  const fs = document.getElementById('focusSeg');
-  const strs = tierNow().strings;
-  fs.innerHTML = '<button data-f="">All strings</button>' +
-    strs.map(s => '<button data-f="' + s + '">' + s + ' only</button>').join('');
-  fs.querySelectorAll('button').forEach(b => {
-    const on = (b.dataset.f || null) === focus;
-    b.classList.toggle('on', on);
-    b.setAttribute('aria-pressed', String(on));
-    b.addEventListener('click', () => { focus = b.dataset.f || null; renderTierUI(); gvNewRun(); newQuestion(); });
-  });
   document.getElementById('tStrings').textContent = TUNING.names.join(' ');
   const t2 = document.getElementById('tStrings2');
   if (t2) t2.textContent = TUNING.names.join(' ');
-  renderGameUI();   // tier and focus are shared state; both UIs must agree
+  renderGameUI();
 }
 /* Stage labels the width of a phone <select>: the fret range must SURVIVE
    truncation, so the option is short and the band-stage name lives in the
@@ -3932,8 +3783,16 @@ function renderMapUI(){
    …and one more switch: dots say note NAMES or scale DEGREES. Everything here
    is display; nothing in it is read by the game. */
 const SC_STUDY_VIEWS = [['box', 'The hand shape'], ['neck', 'Whole neck']];
-/** The scale table lives with the drills (SCALES, further down this file):
-    one scale vocabulary for the whole app. */
+/* One scale vocabulary for this half of the app. `iv` is the interval
+   recipe, `deg` is what the dots say when the card is showing degrees.
+   It was the pattern drills' table too, until they were retired. */
+const SCALES = {
+  minPent:{ name:'Minor pentatonic', iv:[0,3,5,7,10],       deg:['R','b3','4','5','b7'] },
+  natMinor:{ name:'Natural minor',   iv:[0,2,3,5,7,8,10],   deg:['R','2','b3','4','5','b6','b7'] },
+  majPent:{ name:'Major pentatonic', iv:[0,2,4,7,9],        deg:['R','2','3','5','6'] },
+  major:{ name:'Major scale',        iv:[0,2,4,5,7,9,11],   deg:['R','2','3','4','5','6','7'] },
+  blues:{ name:'Blues scale',        iv:[0,3,5,6,7,10],     deg:['R','b3','4','b5','5','b7'] }
+};
 function studyScale(){ return SCALES[GV.study.type] || SCALES.minPent; }
 /** The name of the study card's root, spelled the way the rest of this half
     spells notes (sharps; the caption names the flat twin). */
@@ -4173,16 +4032,13 @@ document.getElementById('startBtn').addEventListener('click', async () => {
 });
 document.getElementById('deviceSel').addEventListener('change', e => startListening(e.target.value));
 
-/* The stage is a difficulty axis of the game: changing it (from either
-   control) starts a new run, exactly like the pace handler — the best-run
-   key was snapshotted at run start and must never drift mid-run. */
-document.getElementById('tierSel').addEventListener('change', e => {
-  tier = +e.target.value; focus = null; persistTier(); renderTierUI(); gvNewRun(); newQuestion();
-});
+/* The stage is a difficulty axis of the game: changing it starts a new run,
+   exactly like the pace handler — the best-run key was snapshotted at run
+   start and must never drift mid-run. */
 document.getElementById('gvWorld').addEventListener('change', e => {
   /* ONE control, TWO ladders. In scale mode this moves the scale rung and
-     leaves the shared Notes/Theory tier exactly where it was — the two are
-     stored apart, so neither game can drag the other up its own ladder. */
+     leaves the Notes tier exactly where it was — the two are stored apart,
+     so neither game can drag the other up its own ladder. */
   if (scaleMode()){
     GV.scaleTier = Math.min(SCL.STAGES.length - 1, Math.max(0, +e.target.value | 0));
     gvSave(); renderGameUI(); gvNewRun(); newQuestion();
@@ -4306,16 +4162,6 @@ document.getElementById('gvRestart').addEventListener('click', () => {
   const s = document.getElementById('fSkip');
   if (s) s.focus();
 });
-document.getElementById('ePlay').addEventListener('click', () => { if (echoTarget != null) playNote(echoTarget); });
-document.getElementById('eNext').addEventListener('click', newEcho);
-document.getElementById('eShow').addEventListener('click', () => {
-  if (echoTarget == null) return;
-  const name = C.NAMES[((echoTarget % 12) + 12) % 12];
-  const v = document.getElementById('eVerdict');
-  v.textContent = 'It was ' + name + '. Play it, or tap "New note".';
-  v.className = 'verdict warn';
-  playNote(echoTarget);
-});
 renderTierUI();
 gvNewRun();   // XP loaded, stage lights on, before the first question can spawn
 
@@ -4349,166 +4195,17 @@ setInterval(() => {
   }
 }, 700);
 
-/* ==================================================================
-   DRILLS — the order you play notes in, not just single notes.
-   The pedagogy lives in shared/drill.js; this is only its interface.
-   Its state is kept in its OWN localStorage key, because the Theory
-   Trainer reads bassTheoryTrainer.v1 and must not see drill records.
-   ================================================================== */
-const DE = window.BassDrill;
-const DRILL_KEY = 'bassTrainer.drills.v1';
-
-/* same names and intervals as the Theory Trainer's scale explorer */
-/* One scale vocabulary for this half of the app: the drills build their
-   targets from `iv`, and the scale card labels its dots from `deg`. */
-const SCALES = {
-  minPent:{ name:'Minor pentatonic', iv:[0,3,5,7,10],       deg:['R','b3','4','5','b7'] },
-  natMinor:{ name:'Natural minor',   iv:[0,2,3,5,7,8,10],   deg:['R','2','b3','4','5','b6','b7'] },
-  majPent:{ name:'Major pentatonic', iv:[0,2,4,7,9],        deg:['R','2','3','5','6'] },
-  major:{ name:'Major scale',        iv:[0,2,4,5,7,9,11],   deg:['R','2','3','4','5','6','7'] },
-  blues:{ name:'Blues scale',        iv:[0,3,5,6,7,10],     deg:['R','b3','4','b5','5','b7'] }
-};
-const SCALE_ORDER = ['minPent','natMinor','majPent','major','blues'];
-const CHROM_STARTS = [1,3,5,7,9];
-const WINDOW_SIZE = 4;           // notes in a middle / repair window
-
-/* ---- rhythm drills ----
-   The six roots the course teaches, each at its TAUGHT position — the drill
-   must land under the fingers the plan trained, not wherever the pitch also
-   happens to live. Keyed by pitch class; si indexes TUNING (B=0 … G=4). */
-const RHYTHM_POS = {
-  4:  { si:1, fret:0 },   // E — open E
-  9:  { si:2, fret:0 },   // A — open A
-  2:  { si:3, fret:0 },   // D — open D
-  7:  { si:1, fret:3 },   // G — E string fret 3 (week 1's shape)
-  0:  { si:2, fret:3 },   // C — A string fret 3 (week 4)
-  11: { si:2, fret:2 },   // B — A string fret 2 (week 8)
-};
-const RHYTHM_ROOT_ORDER = [4, 9, 2, 7, 0, 11];   // E A D G C B, as taught
-const RHYTHM_WORDS = {
-  eighths:   'Straight eighths',
-  push:      'Eighths with a push',
-  restdrive: 'Rest, then drive',
-};
-const RHYTHM_NOTES = {
-  eighths:   'Two notes per click, every click, no drift — most of a live set is exactly this.',
-  push:      'Skip the hit on beat 4 and land the and-of-4 instead, leaning into the next bar.',
-  restdrive: 'Two beats of silence, then eighths: count through the rest and enter on cue.',
-};
-/* What the hand does against the click, per pattern — the run hint states
-   THIS. The scale drills' "one note per click" is false for every rhythm
-   pattern (an eighths drill is two per click, and the picker's own preview
-   said so while the run hint contradicted it). */
-const RHYTHM_CLICK_RULES = {
-  eighths:   'Two notes per click, every click',
-  push:      'Two notes per click, but skip the hit on beat 4 and land the and-of-4',
-  restdrive: 'Each bar: two beats of silence, then two notes per click to the bar line',
-};
-const RHYTHM_BARS = [4, 8, 16];
-
-const pcOf = (midi) => ((midi % 12) + 12) % 12;
-const noteName = (midi) => C.NAMES[pcOf(midi)];
-function fullName(midi){ const n = C.hzToNote(C.midiToHz(midi)); return n.name + n.octave; }
-function todayISO(){
-  const d = new Date();
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0,10);
-}
-function loadDrills(){
-  try { return JSON.parse(localStorage.getItem(DRILL_KEY)) || {}; } catch(e){ return {}; }
-}
-function saveDrillItem(item){
-  const all = loadDrills();
-  all[item.id] = item;
-  try { localStorage.setItem(DRILL_KEY, JSON.stringify(all)); } catch(e){}
-}
-
-/* picker state (what the selects say) and run state (what is being played) */
-/* The click ships ON. Mastery requires a run that is clean AND in time, only the
-   day's FIRST run can bank one, and "in time" can only be measured against a
-   click — so with the click off by default, a beginner's first-ever run was
-   spent before the rule was ever stated, and the tempo checkbox that decided it
-   sat below the fold at the far end of the card. Off is still one click away. */
-const DP = { type:'scale', scaleKey:'minPent', rootPc:4, winKey:null, si:1, variant:'full',
-             pattern:'eighths', bars:8,
-             bpm:60, bpmTouched:false, met:true, labels:'names', wins:[], dueId:null };
-const DR = {
-  cfg:null, item:null, targets:[], full:[], repairTargets:null, run:null,
-  phase:'idle', direction:'up', variant:'full', repair:false,
-  repairClean:0, needFullRep:false, err:null, errTargets:null,
-  history:[], tempoOffer:null, tempoDownOffer:null, bpm:60, met:false, timing:null,
-  // Absolute performance.now() of every accepted onset, plus the absolute time
-  // of the FIRST CLICK: the grid has to be phase-locked to the click, so both
-  // sides of the comparison must survive as absolute times.
-  onsets:[], metOrigin:null,
-  // plan is DRAWN ONCE when a rep ends, so the button's label and the button's
-  // click can never disagree; skips/stall drive the escape hatches.
-  plan:null, skips:0, lastAdvanceAt:0, stallLevel:0, boardApi:null, flash:false
-};
-
-/* ---- plain language for the two things the engine calls by jargon ---- */
-const CI_WORDS = { blocked:'one thing at a time', serial:'mixed in', random:'fully mixed' };
-const CI_NOTE = {
-  blocked:'One thing at a time: the same shape over and over, until it is solid.',
-  serial:'Mixed in: this shape now takes its turn alongside the others.',
-  random:'Fully mixed: direction and slice get shuffled — it feels worse and it sticks better.'
-};
-function dayGap(fromISO, toISO){
-  return Math.round((Date.parse(toISO + 'T12:00:00Z') - Date.parse(fromISO + 'T12:00:00Z')) / 86400000);
-}
-/** "today" / "tomorrow" / "in 3 days" — a date a person can act on, not a box number. */
-function dueWords(due){
-  if (!due) return 'not scheduled yet';
-  const d = dayGap(todayISO(), due);
-  if (d <= 0) return 'today';
-  if (d === 1) return 'tomorrow';
-  return 'in ' + d + ' days';
-}
-
-/* ---- what the dots say ----
-   NOTE NAMES by default: the practice plan teaches note names and never
-   teaches scale degrees, and a degree label ("4") sitting on fret 0 reads
-   as a fret number. Degrees are available, with a legend, for anyone who
-   wants them. */
-function targetLabel(x){
-  return DP.labels === 'degrees' ? x.degree : noteName(x.midi);
-}
-function legendFor(type){
-  if (DP.labels !== 'degrees') return '';
-  return type === 'chromatic'
-    ? '1 2 3 4 = which finger plays the note (1 = index) — not the fret number.'
-    : 'R = root, b3 = flat third — the note numbers counted up from the root.';
-}
-function setLegend(id, type){
-  const el = document.getElementById(id);
-  if (!el) return;
-  const txt = legendFor(type);
-  el.textContent = txt;
-  el.classList.toggle('hidden', !txt);
-}
-function renderLabelSegs(){
-  document.querySelectorAll('#drLabelSeg button, #drLabelSegRun button')
-    .forEach(b => b.classList.toggle('on', b.dataset.k === DP.labels));
-}
-
-/* ---------------- metronome (Web Audio, no assets) ---------------- */
-/* Everything between the string moving and this code SEEING a note: the
-   analyser window fills over ~190ms (8192 samples at 44.1kHz), the tracker only
-   calls a note stable once it has held for 150ms, and the poll runs every 55ms.
-   So a detected onset always sits LATER than the pluck, and that lag is the
-   app's, not the player's — one estimate of it comes off every onset before the
-   onset is compared with the click.
-   220ms is what this pipeline measured here: feeding it a note every 2s through
-   the fake microphone put detection 204–244ms behind each onset (mean 224).
-   It stays an ESTIMATE — one number for one machine, not a measurement of
-   yours — so read the figures as good to tens of milliseconds, not single ones,
-   and read the verdict as a verdict about a sixth of a beat, not about 5ms. */
-const DETECT_LATENCY_MS = 220;
+/* ---------------- metronome (Web Audio, no assets) ----------------
+   Written for the pattern drills, which graded a run against the click; they
+   are retired and the click outlived them, because a play-along still needs a
+   grid to sit on. Nothing measures a note's distance from a beat any more, so
+   the detection-latency constant that scoring depended on went with it. */
 const MET = { timer:null, next:0, beat:0, bpm:null, firstPerf:0, accentEvery:4 };
 function metStop(){ if (MET.timer){ clearInterval(MET.timer); MET.timer = null; } MET.bpm = null; }
 /**
- * Start the click. `bpm` overrides the drill tempo (Songs runs at the song's
- * tempo); returns the performance.now() of the FIRST click, so a play-along
- * can put its beat 1 on the click grid instead of guessing.
+ * Start the click at `bpm` (Songs runs at the song's own tempo); returns the
+ * performance.now() of the FIRST click, so a play-along can put its beat 1 on
+ * the click grid instead of guessing.
  */
 function metStart(bpm, accentEvery){
   if (!A.ctx) return null;
@@ -4519,7 +4216,7 @@ function metStart(bpm, accentEvery){
   MET.firstPerf = performance.now() + (MET.next - A.ctx.currentTime) * 1000;
   // Lookahead scheduling: setInterval alone drifts audibly within a few bars.
   MET.timer = setInterval(() => {
-    const period = 60 / (MET.bpm || DR.bpm);
+    const period = 60 / (MET.bpm || 60);
     while (MET.next < A.ctx.currentTime + 0.15){
       metClick(MET.next, MET.beat % MET.accentEvery === 0);
       MET.next += period; MET.beat++;
@@ -4539,1046 +4236,12 @@ function metClick(at, accent){
   o.start(at); o.stop(at + 0.06);
 }
 
-/* ---------------- building the targets ---------------- */
-function boxOptions(rootPc){
-  const T = TUNING, out = [];
-  out.push({ key:'open', from:0, to:5, label:'Open position · frets 0–5' });
-  for (let si = 0; si < T.midi.length - 2; si++){
-    let f = ((rootPc - pcOf(T.midi[si])) % 12 + 12) % 12;
-    if (f === 0) f = 12;                       // an "open string box" is the open position
-    if (f + 4 > 12) continue;
-    out.push({ key:'box' + si + '_' + f, from:f, to:f + 4, si, fret:f,
-      label:'Box · ' + T.names[si] + ' string, fret ' + f });
-  }
-  return out;
-}
-/** Stack the +2 strings / +2 frets shape as far as this neck allows. */
-function octaveStart(rootPc){
-  const T = TUNING;
-  let best = null;
-  for (let si = 0; si < T.midi.length; si++){
-    const base = ((rootPc - pcOf(T.midi[si])) % 12 + 12) % 12;
-    for (const f of [base, base + 12]){
-      if (f > 12) continue;
-      let len = 0, s = si, x = f;
-      while (s < T.midi.length && x <= 12){ len++; s += 2; x += 2; }
-      if (len < 2) continue;
-      if (!best || len > best.len || (len === best.len && f < best.fret)) best = { si, fret:f, len };
-    }
-  }
-  return best;
-}
-function buildTargets(cfg){
-  const T = TUNING;
-  let out;
-  if (cfg.type === 'rhythm'){
-    // One pitch, many onsets: direction is meaningless here, and reversing a
-    // constant sequence would only scramble the beat labels — so no reverse.
-    return DE.rhythmSequence({ si:cfg.si, fret:cfg.fret, midi:T.midi[cfg.si] + cfg.fret,
-                               pattern:cfg.pattern, bars:cfg.bars });
-  }
-  if (cfg.type === 'chromatic'){
-    out = [];
-    for (let k = 0; k < 4; k++){
-      const f = cfg.from + k;
-      out.push({ si:cfg.si, fret:f, midi:T.midi[cfg.si] + f, degree:String(k+1), finger:String(k+1) });
-    }
-  } else if (cfg.type === 'octave'){
-    out = [];
-    let si = cfg.si, f = cfg.fret;
-    while (si < T.midi.length && f <= 12){
-      out.push({ si, fret:f, midi:T.midi[si] + f, degree:'R' });
-      si += 2; f += 2;
-    }
-  } else {
-    out = DE.sequence({ tuning:T, intervals:SCALES[cfg.scaleKey].iv, rootPc:cfg.rootPc,
-      fromFret:cfg.from, toFret:cfg.to });
-  }
-  return cfg.direction === 'down' ? out.slice().reverse() : out;
-}
-function drillId(cfg){
-  const names = TUNING.names;
-  if (cfg.type === 'chromatic') return [cfg.tuning,'chromatic',names[cfg.si],cfg.from].join('|');
-  if (cfg.type === 'octave')    return [cfg.tuning,'octave',C.NAMES[cfg.rootPc],names[cfg.si] + cfg.fret].join('|');
-  if (cfg.type === 'rhythm')    return [cfg.tuning,'rhythm',cfg.pattern,C.NAMES[cfg.rootPc],cfg.bars + 'bars'].join('|');
-  return [cfg.tuning,'scale',cfg.scaleKey,C.NAMES[cfg.rootPc],cfg.from + '-' + cfg.to].join('|');
-}
-function drillLabel(cfg){
-  const names = TUNING.names;
-  if (cfg.type === 'chromatic')
-    return 'Chromatic 1-2-3-4 · ' + names[cfg.si] + ' string, frets ' + cfg.from + '–' + (cfg.from + 3);
-  if (cfg.type === 'octave')
-    return C.NAMES[cfg.rootPc] + ' octave shape · from the ' + names[cfg.si] + ' string, fret ' + cfg.fret;
-  if (cfg.type === 'rhythm')
-    return RHYTHM_WORDS[cfg.pattern] + ' on ' + C.NAMES[cfg.rootPc] + ' · ' + cfg.bars + ' bars';
-  return C.NAMES[cfg.rootPc] + ' ' + SCALES[cfg.scaleKey].name.toLowerCase() + ' · ' + (cfg.winLabel || '');
-}
-function itemFor(cfg){
-  const id = drillId(cfg);
-  const stored = loadDrills()[id];
-  const item = stored || { id, box:0, due:null, ci:'blocked', bpm:60, attempts:[] };
-  item.attempts = item.attempts || [];
-  item.cfg = cfg;                      // so the shelf can reopen it
-  item.label = drillLabel(cfg);
-  return item;
-}
-
-/* ---------------- what "mastered" means here ----------------
-   The engine ignores direction, and the UI insists ascending and descending
-   are separate reps, so mastery is stated — and measured — on the ASCENDING
-   shape only. Descending reps still schedule review; they cannot bank a day. */
-function ascendingOnly(attempts){
-  return (attempts || []).filter(a => a.direction !== 'down');
-}
-function masteryFor(item){
-  return DE.masteryOf(ascendingOnly(item && item.attempts));
-}
-/** Would THIS attempt bank a mastery day? Asked of the engine, not re-derived. */
-function bankedDay(a){
-  return !!(a && a.cold && a.direction !== 'down' && DE.masteryOf([a]) !== 'new');
-}
-function masteryDays(item){
-  return new Set(((item && item.attempts) || []).filter(bankedDay).map(a => a.date)).size;
-}
-/** One sentence: did this run bank a mastery day, and if not, why not. */
-function masteryLine(attempt){
-  if (!attempt.cold)
-    return 'Today’s first run is the one that can bank a mastery day — this was a repeat, so it counts as practice, not as proof.';
-  const days = masteryDays(DR.item);
-  if (bankedDay(attempt))
-    return 'That was today’s first run — the one that counts — and it banked a mastery day (' + days + ' of 2). ' +
-      (days >= 2 ? 'That is mastered.' : 'One more, on another day, and this shape is mastered.');
-  const clicked = !!(DR.timing && DR.timing.kind === 'click');
-  const why =
-    attempt.skipped              ? 'You skipped a note, so the run was not all yours'
-  : !attempt.passed              ? 'It stopped on a wrong note'
-  : attempt.direction === 'down' ? 'Mastery is measured on the ascending shape and this was the descending one'
-  : attempt.window               ? 'It was part of the shape, not the whole shape'
-  : !attempt.timingOk            ? (clicked ? 'Right notes, but they sat off the click' : 'Right notes, but the spacing wandered')
-  : (attempt.notes || 0) < 3     ? 'A ' + (attempt.notes || 0) + '-note shape is too short to measure timing against the click — ' +
-                                   'mastery needs at least three notes'
-  : !attempt.timingMeasured      ? 'Right notes and evenly spaced, but the click was off, so “on the click” could not be checked'
-  : !attempt.atTargetTempo       ? 'Right notes in time, but below this drill’s target tempo'
-  :                                'It did not clear the bar';
-  return 'That was today’s first run — the one that counts. ' + why +
-    ', so today does not bank a mastery day; tomorrow’s first run is the next chance.';
-}
-
-/* ---------------- the picker ---------------- */
-/* cfg still carries `tuning: 5`, and drillId still embeds it: stored drill ids
-   were minted with it when the app had a 4-string mode, and dropping it now
-   would orphan every stored review date and mastery history. */
-function cfgFromPicker(){
-  const T = TUNING;
-  if (DP.type === 'rhythm'){
-    // Only the six taught roots: a rhythm drill on F# would put the exercise
-    // somewhere the course never taught the hand to sit.
-    const rootPc = RHYTHM_POS[DP.rootPc] ? DP.rootPc : 4;
-    const pos = RHYTHM_POS[rootPc];
-    const bars = RHYTHM_BARS.indexOf(DP.bars) >= 0 ? DP.bars : 8;
-    const pattern = RHYTHM_WORDS[DP.pattern] ? DP.pattern : 'eighths';
-    return { tuning:5, type:'rhythm', pattern, rootPc, si:pos.si, fret:pos.fret, bars };
-  }
-  if (DP.type === 'chromatic'){
-    const from = CHROM_STARTS.indexOf(+DP.winKey) >= 0 ? +DP.winKey : 1;
-    return { tuning:5, type:'chromatic', si:Math.min(DP.si, T.midi.length - 1), from, to:from + 3 };
-  }
-  if (DP.type === 'octave'){
-    const st = octaveStart(DP.rootPc);
-    if (!st) return null;
-    return { tuning:5, type:'octave', rootPc:DP.rootPc, si:st.si, fret:st.fret, from:st.fret, to:Math.min(12, st.fret + 4) };
-  }
-  const win = DP.wins.find(w => w.key === DP.winKey) || DP.wins[0];
-  if (!win) return null;
-  return { tuning:5, type:'scale', scaleKey:DP.scaleKey, rootPc:DP.rootPc,
-    from:win.from, to:win.to, winLabel:win.label };
-}
-function renderDrillPicker(){
-  const T = TUNING;
-  document.querySelectorAll('#drTypeSeg button').forEach(b => b.classList.toggle('on', b.dataset.k === DP.type));
-  document.querySelectorAll('#drVarSeg button').forEach(b => b.classList.toggle('on', b.dataset.v === DP.variant));
-
-  const scaleSel = document.getElementById('drScaleSel');
-  scaleSel.innerHTML = SCALE_ORDER.map(k =>
-    '<option value="' + k + '"' + (k === DP.scaleKey ? ' selected' : '') + '>' + SCALES[k].name + '</option>').join('');
-  const rootSel = document.getElementById('drRootSel');
-  if (DP.type === 'rhythm'){
-    // Rhythm roots are the six the course taught, at their taught positions.
-    if (!RHYTHM_POS[DP.rootPc]) DP.rootPc = 4;
-    rootSel.innerHTML = RHYTHM_ROOT_ORDER.map(pc =>
-      '<option value="' + pc + '"' + (pc === DP.rootPc ? ' selected' : '') + '>' + C.NAMES[pc] +
-      ' · ' + T.names[RHYTHM_POS[pc].si] + (RHYTHM_POS[pc].fret ? ' string, fret ' + RHYTHM_POS[pc].fret : ' string, open') +
-      '</option>').join('');
-  } else {
-    rootSel.innerHTML = C.NAMES.map((n,i) =>
-      '<option value="' + i + '"' + (i === DP.rootPc ? ' selected' : '') + '>' + n + '</option>').join('');
-  }
-  const strSel = document.getElementById('drStringSel');
-  strSel.innerHTML = T.names.map((n,i) =>
-    '<option value="' + i + '"' + (i === Math.min(DP.si, T.names.length-1) ? ' selected' : '') + '>' + n + ' string</option>').join('');
-  const patSel = document.getElementById('drPatSel');
-  patSel.innerHTML = Object.keys(RHYTHM_WORDS).map(k =>
-    '<option value="' + k + '"' + (k === DP.pattern ? ' selected' : '') + '>' + RHYTHM_WORDS[k] + '</option>').join('');
-  const barsSel = document.getElementById('drBarsSel');
-  barsSel.innerHTML = RHYTHM_BARS.map(b =>
-    '<option value="' + b + '"' + (b === DP.bars ? ' selected' : '') + '>' + b + ' bars</option>').join('');
-
-  const winSel = document.getElementById('drWinSel');
-  if (DP.type === 'chromatic'){
-    DP.wins = CHROM_STARTS.map(f => ({ key:String(f), from:f, to:f+3, label:'Frets ' + f + '–' + (f+3) }));
-  } else {
-    // Only offer places where this root actually starts a full octave.
-    DP.wins = boxOptions(DP.rootPc).filter(w => DE.sequence({
-      tuning:T, intervals:SCALES[DP.scaleKey].iv, rootPc:DP.rootPc, fromFret:w.from, toFret:w.to
-    }).length > 1);
-  }
-  if (!DP.wins.some(w => w.key === DP.winKey)) DP.winKey = DP.wins.length ? DP.wins[0].key : null;
-  winSel.innerHTML = DP.wins.map(w =>
-    '<option value="' + w.key + '"' + (w.key === DP.winKey ? ' selected' : '') + '>' + w.label + '</option>').join('')
-    || '<option>nothing fits on this neck</option>';
-
-  const showScale = DP.type === 'scale';
-  document.getElementById('drScaleWrap').classList.toggle('hidden', !showScale);
-  document.getElementById('drRootWrap').classList.toggle('hidden', DP.type === 'chromatic');
-  document.getElementById('drWinWrap').classList.toggle('hidden', DP.type === 'octave' || DP.type === 'rhythm');
-  document.getElementById('drStringWrap').classList.toggle('hidden', DP.type !== 'chromatic');
-  document.getElementById('drPatWrap').classList.toggle('hidden', DP.type !== 'rhythm');
-  document.getElementById('drBarsWrap').classList.toggle('hidden', DP.type !== 'rhythm');
-  // A "middle" of the same note over and over is not a different task.
-  document.getElementById('drVarWrap').classList.toggle('hidden', DP.type === 'rhythm');
-
-  document.getElementById('drMet').checked = DP.met;
-  document.getElementById('drBpmTxt').textContent = DP.bpm + ' bpm';
-  renderLabelSegs();
-
-  const cfg = cfgFromPicker();
-  const prev = document.getElementById('drPreview');
-  const start = document.getElementById('drStart');
-  const targetNote = document.getElementById('drTargetNote');
-  const hasDue = applyPrimaryCta();
-  if (!cfg || !buildTargets(cfg).length){
-    prev.textContent = 'That root does not give a full octave here — pick another place on the neck.';
-    start.disabled = !hasDue;
-    document.getElementById('drStartPicked').disabled = true;
-    setLegend('drLegendPick', DP.type);
-    targetNote.classList.add('hidden');
-    return;
-  }
-  const t = buildTargets(cfg);
-  const shown = cfg.type !== 'rhythm' && DP.variant === 'middle' ? DE.middleWindow(t, WINDOW_SIZE) : t;
-  start.disabled = false;
-  document.getElementById('drStartPicked').disabled = false;
-  // When a due review owns the primary button, this paragraph describes a
-  // DIFFERENT drill from the one that button runs — two drills on one card
-  // needed labels, so the preview names its owner.
-  const own = hasDue ? '<b>Your own pick</b> (the second button): ' : '';
-  if (cfg.type === 'rhythm'){
-    // Listing 64 identical notes would be noise; a rhythm drill previews as
-    // what it is — one note, a pattern, a length, a claim about the click.
-    const pos = TUNING.names[cfg.si] + (cfg.fret ? ' string, fret ' + cfg.fret : ' string, open');
-    prev.innerHTML = own + '<b>' + drillLabel(cfg) + '</b><br>' +
-      RHYTHM_NOTES[cfg.pattern] + '<br>' +
-      shown.length + ' notes, all ' + C.NAMES[cfg.rootPc] + ' at ' + pos +
-      ' — the pitch just has to hold; the verdict is about the click.';
-  } else {
-    prev.innerHTML = own + '<b>' + drillLabel(cfg) + '</b><br>' + shown.length +
-      ' notes, ascending — then the same shape coming down as a second rep:<br>' +
-      shown.map(x => targetLabel(x) + ' <span class="t-data">' + TUNING.names[x.si] + '/' + x.fret + '</span>').join(' → ') +
-      '<br><span class="t-data">string/fret</span>' +
-      // Three onsets is the minimum that says anything about timing, so a shorter
-      // shape is told up front that it cannot bank a mastery day.
-      (shown.length < 3
-        ? '<br><b>Only ' + shown.length + ' notes</b> — too few to measure against the click, so this shape is practice: ' +
-          'it schedules review but it cannot bank a mastery day.'
-        : '');
-  }
-  /* Said BEFORE the run, next to the button, because only the day's first run can
-     bank a mastery day and it needs the click: learning that afterwards means
-     learning it by losing the day. */
-  const bank = document.getElementById('drBankNote');
-  if (bank){
-    // Same test endRep uses for `cold`: today's first run of THIS shape.
-    const rec = loadDrills()[drillId(cfg)];
-    const first = !rec || rec.coldDate !== todayISO();
-    bank.innerHTML = shown.length < 3 ? ''
-      : !first ? 'You have already had today’s first run of this shape — the one that can bank a mastery day. ' +
-          'Anything now is practice, and still worth doing.'
-      : DP.met ? '<b>The click is on</b>, so this run can bank a mastery day: play it clean and in time and ' +
-          'today counts toward mastery. It is the day’s first run of this shape that counts.'
-      : '<b>The click is off</b>, so this run cannot bank a mastery day — “in time” is only a claim you can ' +
-          'check against a click. <button class="btn small" id="drMetOn">Turn the click on</button>';
-    bank.classList.toggle('hidden', shown.length < 3);
-    const on = document.getElementById('drMetOn');
-    if (on) on.addEventListener('click', () => { DP.met = true; renderDrillPicker(); });
-  }
-  setLegend('drLegendPick', cfg.type);
-
-  // Tempo is not a ratchet: the picker's bpm is what will play. The stored
-  // target only decides when a run counts as "in time" — and it can come down.
-  const stored = loadDrills()[drillId(cfg)];
-  if (stored && stored.bpm && stored.bpm !== DP.bpm){
-    targetNote.innerHTML = 'This drill’s <b>target</b> is ' + stored.bpm + ' bpm. It will run at the ' + DP.bpm +
-      ' bpm you picked here — the target only decides when a run counts as “in time”.' +
-      (stored.bpm > DP.bpm
-        ? ' <button class="btn small" id="drLowerTarget">Make ' + DP.bpm + ' bpm the target</button>'
-        : '');
-    targetNote.classList.remove('hidden');
-  } else targetNote.classList.add('hidden');
-}
-
-/* ---------------- running a rep ---------------- */
-function startDrill(cfg){
-  if (!cfg) return;
-  DR.cfg = cfg;
-  DR.item = itemFor(cfg);
-  // The PICKER's tempo is the session's tempo. The item's accepted target is
-  // only a starting suggestion for someone who has not touched the picker:
-  // otherwise one accepted step would lock the drill at that speed forever.
-  if (!DP.bpmTouched && DR.item.bpm) DP.bpm = Math.max(40, Math.min(200, DR.item.bpm));
-  DR.bpm = DP.bpm;
-  DR.met = DP.met;
-  // A rhythm drill has no "middle": whatever the variant seg last said, the
-  // run is always the whole pattern.
-  DR.direction = 'up'; DR.variant = cfg.type === 'rhythm' ? 'full' : DP.variant;
-  DR.repair = false; DR.repairTargets = null; DR.repairClean = 0; DR.needFullRep = false;
-  DR.history = []; DR.tempoOffer = null; DR.err = null; DR.plan = null;
-  document.getElementById('drPick').classList.add('hidden');
-  document.getElementById('drRun').classList.remove('hidden');
-  beginRep();
-}
-function beginRep(){
-  const cfg = Object.assign({}, DR.cfg, { direction:DR.direction });
-  DR.full = buildTargets(cfg);
-  DR.targets = DR.repair && DR.repairTargets ? DR.repairTargets
-             : DR.variant === 'middle' ? DE.middleWindow(DR.full, WINDOW_SIZE)
-             : DR.full;
-  DR.run = DE.createRun(DR.targets);
-  DR.phase = 'running'; DR.err = null; DR.errTargets = null;
-  DR.plan = null; DR.skips = 0; DR.flash = false;
-  DR.onsets = []; DR.metOrigin = null; DR.timing = null; DR.tempoDownTaken = false;
-  DR.clickLost = false;
-  DR.lastAdvanceAt = performance.now();
-  hideStall();
-  document.getElementById('drPanel').innerHTML = '';
-  // A new rep is a NEW INTENT, so detection is re-armed: tracker.reset() only
-  // clears the settle clock, which left a still-consumed note unable to answer
-  // the rep's first target — a drill whose first note you just played froze.
-  tracker = C.createTracker({ stableMs:150 });
-  // metStart returns the performance.now() of the first click: that is the
-  // origin of the timing grid, and without it there is no click to measure.
-  if (DR.met) DR.metOrigin = metStart();
-  renderRun();
-}
-function restartRun(){
-  if (!DR.cfg) return;
-  DR.direction = 'up'; DR.variant = DR.cfg.type === 'rhythm' ? 'full' : DP.variant;
-  DR.repair = false; DR.repairTargets = null; DR.repairClean = 0; DR.needFullRep = false;
-  DR.history = []; DR.tempoOffer = null; DR.err = null;
-  beginRep();
-}
-/** The one place a played note enters a run. Returns the engine's status. */
-function drillPush(midi, atMs){
-  if (DR.phase !== 'running' || !DR.run) return null;
-  const at = atMs == null ? performance.now() : atMs;
-  const r = DR.run.push(midi, at);
-  // Keep the ABSOLUTE onset time: the engine stores each note relative to note
-  // one, which cancels any constant offset from the click — including a whole
-  // half-beat of it.
-  if (r.status === 'advanced' || r.status === 'done') DR.onsets.push(at);
-  if (r.status === 'error'){
-    DR.phase = 'error'; DR.err = r; DR.errTargets = DR.targets;
-    endRep(false);
-  } else if (r.status === 'done'){
-    DR.phase = 'done';
-    endRep(true);
-  } else {
-    DR.lastAdvanceAt = performance.now();
-    hideStall();
-    renderRun();
-  }
-  return r;
-}
-
-/* ---------------- a run must never be a dead end ----------------
-   Find it has its own stall timer; Drills had none, so a run that would not
-   advance offered nothing but "Change drill", which throws the drill away. */
-function showStall(html, escapes){
-  const s = document.getElementById('drStall');
-  s.innerHTML = html;
-  s.classList.remove('hidden');
-  const esc = document.getElementById('drEscape');
-  const wasHidden = esc.classList.contains('hidden');
-  esc.classList.toggle('hidden', !escapes);
-  // A way out that sits below the fold is not a way out (the desktop board is tall).
-  if (escapes && wasHidden) esc.scrollIntoView({ block:'nearest' });
-}
-function hideStall(){
-  DR.stallLevel = 0;
-  document.getElementById('drStall').classList.add('hidden');
-  document.getElementById('drEscape').classList.add('hidden');
-}
-function showExpectedNote(){
-  if (DR.phase !== 'running' || !DR.run) return;
-  const want = DR.run.expected();
-  if (!want) return;
-  const T = TUNING;
-  showStall('It is the <b>' + T.names[want.si] + '</b> string, <b>fret ' + want.fret + '</b> — ' +
-    noteName(want.midi) + ' (the violet dot, flashing). Mute everything else and pluck just that.', true);
-  DR.flash = true;
-  drillBoard();
-  DR.flash = false;
-  if (DR.boardApi) DR.boardApi.scrollTo(want.fret);
-}
-function skipExpectedNote(){
-  if (DR.phase !== 'running' || !DR.run) return;
-  const want = DR.run.expected();
-  if (!want) return;
-  // The run advances, but the rep is marked as not clean: a note the app
-  // played for you cannot bank mastery or move the tempo.
-  DR.skips++;
-  drillPush(want.midi, performance.now());
-  if (DR.phase === 'running'){
-    tracker = C.createTracker({ stableMs:150 });
-    showStall('Skipped that note — this run no longer counts towards mastery or the tempo. Carry on from the violet dot.', true);
-  }
-}
-setInterval(() => {
-  if (mode !== 'drill' || DR.phase !== 'running' || !DR.run) return;
-  const stalledFor = performance.now() - DR.lastAdvanceAt;
-  if (stalledFor > 20000 && DR.stallLevel < 2){
-    DR.stallLevel = 2;
-    showStall('Still waiting on the <b style="color:var(--hl)">violet</b> note — mute the strings and pluck it again.' +
-      '<br>If it still will not register, take one of these ways out.', true);
-  } else if (stalledFor > 8000 && DR.stallLevel < 1){
-    DR.stallLevel = 1;
-    showStall('Still waiting on the <b style="color:var(--hl)">violet</b> note — mute the strings and pluck it again.', false);
-  }
-}, 700);
-/**
- * Score the onsets against the CLICK, in milliseconds.
- *
- * `onsets` are ABSOLUTE performance.now() times and `clickOrigin` is the
- * performance.now() of the first click, so the grid is phase-locked to the
- * click itself. (It used to be phase-locked to note one — res.notes[].at is
- * measured from the first note — which cancels ANY constant offset: six notes
- * played squarely on the off-beat scored a perfect 0ms.)
- * Each onset is compared with the NEAREST point on that grid — the beat, or
- * the half-beat if the gaps say two notes per click — and the deviation is
- * SIGNED, so early and late are visible instead of averaged into "off".
- * Tolerance is ±15% of that unit, tightened to ±10% once the drill is
- * mastered, because "mastered" should not keep getting easier.
- *
- * With no clickOrigin there is no click to be on, and the report says so: it
- * measures EVEN SPACING and is labelled that way everywhere it is shown.
- */
-function timingReport(onsets, bpm, tight, clickOrigin, opts){
-  if (!onsets || onsets.length < 3) return null;
-  const beat = 60000 / bpm;
-  if (!(beat > 0)) return null;
-  const gaps = [];
-  for (let i = 1; i < onsets.length; i++) gaps.push(onsets[i] - onsets[i-1]);
-  const meanGap = gaps.reduce((a,b) => a+b, 0) / gaps.length;
-  // forceSub: a rhythm PATTERN's grid is half-beats by definition, but the
-  // mean-gap heuristic reads rest-then-drive (a 2.5-beat rest every bar) as
-  // quarter notes — and would then score every and-of onset as half a beat off.
-  const sub = (opts && opts.forceSub) || (meanGap > 0 && meanGap < beat * 0.75);
-  const unit = sub ? beat / 2 : beat;
-  const pct = tight ? 10 : 15;
-  const tol = unit * pct / 100;
-  const sd = Math.sqrt(gaps.reduce((a,g) => a + (g-meanGap)*(g-meanGap), 0) / gaps.length);
-  if (clickOrigin == null){
-    return { kind:'spacing', spread:sd, meanGap, unit, sub, pct, tol, bpm,
-             inside: meanGap > 0 && sd / meanGap <= 0.35 };
-  }
-  let sum = 0, signed = 0, worst = 0, worstSigned = 0;
-  for (const at of onsets){
-    const t = at - clickOrigin - DETECT_LATENCY_MS;
-    const dev = t - Math.round(t / unit) * unit;      // signed: − early, + late
-    sum += Math.abs(dev); signed += dev;
-    if (Math.abs(dev) > worst){ worst = Math.abs(dev); worstSigned = dev; }
-  }
-  return { kind:'click', mean:sum / onsets.length, meanSigned:signed / onsets.length,
-           worst, worstSigned, spread:sd, tol, pct, unit, sub, bpm, inside: worst <= tol };
-}
-function timingOkOf(res){
-  DR.timing = null;
-  // Two notes give one gap, and one gap is "even" by definition: fewer than
-  // three onsets is not evidence about timing at all.
-  if (!DR.onsets || DR.onsets.length < 3) return true;
-  DR.timing = timingReport(DR.onsets, DR.bpm, masteryFor(DR.item) === 'mastered',
-                           DR.met ? DR.metOrigin : null,
-                           DR.cfg && DR.cfg.type === 'rhythm' ? { forceSub:true } : null);
-  return DR.timing ? DR.timing.inside : true;
-}
-/** A tolerance a beginner owns: 15% of a beat is "about a sixth of a beat". */
-const BEAT_FRACTIONS = { 2:'half a beat', 3:'a third of a beat', 4:'a quarter of a beat',
-  5:'a fifth of a beat', 6:'a sixth of a beat', 7:'a seventh of a beat', 8:'an eighth of a beat',
-  9:'a ninth of a beat', 10:'a tenth of a beat', 11:'an eleventh of a beat', 12:'a twelfth of a beat' };
-function toleranceWords(t){
-  const beat = 60000 / t.bpm;
-  const denom = Math.max(2, Math.min(12, Math.floor(beat / t.tol)));
-  return BEAT_FRACTIONS[denom];
-}
-const earlyLate = (ms) => (ms < 0 ? 'early' : 'late');
-/** The one visible timing line, built from the same report as the verdict. */
-function timingLine(){
-  const t = DR.timing;
-  if (!t) return '';
-  if (t.kind === 'spacing'){
-    return '<p class="t-caption"><b>Even spacing</b> (' + (DR.clickLost
-        ? 'the click stopped part-way through, when you left the tab, so this run cannot be scored against it'
-        : 'no click was running, so being “on the beat” could not be checked') +
-      '): the gaps between notes varied by <b>' + Math.round(t.spread) + 'ms</b> around ' +
-      Math.round(t.meanGap) + 'ms — ' + (t.inside ? 'even enough' : 'uneven') + '. ' +
-      (DR.clickLost
-        ? 'Run it again without leaving the tab and it gets measured against the beat itself.'
-        : 'Switch the click on and the same run gets measured against the beat itself.') + '</p>';
-  }
-  return '<p class="t-caption">Against the click: <b>' + Math.abs(Math.round(t.meanSigned)) + 'ms ' +
-    earlyLate(t.meanSigned) + '</b> on average, worst <b>' + Math.abs(Math.round(t.worstSigned)) + 'ms ' +
-    earlyLate(t.worstSigned) + '</b> — ' + (t.inside ? 'inside' : 'outside') + ' the ±' +
-    Math.round(t.tol) + 'ms window, which is ' + toleranceWords(t) + ' (' + t.pct + '% of ' +
-    (t.sub ? 'the half-beat' : 'the beat') + ' at ' + t.bpm + ' bpm' + (t.sub ? ', two notes per click' : '') +
-    ').<br><span class="t-data">measured from the click itself, less a fixed ' + DETECT_LATENCY_MS +
-    'ms estimate of the app’s own detection lag</span></p>';
-}
-function endRep(passed){
-  metStop();
-  hideStall();
-  const res = DR.run.result();
-  const skipped = DR.skips > 0;
-  // A skipped note is not a played note: it counts for nothing.
-  const clean = passed && !skipped;
-  const timingOk = !skipped && timingOkOf(res);
-  // Timing is only EVIDENCE when there was a click to measure against and at
-  // least three onsets to measure. A two-note drill (a short octave shape) used
-  // to sail past the timing gate with nothing measured and reach "mastered".
-  const timingMeasured = !skipped && !!(DR.timing && DR.timing.kind === 'click');
-  const played = Math.max(0, res.notes.length - DR.skips);
-  const accuracy = res.total ? (clean ? 1 : played / res.total) : 0;
-  const today = todayISO();
-  // COLD = the first attempt of a DAY, persisted with the drill. Keying this
-  // on a page-lifetime object made mastery unreachable for anyone who leaves
-  // the tab open overnight — which is what a desktop tab does.
-  const cold = DR.item.coldDate !== today;
-  // A repair span, a middle-only slice or a run with a skipped note is not an
-  // attempt at the drill: the engine ignores such reps, and so does the gate.
-  const windowRep = DR.repair || DR.variant === 'middle' || skipped;
-
-  // The drill's target tempo only moves when the player accepts the gate's
-  // offer, so "at target tempo" stays a real condition on mastery.
-  const targetBpm = DR.item.bpm || DR.bpm;
-  if (skipped){
-    // No promotion, no demotion: the review date is not this run's business.
-    DR.item = Object.assign({}, DR.item, { cfg:DR.cfg, label:drillLabel(DR.cfg) });
-  } else {
-    // Review is DAY-scale. schedule() runs on every completed rep, but a single
-    // session must not ratchet the box to 5: once today's pass has promoted the
-    // item, further passes today only refresh lastSeen. Failures still demote.
-    const promotedToday = passed && DR.item.lastSeen === today && (DR.item.box || 0) > 0;
-    const scheduled = DE.schedule(DR.item, passed, today);
-    DR.item = Object.assign(
-      promotedToday ? Object.assign({}, DR.item, { lastSeen: scheduled.lastSeen }) : scheduled,
-      { cfg:DR.cfg, label:drillLabel(DR.cfg) });
-  }
-  DR.item.ci = DE.nextCI(DR.item.ci, clean, { window: windowRep });
-  DR.item.bpm = targetBpm;
-  DR.item.coldDate = today;
-  const attempt = {
-    date:today, cold, passed: clean, accuracy, timingOk, timingMeasured,
-    // "In time" is only a claim you can check against a click, and only with
-    // enough notes to check: mastery requires both. The wording says so too.
-    atTargetTempo: timingMeasured && DR.bpm >= targetBpm,
-    direction:DR.direction, bpm:DR.bpm, notes:res.total,
-    window: windowRep, skipped
-  };
-  DR.item.attempts.push(attempt);
-  if (DR.item.attempts.length > 40) DR.item.attempts.shift();
-  // The tempo offer has to be earned by two clean reps of the WHOLE shape.
-  if (!windowRep) DR.history.push({ passed: clean, timingOk });
-  saveDrillItem(DR.item);
-
-  // Tempo never moves on its own — the gate only makes the offer.
-  // Two clean reps in time earn an OFFER. Nothing speeds up unless it is tapped.
-  const gate = DE.tempoGate(DR.history, DR.bpm);
-  DR.tempoOffer = (gate.advance && !windowRep) ? gate.nextBpm : null;
-
-  if (DR.repair){
-    DR.repairClean = clean ? DR.repairClean + 1 : 0;
-    if (DR.repairClean >= 2){ DR.repair = false; DR.repairClean = 0; DR.needFullRep = true; }
-  } else if (clean && DR.needFullRep && DR.variant !== 'middle'){
-    DR.needFullRep = false;
-  }
-
-  // Draw what happens next ONCE, here, and store it: the label on the button
-  // and the rep the button runs are then the same thing by construction.
-  DR.plan = drawPlan();
-  renderRun();
-  renderPanel(res, timingOk, attempt);
-  renderDue(); renderShelf();
-}
-
-/* What the next tap should run. The contextual-interference rung decides,
-   not the player: blocked and serial are prescribed, random shuffles.
-   DRAWN ONCE per rep (see endRep) and stored in DR.plan — calling this from
-   both the label and the click made the button lie about what it would do. */
-function drawPlan(){
-  const ci = (DR.item && DR.item.ci) || 'blocked';
-  // A rhythm drill is the same pitch in both directions, so "now descending"
-  // would be theatre: every rep is simply the pattern again.
-  if (DR.cfg && DR.cfg.type === 'rhythm')
-    return { direction:'up', variant:'full', repair:false,
-             label: DR.phase === 'error' ? 'Run it again' : 'The pattern again →' };
-  if (DR.phase === 'error')
-    return { direction:DR.direction, variant:DR.variant, repair:DR.repair, label:'Run it again' };
-  if (DR.needFullRep)
-    return { direction:DR.direction, variant:'full', repair:false, label:'One clean full run' };
-  if (DR.repair)
-    return { direction:DR.direction, variant:DR.variant, repair:true, label:'The same few notes again' };
-  const slice = DR.variant === 'middle' ? ' · middle only' : '';
-  if (DR.direction === 'up')
-    return { direction:'down', variant:DR.variant, repair:false, label:'Now descending' + slice + ' →' };
-  if (ci === 'random'){
-    const dir = Math.random() < 0.5 ? 'up' : 'down';
-    const variant = DR.full.length > WINDOW_SIZE && Math.random() < 0.4 ? 'middle' : 'full';
-    return { direction:dir, variant, repair:false,
-      label:'Next: ' + (dir === 'up' ? 'ascending' : 'descending') + (variant === 'middle' ? ' · middle only' : '') };
-  }
-  return { direction:'up', variant:DR.variant, repair:false, label:'Ascending again' + slice + ' →' };
-}
-function findPosition(midi, near){
-  const T = TUNING;
-  let best = null;
-  for (let si = 0; si < T.midi.length; si++){
-    const f = midi - T.midi[si];
-    if (f < 0 || f > 12) continue;
-    const cost = near ? Math.abs(f - near.fret) + Math.abs(si - near.si) * 2 : f;
-    if (!best || cost < best.cost) best = { si, fret:f, cost };
-  }
-  return best;
-}
-
-/* ---------------- drawing ---------------- */
-function drillBoard(){
-  const host = document.getElementById('drBoard');
-  const T = TUNING, t = DR.targets;
-  if (!t.length){ host.innerHTML = ''; return; }
-  const idx = DR.run ? DR.run.index() : 0;
-  const RANK = { ghost:1, correct:2, highlight:3, wrong:4 };
-  const cells = new Map();
-  const put = (m) => {
-    const k = m.si + ':' + m.fret;
-    const cur = cells.get(k);
-    if (!cur || RANK[m.kind] > RANK[cur.kind]) cells.set(k, m);
-  };
-  t.forEach((x, i) => put({
-    si:x.si, fret:x.fret, label:targetLabel(x), finger:x.finger,
-    kind: i < idx ? 'correct' : i === idx ? 'highlight' : 'ghost'
-  }));
-  if (DR.phase === 'error' && DR.err){
-    const p = findPosition(DR.err.played, DR.err.expected);
-    if (p) put({ si:p.si, fret:p.fret, kind:'wrong', label:noteName(DR.err.played) });
-  }
-  const markers = [...cells.values()];
-  const frets = markers.map(m => m.fret);
-  const lo = Math.min(...frets), hi = Math.max(...frets);
-  const used = new Set(markers.map(m => m.si));
-  const dimStrings = [];
-  for (let si = 0; si < T.names.length; si++) if (!used.has(si)) dimStrings.push(si);
-
-  /* The box is the window the drill's own TITLE names — cfg.from..cfg.to — not
-     merely the frets this shape happens to land on. A drill headed "Open position
-     · frets 0–5" was drawing its box over frets 0–3, so the picture and the
-     heading disagreed about what the drill was.
-     And the visible neck is that window plus a little context, instead of a full
-     twelve frets: a six-note open-position shape was three quarters empty. */
-  const num = (v) => typeof v === 'number' && isFinite(v);
-  const boxLo = Math.min(lo, num(DR.cfg && DR.cfg.from) ? DR.cfg.from : lo);
-  const boxHi = Math.max(hi, num(DR.cfg && DR.cfg.to) ? DR.cfg.to : hi);
-  const wide = window.matchMedia('(min-width:1000px)').matches;
-  DR.boardApi = BassNeck.render(host, {
-    strings:T.names,
-    fromFret: wide ? Math.max(0, boxLo - 1) : Math.max(0, lo - 1),
-    toFret:   wide ? Math.min(12, Math.max(boxHi + 2, boxLo + 6))
-                   : Math.min(12, Math.max(hi + 1, lo + 4)),
-    scale: wide ? 'desk' : 'play',
-    markers, dimStrings,
-    window: wide ? [boxLo, boxHi] : null,
-    // "BOX · FRET 0" would be a lie about open position — and "BOX · FRET 2"
-    // on a rhythm drill names a box that does not exist: its window is only
-    // where the root sits, so the pill says the root instead (or nothing at
-    // fret 0, where "FRET 0" would mislabel an open string).
-    windowLabel: DR.cfg && DR.cfg.type === 'rhythm'
-      ? (boxLo > 0 ? noteName(TUNING.midi[DR.cfg.si] + DR.cfg.fret) + ' · FRET ' + DR.cfg.fret : false)
-      : boxLo > 0,
-    scrollToFret: boxLo,
-    animate: !!DR.flash,          // "Show me this note" pops the dots back in
-    title: DR.item ? DR.item.label : 'drill'
-  });
-}
-function renderRun(){
-  if (!DR.item) return;
-  const t = DR.targets, idx = DR.run ? DR.run.index() : 0;
-  document.getElementById('drRunTitle').textContent = DR.item.label;
-  document.getElementById('drRunKind').textContent =
-    DR.cfg && DR.cfg.type === 'rhythm'
-    ? RHYTHM_WORDS[DR.cfg.pattern] + ' · ' + DR.cfg.bars + ' bars'
-    : (DR.repair ? 'Fixing the bit you missed' :
-       DR.variant === 'middle' ? 'Middle only' : 'Whole shape') +
-      ' · ' + (DR.direction === 'up' ? 'ascending' : 'descending');
-  document.getElementById('drProg').textContent =
-    (DR.phase === 'done' ? t.length : Math.min(idx + 1, t.length)) + ' of ' + t.length;
-  renderLabelSegs();
-  drillBoard();
-  setLegend('drLegend', DR.cfg ? DR.cfg.type : DP.type);
-
-  const hint = document.getElementById('drHint');
-  const isRhythm = DR.cfg && DR.cfg.type === 'rhythm';
-  if (DR.phase === 'running'){
-    hint.innerHTML = (isRhythm
-      ? 'Play the <b style="color:var(--hl)">violet</b> note over and over — same pitch, the pattern’s onsets.'
-      : 'Play the <b style="color:var(--hl)">violet</b> note, then the next. Dotted circles are still to come.') +
-      (DR.met && !DR.clickLost
-        ? (isRhythm
-          // The pattern's own rule, not "one note per click" — see RHYTHM_CLICK_RULES.
-          ? ' ' + RHYTHM_CLICK_RULES[DR.cfg.pattern] + ', at ' + DR.bpm + ' bpm.'
-          : ' One note per click at ' + DR.bpm + ' bpm.')
-        : '') +
-      '<br>Nothing is judged until the run stops.' +
-      // Said here rather than only in the verdict: otherwise he plays the rest
-      // of the run believing it is still being timed against a click.
-      (DR.clickLost ? '<br><b>The click stopped when you left this tab</b>, so the ' +
-        'rest of this run is not being timed against it — the notes still count. ' +
-        'Restart the run to get the click and the timing back.' : '');
-  } else {
-    hint.innerHTML = '';
-  }
-
-  const go = document.getElementById('drGo');
-  go.classList.toggle('hidden', DR.phase === 'running');
-  if (DR.phase !== 'running'){
-    if (!DR.plan) DR.plan = drawPlan();     // stored, so the click matches the label
-    go.textContent = DR.plan.label;
-  }
-  const fix = document.getElementById('drFix');
-  // No repair window for a rhythm drill: four more of the same note is not a
-  // different, easier task — running the pattern again is the repair.
-  fix.classList.toggle('hidden', DR.phase !== 'error' || (DR.cfg && DR.cfg.type === 'rhythm'));
-  if (DR.phase === 'error'){
-    const w = DE.errorWindow(DR.errTargets || t, DR.err.index, WINDOW_SIZE);
-    fix.textContent = 'Fix that bit · ' + w.length + ' notes';
-  }
-  const tb = document.getElementById('drTempoBtn');
-  tb.classList.toggle('hidden', !DR.tempoOffer);
-  if (DR.tempoOffer) tb.textContent = '+8% → ' + DR.tempoOffer + ' bpm';
-  // Speeding up is offered when timing is earned; slowing down must be offered
-  // when it is missed, or "too fast" is a problem with no button attached.
-  const td = document.getElementById('drTempoDownBtn');
-  DR.tempoDownOffer = (DR.phase !== 'running' && DR.timing && !DR.timing.inside && DR.bpm > 40 && !DR.tempoDownTaken)
-    ? Math.max(40, Math.round(DR.bpm * 0.92)) : null;
-  td.classList.toggle('hidden', !DR.tempoDownOffer);
-  if (DR.tempoDownOffer) td.textContent = '−8% → ' + DR.tempoDownOffer + ' bpm';
-
-  const mastery = masteryFor(DR.item);
-  const ci = DR.item.ci || 'blocked';
-  document.getElementById('drPills').innerHTML =
-    '<span class="pill' + (mastery === 'mastered' ? ' good' : '') + '">' + mastery + '</span>' +
-    '<span class="pill">Practice order: ' + CI_WORDS[ci] + '</span>' +
-    '<span class="pill">Next review: ' + dueWords(DR.item.due) + '</span>' +
-    (DR.met ? '<span class="pill warn">' + DR.bpm + ' bpm</span>' : '');
-  document.getElementById('drPillNote').innerHTML = CI_NOTE[ci] +
-    // "cold" was jargon, and the rule was worded two different ways on one
-    // screen. One wording, and the word is explained where it is used.
-    (isRhythm
-      /* Mirrors what masteryOf actually requires of a rhythm attempt: every
-         rep is 'up' (buildTargets never reverses a rhythm pattern), so the
-         ascending-only filter never bites — the real gate is cold + the whole
-         pattern + in time with the click + two distinct days. "Ascending"
-         here would describe a rule this drill does not have. */
-      ? ' <b>Mastered</b> means the <b>whole pattern held</b>, every note in time with the click, played <b>cold</b> ' +
-        '— the day’s first run, before any warm-up on it — on two separate days.'
-      : ' <b>Mastered</b> means the <b>ascending</b> shape, whole, played <b>cold</b> — the day’s first ' +
-        'run, before any warm-up on it — clean and in time with the click, on two separate days.');
-}
-function renderPanel(res, timingOk, attempt){
-  const p = document.getElementById('drPanel');
-  const T = TUNING;
-  const t = DR.errTargets || DR.targets;
-  if (!attempt.passed && DR.err){
-    const e = DR.err, want = e.expected, diff = e.played - want.midi;
-    const pos = findPosition(e.played, want);
-    const why = e.reason === 'wrong-octave'
-      ? 'Right note, <b>wrong octave</b>: you played ' + fullName(e.played) + ', ' +
-        (Math.abs(diff) / 12) + ' octave' + (Math.abs(diff) === 12 ? '' : 's') + ' ' +
-        (diff > 0 ? 'above' : 'below') + ' the one in the shape.'
-      : '<b>Wrong note</b>: you played ' + fullName(e.played) + ' — ' + Math.abs(diff) +
-        ' fret' + (Math.abs(diff) === 1 ? '' : 's') + ' ' + (diff > 0 ? 'too high' : 'too low') + '.';
-    p.innerHTML =
-      '<div class="note-box bad">' +
-        '<div class="t-eyebrow">Stopped at note ' + (e.index + 1) + ' of ' + t.length + '</div>' +
-        '<p>Expected <b>' + noteName(want.midi) +
-          (DP.labels === 'degrees' ? '</b> (degree ' + want.degree + ')' : '</b>') + ' — ' +
-          T.names[want.si] + ' string, fret ' + want.fret + ' (violet on the neck).</p>' +
-        '<p>' + why + (pos ? ' That note is at ' + T.names[pos.si] + ' string, fret ' + pos.fret +
-          ' — the outlined circle.' : '') + '</p>' +
-        '<p class="t-caption">You got ' + res.notes.length + ' of ' + t.length +
-          ' before it stopped. Nothing was flagged while you were playing — that is deliberate.</p>' +
-        timingLine() +
-        '<p class="t-caption">' + masteryLine(attempt) + '</p>' +
-      '</div>';
-    return;
-  }
-  const dir = DR.direction === 'up' ? 'ascending' : 'descending';
-  // "64 NOTES ASCENDING" was a scale drill's sentence on a rhythm verdict —
-  // rhythm has no direction, so it names its pattern and root instead.
-  const shapeWords = DR.cfg && DR.cfg.type === 'rhythm'
-    ? t.length + ' notes · ' + RHYTHM_WORDS[DR.cfg.pattern] + ' on ' + C.NAMES[DR.cfg.rootPc]
-    : t.length + ' notes ' + dir;
-  const bits = [];
-  // A rep that failed on timing is not "clean", and is not painted as success.
-  const kind = attempt.skipped ? 'warn' : timingOk ? 'good' : 'warn';
-  const clicked = !!(DR.timing && DR.timing.kind === 'click');
-  // "On the click" is only said when the onsets were actually compared with the
-  // click. Without one, the honest claim is even SPACING, and that is what it says.
-  const okWords = clicked ? 'On the click' : 'Evenly spaced';
-  // "The onsets sat 101ms ahead of the click" — nobody outside audio code knows
-  // what an onset is. It is the moment a note starts, so say that.
-  const offWords = clicked
-    ? 'Your notes started ' + Math.abs(Math.round(DR.timing.meanSigned)) + 'ms ' +
-      (DR.timing.meanSigned < 0 ? 'before' : 'after') + ' the click'
-    : 'The gaps between notes wandered';
-  bits.push('<div class="t-eyebrow">' +
-    (attempt.skipped ? 'Finished with a skipped note'
-     : timingOk ? 'Clean · ' + shapeWords
-     : (clicked ? 'Right notes, off the click · ' : 'Right notes, uneven spacing · ') + shapeWords) + '</div>');
-  bits.push('<p>' + (attempt.skipped
-      ? 'One note was skipped for you, so this run is not a measurement of anything.'
-      : (timingOk ? okWords : offWords) + (DR.met ? ' at ' + DR.bpm + ' bpm.' : '.')) +
-    '</p>');
-  bits.push(timingLine());
-  bits.push('<p class="t-caption">' + (attempt.skipped
-    ? 'The review date is unchanged.'
-    : 'Back for review <b>' + dueWords(DR.item.due) + '</b> (' + DR.item.due + '). Practice order: <b>' +
-      CI_WORDS[DR.item.ci || 'blocked'] + '</b>.') + '</p>');
-  bits.push('<p class="t-caption">' + masteryLine(attempt) + '</p>');
-  if (DR.needFullRep)
-    bits.push('<p class="t-caption">Two clean window reps done — now one clean run of the whole shape.</p>');
-  if (DR.tempoOffer)
-    bits.push('<p class="t-caption">Two clean reps of the whole shape, in time. Take the tempo up if you want it — nothing moves unless you tap' +
-      (DR.met ? '.' : ', and taking it up switches the click on so the number means something.') + '</p>');
-  if (!timingOk && DR.tempoDownOffer)
-    bits.push('<p class="t-caption">Right notes at the wrong speed is a tempo problem, not a you problem: <b>take it down to ' +
-      DR.tempoDownOffer + ' bpm</b> and land inside the window there first. That becomes this drill’s target, and it can go back up ' +
-      'the moment two reps are clean.</p>');
-  p.innerHTML = '<div class="note-box ' + kind + '">' + bits.join('') + '</div>';
-}
-
-/* ---------------- due today / the shelf ---------------- */
-function drillRow(item, cta){
-  const mastery = masteryFor(item);
-  return '<div class="dr-row">' +
-      '<span class="dr-name">' + (item.label || item.id) + '</span>' +
-      '<span class="pill' + (mastery === 'mastered' ? ' good' : '') + '">' + mastery + '</span>' +
-      (item.due ? '<span class="pill">' + (DE.isDue(item, todayISO())
-          ? 'due now' : 'next review ' + dueWords(item.due)) + '</span>' : '') +
-      '<button class="btn small" data-open="' + item.id + '">' + cta + '</button>' +
-    '</div>';
-}
-function allDrills(){
-  const all = loadDrills();
-  // Stored cfgs carry tuning:5 (see cfgFromPicker); anything else is a
-  // hand-edited store and is not something this app can run.
-  return Object.keys(all).map(k => all[k]).filter(x => x && x.cfg && x.cfg.tuning === 5);
-}
-/** Everything that review says is due today. */
-function dueDrills(){
-  const today = todayISO();
-  return allDrills().filter(it => DE.isDue(it, today));
-}
-/* The primary action must point at TODAY'S WORK: a review that is due beats
-   whatever the picker happens to be showing. The picker stays reachable through
-   its own button, so nothing is taken away. */
-function applyPrimaryCta(){
-  const start = document.getElementById('drStart');
-  const picked = document.getElementById('drStartPicked');
-  const cta = document.getElementById('drDueCta');
-  const due = dueDrills();
-  DP.dueId = due.length ? due[0].id : null;
-  picked.classList.toggle('hidden', !DP.dueId);
-  cta.classList.toggle('hidden', !DP.dueId);
-  if (DP.dueId){
-    start.textContent = 'Run today’s review · ' + due.length + ' due';
-    cta.innerHTML = 'That runs <b>' + (due[0].label || due[0].id) + '</b> — the review that is due today' +
-      (due.length > 1 ? ', first of ' + due.length : '') + '. Reviews come first because the shape you have not ' +
-      'touched since last time is the one with something to prove.';
-  } else {
-    start.textContent = 'Start the drill';
-  }
-  return !!DP.dueId;
-}
-function renderDue(){
-  const host = document.getElementById('drDue');
-  const due = dueDrills();
-  host.innerHTML = due.length
-    ? due.map(it => drillRow(it, 'Run it')).join('')
-    : '<p class="t-caption">Nothing is due. Anything you drill today comes back tomorrow — that overnight gap is the one with evidence behind it.</p>';
-}
-function renderShelf(){
-  const host = document.getElementById('drShelfBody');
-  const all = allDrills().sort((a,b) => String(a.due).localeCompare(String(b.due)));
-  host.innerHTML = all.length
-    ? all.map(it => drillRow(it, 'Open')).join('') +
-      // Captions a MIXED list: rhythm drills have no direction, so "the
-      // ascending shape" as a blanket rule contradicted their own screens.
-      '<p class="t-caption" style="margin-top:var(--sp3)">new → acquired → mastered. Mastered means the <b>whole</b> ' +
-      'drill — ascending for a shape, the full pattern for a rhythm — played as the day’s <b>first</b> run, clean and ' +
-      'in time <b>with the click on</b>, on two separate days. In-session fluency does not count, and neither do ' +
-      'repair windows or skipped notes.</p>'
-    : '<p class="t-caption">No drills yet. Pick a scale, a root and a place on the neck, then play the shape in order. ' +
-      'Every finished run is scheduled for review, and what you keep missing gets its own short repair drill.</p>';
-}
-/** Load a cfg back into the picker controls. One mapping for the two callers
-    that need it — the shelf's "Open" and a practice-plan preset — so the two
-    can never disagree about how a cfg reads back into the selects. */
-function pickerFromCfg(cfg){
-  if (!cfg || !cfg.type) return;
-  DP.type = cfg.type;
-  if (cfg.scaleKey) DP.scaleKey = cfg.scaleKey;
-  if (cfg.rootPc != null) DP.rootPc = cfg.rootPc;
-  if (cfg.type === 'rhythm'){
-    DP.pattern = RHYTHM_WORDS[cfg.pattern] ? cfg.pattern : 'eighths';
-    DP.bars = RHYTHM_BARS.indexOf(cfg.bars) >= 0 ? cfg.bars : 8;
-    DP.winKey = null;
-  }
-  else if (cfg.type === 'chromatic'){ DP.si = cfg.si; DP.winKey = String(cfg.from); }
-  else DP.winKey = cfg.type === 'scale' ? (boxOptions(cfg.rootPc).find(w => w.from === cfg.from) || {}).key : null;
-  // A plan preset may name the tempo the week trains at ("8 bars at 92") —
-  // land at it, and count as touched so a stored target does not override it.
-  if (cfg.bpm){ DP.bpm = Math.max(40, Math.min(200, +cfg.bpm)); DP.bpmTouched = true; }
-}
-function openStored(id){
-  const it = loadDrills()[id];
-  if (!it || !it.cfg) return;
-  pickerFromCfg(it.cfg);
-  // startDrill decides the tempo: a bpm the player set by hand always wins.
-  renderDrillPicker();
-  startDrill(it.cfg);
-}
-function enterDrills(){
-  renderDrillPicker(); renderDue(); renderShelf();
-  if (DR.item) renderRun();
-}
-
-/* ---------------- wiring ---------------- */
-document.getElementById('drTypeSeg').addEventListener('click', e => {
-  const b = e.target.closest('button'); if (!b) return;
-  DP.type = b.dataset.k; DP.winKey = null; renderDrillPicker();
-});
-document.getElementById('drVarSeg').addEventListener('click', e => {
-  const b = e.target.closest('button'); if (!b) return;
-  DP.variant = b.dataset.v; renderDrillPicker();
-});
-document.getElementById('drScaleSel').addEventListener('change', e => { DP.scaleKey = e.target.value; DP.winKey = null; renderDrillPicker(); });
-document.getElementById('drRootSel').addEventListener('change', e => { DP.rootPc = +e.target.value; DP.winKey = null; renderDrillPicker(); });
-document.getElementById('drWinSel').addEventListener('change', e => { DP.winKey = e.target.value; renderDrillPicker(); });
-document.getElementById('drStringSel').addEventListener('change', e => { DP.si = +e.target.value; renderDrillPicker(); });
-document.getElementById('drPatSel').addEventListener('change', e => { DP.pattern = e.target.value; renderDrillPicker(); });
-document.getElementById('drBarsSel').addEventListener('change', e => { DP.bars = +e.target.value; renderDrillPicker(); });
-document.getElementById('drMet').addEventListener('change', e => {
-  DP.met = e.target.checked; DR.met = DP.met;
-  if (!DP.met) metStop(); else if (DR.phase === 'running') metStart();
-  renderDrillPicker();
-  if (DR.item) renderRun();
-});
-document.getElementById('drBpmDown').addEventListener('click', () => {
-  DP.bpm = Math.max(40, DP.bpm - 4); DP.bpmTouched = true;
-  DR.bpm = DP.bpm; renderDrillPicker(); if (DR.item) renderRun();
-});
-document.getElementById('drBpmUp').addEventListener('click', () => {
-  DP.bpm = Math.min(200, DP.bpm + 4); DP.bpmTouched = true;
-  DR.bpm = DP.bpm; renderDrillPicker(); if (DR.item) renderRun();
-});
-document.getElementById('drStart').addEventListener('click', () => {
-  // Whatever the label says is what runs: due review first, picker otherwise.
-  if (DP.dueId){ openStored(DP.dueId); return; }
-  startDrill(cfgFromPicker());
-});
-document.getElementById('drStartPicked').addEventListener('click', () => startDrill(cfgFromPicker()));
-document.querySelectorAll('#drLabelSeg button, #drLabelSegRun button').forEach(b => {
-  b.addEventListener('click', () => {
-    DP.labels = b.dataset.k;
-    renderLabelSegs(); renderDrillPicker();
-    if (DR.item) renderRun();
-  });
-});
-/* The lower-the-target button is re-rendered with the picker, so it is delegated. */
-document.getElementById('drPick').addEventListener('click', e => {
-  if (!e.target.closest('#drLowerTarget')) return;
-  const cfg = cfgFromPicker(); if (!cfg) return;
-  const it = itemFor(cfg);
-  it.bpm = DP.bpm; saveDrillItem(it);
-  if (DR.item && DR.item.id === it.id) DR.item.bpm = DP.bpm;
-  renderDrillPicker(); renderDue(); renderShelf();
-});
-document.getElementById('drGo').addEventListener('click', () => {
-  const plan = DR.plan || drawPlan();       // the plan that was on the label
-  DR.plan = null;
-  DR.direction = plan.direction; DR.variant = plan.variant; DR.repair = plan.repair;
-  DR.tempoOffer = null;
-  beginRep();
-});
-document.getElementById('drRestart').addEventListener('click', restartRun);
-document.getElementById('drShow').addEventListener('click', showExpectedNote);
-document.getElementById('drSkip').addEventListener('click', skipExpectedNote);
-document.getElementById('drFix').addEventListener('click', () => {
-  if (!DR.err) return;
-  DR.repairTargets = DE.errorWindow(DR.errTargets || DR.targets, DR.err.index, WINDOW_SIZE);
-  DR.repair = true; DR.repairClean = 0; DR.tempoOffer = null;
-  beginRep();
-});
-document.getElementById('drTempoBtn').addEventListener('click', () => {
-  if (!DR.tempoOffer) return;
-  DR.bpm = DR.tempoOffer; DP.bpm = DR.bpm;
-  // A tempo target with no click to play against is just a number.
-  DP.met = true; DR.met = true;
-  document.getElementById('drMet').checked = true;
-  if (DR.item){ DR.item.bpm = DR.bpm; saveDrillItem(DR.item); }
-  DR.history = []; DR.tempoOffer = null;      // the new tempo has to earn its own two reps
-  renderDrillPicker(); renderRun();
-});
-document.getElementById('drTempoDownBtn').addEventListener('click', () => {
-  if (!DR.tempoDownOffer) return;
-  DR.bpm = DR.tempoDownOffer; DP.bpm = DR.bpm; DP.bpmTouched = true;
-  DP.met = true; DR.met = true;
-  document.getElementById('drMet').checked = true;
-  // A target you cannot play in time is not a target: coming down moves it too.
-  if (DR.item && (DR.item.bpm || 0) > DR.bpm){ DR.item.bpm = DR.bpm; saveDrillItem(DR.item); }
-  DR.history = []; DR.tempoOffer = null; DR.tempoDownTaken = true;
-  renderDrillPicker(); renderRun(); renderDue(); renderShelf();
-});
-function drillReset(){
-  metStop();
-  hideStall();
-  DR.phase = 'idle'; DR.run = null; DR.item = null; DR.err = null;
-  DR.repair = false; DR.repairTargets = null; DR.needFullRep = false; DR.targets = [];
-  DR.plan = null; DR.skips = 0; DR.cfg = null;
-  document.getElementById('drRun').classList.add('hidden');
-  document.getElementById('drPick').classList.remove('hidden');
-  renderDrillPicker(); renderDue(); renderShelf();
-}
-document.getElementById('drBack').addEventListener('click', drillReset);
-document.getElementById('secDrill').addEventListener('click', e => {
-  const b = e.target.closest('button[data-open]');
-  if (b) openStored(b.dataset.open);
-});
-renderDrillPicker();
-
 /* ==================================================================
    SONGS — playing along, either with the record or with the app's own
    click. The roadmaps and the judging live in shared/songs.js; this is
    only its interface. Its state is kept in its OWN localStorage key:
-   plays and best root accuracy belong to the song, and neither the
-   Theory Trainer's stats nor the drill records are touched.
+   plays and best root accuracy belong to the song, and the game's own
+   memory is never touched.
    ================================================================== */
 const SGE = window.BassSongs;
 const SONG_KEY = 'bassTrainer.songs.v1';
@@ -5625,8 +4288,8 @@ function saveSongPlay(song, accuracy, bankable, cov, memory){
   if (bankable && memory){
     rec.memoryBest = Math.max(Number(rec.memoryBest) || 0, accuracy);
     if (accuracy >= MEMORY_BAR){
-      // Distinct DAYS, the drill engine's mastery-day discipline: a second
-      // 90%+ play tonight is a better evening, not a second day of proof.
+      // Distinct DAYS: a second 90%+ play tonight is a better evening, not a
+      // second day of proof.
       rec.memoryDays = Array.isArray(rec.memoryDays) ? rec.memoryDays : [];
       if (rec.memoryDays.indexOf(todayISO()) < 0) rec.memoryDays.push(todayISO());
     }
@@ -5689,9 +4352,7 @@ function renderSongList(){
   }).join('');
 }
 
-/* The set at a glance: every song against the one gig-ready bar. The same
-   board renders on the Practice tab in the Performance phase — both read the
-   engine's songReadiness, so they cannot disagree. */
+/* The set at a glance: every song against the one gig-ready bar. */
 function renderSetStatus(store){
   const host = document.getElementById('sgSetStatus');
   if (!host) return;
@@ -5718,7 +4379,7 @@ function renderSetStatus(store){
 }
 
 /* ---------------- the neck: the root, and the same note an octave up ----------------
-   Aimed at the E and A strings — the two the practice plan drills — so the
+   Aimed at the E and A strings — the two a beginner learns first — so the
    root lands where he has been taught to look for it. The octave is the
    +2 strings / +2 frets shape, which is why the same finger pattern works. */
 function songRootSpots(rootName){
@@ -5880,8 +4541,6 @@ function songOpen(id, play){
      a record play (memory is not offered there), and consumed by this first
      open either way, so it cannot configure a later, unrelated visit. The run
      still waits for the tap: nothing auto-starts. */
-  if (memoryArm && SG.play === 'click' && (memoryArm === '*' || memoryArm === id)) SG.memory = true;
-  memoryArm = null;
   renderMemSeg();
   document.getElementById('sgListCard').classList.add('hidden');
   // The set cards step aside too: an armed song is one job on the screen.
@@ -6425,11 +5084,10 @@ renderSetPicker();
    ENTRY POINTS — how the shell drives this half.
 
    The old page put the mic gate in front of everything: you could not
-   see a tuner needle or a drill picker without granting a microphone
-   first. Now the practice plan is the front door and this half is
-   five tabs behind it, so the gate has moved to exactly where it is
-   needed: the first Live mode you ask for, phrased as the thing you
-   asked for ("Start listening & run the drill", not Start, then Run).
+   see a tuner needle or a song roadmap without granting a microphone
+   first. The gate has moved to exactly where it is needed: the first
+   Live mode you ask for, phrased as the thing you
+   asked for ("Start listening & follow the song", not Start, then Run).
    ================================================================== */
 let pendingMode = null;
 
@@ -6441,34 +5099,20 @@ function gateFor(m){
   document.getElementById('startBtn').textContent = MODES[m].cta;
   document.getElementById('gate').classList.remove('hidden');
   document.getElementById('app').classList.add('hidden');
-  /* What is due is a fact about your history, not about the microphone, and it
-     used to be locked behind the gate — you could not glance at tonight's review
-     without switching the mic on first. Read-only here: no run starts from it. */
-  const extra = document.getElementById('gateExtra');
-  if (!extra) return;
-  const due = m === 'drill' ? dueDrills() : [];
-  extra.innerHTML = !due.length ? '' :
-    '<div class="t-eyebrow">Due today</div>' +
-    due.map(it => '<div class="dr-row"><span class="dr-name">' + (it.label || it.id) + '</span>' +
-      '<span class="pill">' + masteryFor(it) + '</span>' +
-      '<span class="pill">due now</span></div>').join('') +
-    '<p class="t-caption" style="margin:var(--sp2) 0 0">Start listening and the first of these is what the ' +
-    'button runs.</p>';
-  extra.classList.toggle('hidden', !due.length);
+  /* A slot below the button used to list what was due tonight, back when the
+     Drills mode kept a review schedule — a fact about your history, readable
+     without granting a mic. Nothing is due any more: the game brings weak
+     spots back inside a run, so there is nothing to show before one starts. */
 }
 
 /** Stop the analyser loop, keep the stream and the AudioContext. Called when a
-    Learn tab takes the screen: polling 18×/second behind a practice plan is
+    Learn tab takes the screen: polling 18×/second behind a scale chart is
     pure waste, but dropping the stream would put the gate back.
 
-    The click stops too. It used to keep ticking from behind the practice plan,
-    audible with nothing on screen to stop it. Nothing already recorded is
-    harmed by stopping it — DR.metOrigin is a snapshot taken at metStart, and
-    metStop leaves it alone — but the notes AFTER it would be graded against a
-    grid the player can no longer hear, so this rep stops claiming the click and
-    falls back to the even-spacing report, which already words itself honestly.
-    A song is stopped outright: its clock is wall-time from the tap, so it would
-    run away while off-screen and come back pointing at the wrong section. */
+    The click stops too. It used to keep ticking from behind a Learn tab,
+    audible with nothing on screen to stop it. A song is stopped outright: its
+    clock is wall-time from the tap, so it would run away while off-screen and
+    come back pointing at the wrong section. */
 function suspend(){
   if (A.timer){ clearInterval(A.timer); A.timer = null; }
   // The game scene must not animate (or run its pace clock) behind a Learn tab.
@@ -6477,22 +5121,16 @@ function suspend(){
   // and come back pointing at the wrong song, so it stops honestly instead.
   if (ST.run && ST.t0 != null && !ST.finished){ setFinish('stopped'); return; }
   if (SG.song && SG.t0 != null && !SG.finished){ songFinish('stopped'); return; }
-  if (MET.timer){
-    metStop();
-    if (DR.phase === 'running' && DR.met){ DR.clickLost = true; DR.metOrigin = null; }
-    if (DR.phase === 'running') renderRun();
-  }
+  if (MET.timer) metStop();
 }
 function resume(){
   if (A.analyser && !A.timer) A.timer = setInterval(tick, 55);
   /* Nothing was listening while a Learn tab had the screen, so whatever is
      sounding on the way back was not played AT the exercise — it is a string that
      was still ringing, or the note you were on when you wandered off. Detection
-     is re-armed the way a new rep re-arms it, because otherwise the first thing
-     heard on return answered the current target and a drill could come back
-     already failed on a note the player never aimed at it. */
+     is re-armed from scratch, because otherwise the first thing heard on return
+     would answer the current question — a note the player never aimed at it. */
   tracker = C.createTracker({ stableMs:TRACKER_STABLE_MS });
-  if (DR.phase === 'running') DR.lastAdvanceAt = performance.now();
   /* Coming back to the game: the fuse must not count the time spent
      away — that would be a stage light lost to a tab switch. */
   if (mode === 'find'){
@@ -6516,12 +5154,11 @@ window.BassLive = { mount, showMode, armMic: startListening, suspend, resume, pr
 
 /* ---- test seam ----
    trainer/test/integration.test.js drives this half the way a player cannot:
-   it plants the question it is about to "play" (q, echoTarget) and resets the
-   pitch tracker between notes. Those names were globals when
-   this file was a <script> in its own page; now that both apps share one
-   document they cannot be, so the seam the suite holds on to is published here
-   deliberately. Accessors, not copies — the suite ASSIGNS q and echoTarget and
-   the app has to see the write. */
+   it plants the question it is about to "play" and resets the pitch tracker
+   between notes. Those names were globals when this file was a <script> in its
+   own page; now that both apps share one document they cannot be, so the seam
+   the suite holds on to is published here deliberately. Accessors, not copies —
+   the suite ASSIGNS q and the app has to see the write. */
 [['q',        () => q,        v => { q = v; }],
  ['wrongThisQ',()=> wrongThisQ,v => { wrongThisQ = v; }],
  /* The stall clock: trainer/test/polish.test.js measures the console with the
@@ -6529,8 +5166,6 @@ window.BassLive = { mount, showMode, armMic: startListening, suspend, resume, pr
     states would make one assertion three minutes long. */
  ['lastProgressAt',()=> lastProgressAt,v => { lastProgressAt = v; }],
  ['qStart',   () => qStart,   v => { qStart = v; }],
- ['echoTarget',()=> echoTarget,v => { echoTarget = v; }],
- ['echoWrongThisTarget', () => echoWrongThisTarget, v => { echoWrongThisTarget = v; }],
  ['tier',     () => tier,     v => { tier = v; }],
  ['focus',    () => focus,    v => { focus = v; }],
  ['mode',     () => mode,     v => { mode = v; }],
@@ -6561,16 +5196,12 @@ window.SC = SC;
    own copy of it — while waiting a 30-second fuse out for real would make one
    assertion half a minute long. */
 window.gvFuseMs = gvFuseMs;
-/* trainer/test/shell.test.js asks what happened to the click, the drill run and
-   the song clock when the screen went to a Learn tab. Those are the objects that
-   hold the answer, and timingReport/timingLine are how a run's verdict is
-   reached — a test that re-derived either would be testing its own copy. */
+/* trainer/test/shell.test.js asks what happened to the click and the song clock
+   when the screen went to a Learn tab. These are the objects that hold the
+   answer. */
 window.MET = MET;
-window.DR = DR;
 window.SG = SG;
 window.ST = ST;
-window.timingReport = timingReport;
-window.timingLine = timingLine;
 /* trainer/test/bookkeeping.test.js hunts for a note the way a beginner does —
    two wrong notes then the right one — which needs to feed readings straight in:
    a synthetic mic plays one fixed pitch, and the question is picked at random. */

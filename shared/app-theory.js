@@ -1,8 +1,13 @@
 /* ==================================================================
-   Bass Theory Trainer — the Learn half of the app: Practice, Scales,
-   Chords and the tap-a-fret note quiz. Nothing here touches the
-   microphone, which is the point: opening the app must never ask for
-   it.
+   The Learn half of the app: the Scales and Chords charts, and the
+   click that runs beside them. Nothing here touches the microphone,
+   which is the point — you can look a shape up mid-session without
+   the app asking for anything.
+
+   It was four screens. A twelve-week practice plan was the front door
+   and a tap-a-fret note quiz sat beside it; both are retired, because
+   the game asks the questions now. What is left is reference: the two
+   charts, the theory cards that annotate them, and a metronome.
 
    Lifted verbatim out of index.html when the two apps became one
    page. It is wrapped in an IIFE because both apps now share one
@@ -17,10 +22,10 @@ const NAMES_S = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 const NAMES_F = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
 const FLAT_ROOTS = new Set(['F','Bb','Eb','Ab','Db']); // keys spelled with flats
 const NATURALS = new Set(['C','D','E','F','G','A','B']);
-/* Flat spellings, because that is how these keys are written in the rock the plan
-   is aimed at. The Drills root list is sharp-spelled (C#, D#…) for the same
-   reason in reverse, so both screens say somewhere that the two are one note —
-   otherwise it reads as two different sets of twelve. */
+/* Flat spellings, because that is how these keys are written in the rock this
+   app is aimed at. The game's own study cards are sharp-spelled, so both say
+   somewhere that the two are one note — otherwise it reads as two different
+   sets of twelve. */
 const ALL_ROOTS = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
 
 // open-string MIDI numbers, low to high — B0 E1 A1 D2 G2
@@ -38,29 +43,18 @@ function rootPc(rootName){
 }
 function freq(midi){ return 440 * Math.pow(2, (midi - 69) / 12); }
 
-/* ---------------- state ---------------- */
-const LS_KEY = 'bassTheoryTrainer.v1';
+/* ---------------- state ----------------
+   Two charts' display settings and the list of lessons you have waved away.
+   It used to be far more: a note quiz's tiers and running stats, and a
+   twelve-week practice plan's log and checkpoints. Both screens are retired
+   and their branches went with them — see the one-time clean-out in the
+   boot section at the bottom of this file. */
+const LS_KEY = 'bassTrainer.charts.v1';
 function defaultState(){
   return {
     scales:{ root:'E', type:'minPent', view:'open', labels:'names' },
     chords:{ root:'E', type:'power', labels:'names' },
-    trainer:{
-      tier:0, mode:'study', focus:null,
-      study:{ show:true, strings:null, naturalsOnly:true, maxFret:12 }
-    },
-    stats:{
-      answered:0, correct:0, bestStreak:0,
-      byString:{},        // 'E': {a:0,c:0,recent:[0/1...]}
-      heat:{},            // 'E:3' -> mistakes
-      tierRecent:{},      // tier index -> last 20 answers (0/1)
-      speed:[]            // last 20 answer times, seconds
-    },
-    practice:{
-      week:1,
-      log:{},             // '2026-08-10' -> {items:['w1a'], done:false}
-      checkpoints:{},     // 'w1cp0' -> true
-      dismissed:[]        // theory card ids
-    }
+    dismissed:[]          // theory card ids you have closed
   };
 }
 let S = loadState();
@@ -85,33 +79,12 @@ function loadState(){
 function normalizeState(st){
   const D = defaultState();
   const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
-  st.trainer = isObj(st.trainer) ? st.trainer : D.trainer;
-  st.trainer.study = isObj(st.trainer.study) ? st.trainer.study : D.trainer.study;
   st.scales = isObj(st.scales) ? st.scales : D.scales;
   st.chords = isObj(st.chords) ? st.chords : D.chords;
-  st.stats = isObj(st.stats) ? st.stats : D.stats;
-  st.stats.answered = Number(st.stats.answered) || 0;
-  st.stats.correct = Number(st.stats.correct) || 0;
-  st.stats.bestStreak = Number(st.stats.bestStreak) || 0;
-  st.stats.byString = isObj(st.stats.byString) ? st.stats.byString : {};
-  st.stats.heat = isObj(st.stats.heat) ? st.stats.heat : {};
-  st.stats.tierRecent = isObj(st.stats.tierRecent) ? st.stats.tierRecent : {};
-  st.stats.daily = isObj(st.stats.daily) ? st.stats.daily : {};
-  st.stats.speed = Array.isArray(st.stats.speed) ? st.stats.speed : [];
-  st.practice = isObj(st.practice) ? st.practice : D.practice;
-  // Any week the course actually has — the course grew from 3 weeks to 12,
-  // and a hardcoded [1,2,3] here would have thrown week-4+ users back to week 1.
-  st.practice.week = window.BassCourse && BassCourse.weekOf(+st.practice.week) ? +st.practice.week : 1;
-  st.practice.log = isObj(st.practice.log) ? st.practice.log : {};
-  st.practice.checkpoints = isObj(st.practice.checkpoints) ? st.practice.checkpoints : {};
-  st.practice.dismissed = Array.isArray(st.practice.dismissed) ? st.practice.dismissed : [];
+  st.dismissed = Array.isArray(st.dismissed) ? st.dismissed : [];
   return st;
 }
 function save(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(S)); }catch(e){} }
-function todayKey(){
-  const d = new Date();
-  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
-}
 
 /* ---------------- audio ---------------- */
 const Audio_ = (() => {
@@ -290,7 +263,7 @@ const CARDS = {
     body:'Every fret raises the pitch by one half step (semitone) — the smallest step in Western music. 2 frets = whole step. All scale formulas are just recipes of half steps, which is why shapes are moveable.' }
 };
 function theoryCard(id){
-  if (S.practice.dismissed.includes(id) || !CARDS[id]) return '';
+  if (S.dismissed.includes(id) || !CARDS[id]) return '';
   const c = CARDS[id];
   return '<div class="tcard" data-card="' + id + '">' +
     // data-dismiss, not onclick="dismissCard(...)": an inline handler resolves
@@ -301,7 +274,7 @@ function theoryCard(id){
     '<h4>' + c.title + '</h4><p>' + c.body + '</p></div>';
 }
 function dismissCard(id){
-  if (!S.practice.dismissed.includes(id)) S.practice.dismissed.push(id);
+  if (!S.dismissed.includes(id)) S.dismissed.push(id);
   save();
   document.querySelectorAll('[data-card="' + id + '"]').forEach(e => e.remove());
 }
@@ -317,16 +290,15 @@ document.addEventListener('click', (e) => {
     from a metre away; a phone gets the tappable one. */
 function neckScale(){ return window.matchMedia('(min-width:1000px)').matches ? 'desk' : 'play'; }
 function readScale(){ return window.matchMedia('(min-width:1000px)').matches ? 'readbig' : 'read'; }
-const TABS = ['practice','scales','chords','trainer'];
-let currentTab = 'practice';
-/** Show one of this app's four tabs, or none of them (`null`) when a Live tab
-    has the screen. The shell calls this; it never calls render directly. */
+const TABS = ['scales','chords'];
+let currentTab = null;
+/** Show one of this app's two charts, or neither (`null`) when a Live tab has
+    the screen. The shell calls this; it never calls render directly. */
 function show(tab){
   stopPlayback();
-  /* Both apps live in one document now and both write bassTheoryTrainer.v1.
-     A Live mode banks answers into it while this app is off-screen, so re-read
-     the store on the way in — otherwise the next save() here would write back
-     a copy of the state from before those answers and quietly lose them. */
+  /* Re-read the store on the way in. The two halves no longer share a key, but
+     a second copy of this page in another browser tab does, and the next save()
+     here would otherwise write back a state from before its edits. */
   S = loadState();
   currentTab = tab;
   TABS.forEach(t => {
@@ -338,23 +310,15 @@ function show(tab){
   render(tab);
 }
 function render(tab){
-  if (tab === 'practice') renderPractice();
   if (tab === 'scales') renderScales();
   if (tab === 'chords') renderChords();
-  if (tab === 'trainer') renderTrainer();
 }
-function deepLink(spec){
-  if (spec.scales) Object.assign(S.scales, spec.scales);
-  if (spec.chords) Object.assign(S.chords, spec.chords);
-  if (spec.trainer) Object.assign(S.trainer, spec.trainer);
-  save();
-  /* Through the shell, not straight to show(): a deep link may be followed
-     from a Live tab, and only the shell knows to put that section away. */
-  navigate(spec.tab);
-}
-/** Route a destination through the shell. Replaced by mount(); the fallback
-    keeps this app usable on its own if it is ever loaded without one. */
-let navigate = show;
+/* deepLink() lived here, alongside a `navigate` the shell handed in: the
+   practice plan carried links that opened a chart already set to the scale or
+   chord the week was teaching, and following one from a Live tab had to go
+   through the router. The plan is retired and nothing writes such a link any
+   more, so the only route into a chart is the nav — which the shell already
+   owns. */
 /* ================= FEATURE 1: SCALE EXPLORER ================= */
 const SCALES = {
   minPent:{ name:'Minor pentatonic', iv:[0,3,5,7,10], deg:['R','b3','4','5','b7'],
@@ -488,6 +452,10 @@ function renderScales(){
 
   if ((S.scales.type === 'minPent' || S.scales.type === 'natMinor') && S.scales.root === 'E') h += theoryCard('relative');
   h += theoryCard('octave');
+  /* The click. It lived on the practice plan, which is retired — and a scale is
+     the thing you most want to run against one, so it came here rather than
+     being deleted with the screen that happened to host it. */
+  h += metronomeHtml();
 
   el.innerHTML = h;
 
@@ -553,6 +521,7 @@ function renderScales(){
   bindSeg('scView', k => { S.scales.view = k; save(); renderScales(); });
   bindSeg('scLabels', k => { S.scales.labels = k; save(); renderScales(); });
   bindSeg('scPager', k => { scPage = +k; renderScales(); });
+  mountMetronome();
 }
 function bindSeg(id, fn){
   const el = document.getElementById(id);
@@ -701,521 +670,6 @@ function containmentChain(ch, rp, flats){
   h += '</div>';
   return h;
 }
-/* ================= FEATURE 3: NOTE QUIZ ================= */
-const TIERS = [
-  { label:'1 · E + A strings, frets 0–5', strings:['E','A'], maxFret:5, accidentals:false,
-    tip:'Start here: these two strings are where most rock basslines live.' },
-  { label:'2 · E + A strings, frets 0–12', strings:['E','A'], maxFret:12, accidentals:false,
-    tip:'Same strings, whole neck. Remember: fret 12 = same name as the open string.' },
-  { label:'3 · add D + G strings', strings:['E','A','D','G'], maxFret:12, accidentals:false,
-    tip:'Four strings now. The octave shape (+2 strings, +2 frets) is your shortcut.' },
-  { label:'4 · add the low B string', strings:['B','E','A','D','G'], maxFret:12, accidentals:false,
-    tip:'The trick: the B string mirrors the E string 5 frets up. E-string fret 0 (E) = B-string fret 5.' },
-  { label:'5 · everything + sharps/flats', strings:['B','E','A','D','G'], maxFret:12, accidentals:true,
-    tip:'Final boss. Remember sharps and flats share a fret (C# = Db).' }
-];
-const MODES = [
-  { k:'study',  label:'Study' },
-  { k:'find',   label:'Find the note' },
-  { k:'name',   label:'Name the note' },
-  { k:'octave', label:'Octave shape' }
-];
-let T = { q:null, session:{ score:0, streak:0, asked:0 }, lock:false, lastQ:'', timer:null };
-
-function tierFor(idx){ return TIERS[idx]; }
-function stringIdxByName(name){ return TUNING.names.indexOf(name); }
-
-function trainerPool(tier){
-  const pool = [];
-  let strs = tier.strings;
-  if (S.trainer.focus && S.trainer.focus.length){
-    const focused = strs.filter(s => S.trainer.focus.includes(s));
-    if (focused.length) strs = focused;
-  }
-  for (const sn of strs){
-    const si = stringIdxByName(sn);
-    if (si < 0) continue;
-    for (let f = 0; f <= tier.maxFret; f++){
-      const midi = TUNING.midi[si] + f;
-      if (!tier.accidentals && !NATURALS.has(NAMES_S[pc(midi)])) continue;
-      pool.push({ si, f, midi, sn });
-    }
-  }
-  return pool;
-}
-function newQuestion(){
-  const tier = tierFor(S.trainer.tier);
-  const mode = S.trainer.mode;
-  let pool = trainerPool(tier);
-  if (mode === 'octave'){
-    const nStr = TUNING.midi.length;
-    pool = pool.filter(p => p.si + 2 < nStr && p.f + 2 <= 12);
-  }
-  if (!pool.length){ T.q = null; return; }
-  // draw from a shuffled bag so every position comes up before repeats
-  const bagKey = mode + '|' + S.trainer.tier + '|' + (S.trainer.focus || []).join(',');
-  if (T.bagKey !== bagKey || !T.bag || !T.bag.length){
-    T.bagKey = bagKey;
-    T.bag = shuffle(pool.slice());
-    if (T.bag.length > 1 && (T.bag[0].sn + ':' + T.bag[0].f) === T.lastQ)
-      T.bag.push(T.bag.shift());
-  }
-  const p = T.bag.shift();
-  const q = { mode, si: p.si, f: p.f, midi: p.midi, sn: p.sn, name: NAMES_S[pc(p.midi)] };
-  T.lastQ = q.sn + ':' + q.f;
-  if (mode === 'name'){
-    const correct = tier.accidentals ? bothNames(q.midi) : q.name;
-    const opts = new Set([correct]);
-    const letters = tier.accidentals ? null : ['C','D','E','F','G','A','B'];
-    while (opts.size < 4){
-      let cand;
-      if (letters) cand = letters[Math.floor(Math.random() * 7)];
-      else cand = bothNames(Math.floor(Math.random() * 12));
-      opts.add(cand);
-    }
-    q.choices = shuffle([...opts]);
-    q.correctLabel = correct;
-  }
-  T.q = q;
-}
-function shuffle(a){
-  for (let i = a.length - 1; i > 0; i--){
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-/* A day-stamped roll-up of answers, so "am I better than last week" can be
-   answered with numbers instead of with a streak. Bounded to 60 days: that is
-   two week-on-week comparisons' worth and it keeps the store small. */
-function bumpDaily(stats, ok){
-  const daily = stats.daily || (stats.daily = {});
-  const k = todayKey();
-  const day = daily[k] || (daily[k] = { a:0, c:0 });
-  day.a++; if (ok) day.c++;
-  const keys = Object.keys(daily).sort();
-  while (keys.length > 60) delete daily[keys.shift()];
-}
-function recordAnswer(ok, q){
-  S.stats.answered++;
-  if (ok) S.stats.correct++;
-  bumpDaily(S.stats, ok);
-  const bs = S.stats.byString[q.sn] || (S.stats.byString[q.sn] = { a:0, c:0 });
-  bs.a++; if (ok) bs.c++;
-  if (!bs.recent) bs.recent = [];
-  bs.recent.push(ok ? 1 : 0);
-  if (bs.recent.length > 20) bs.recent.shift();
-  if (!S.stats.tierRecent) S.stats.tierRecent = {};
-  const tr = S.stats.tierRecent[S.trainer.tier] || (S.stats.tierRecent[S.trainer.tier] = []);
-  tr.push(ok ? 1 : 0);
-  if (tr.length > 20) tr.shift();
-  if (T.qStart){
-    if (!S.stats.speed) S.stats.speed = [];
-    S.stats.speed.push(Math.min(30, (Date.now() - T.qStart) / 1000));
-    if (S.stats.speed.length > 20) S.stats.speed.shift();
-  }
-  if (ok){
-    T.session.streak++;
-    T.session.score++;
-    if (T.session.streak > S.stats.bestStreak) S.stats.bestStreak = T.session.streak;
-  } else {
-    T.session.streak = 0;
-    const key = q.sn + ':' + q.f;
-    S.stats.heat[key] = (S.stats.heat[key] || 0) + 1;
-  }
-  T.session.asked++;
-  save();
-}
-
-let trainerFb = null;
-function renderTrainer(){
-  clearTimeout(T.timer);
-  const el = document.getElementById('tab-trainer');
-  const mode = S.trainer.mode;
-  const tier = tierFor(S.trainer.tier);
-
-  // "Note quiz", the nav's name for this tab: it had three names — the nav said
-  // Note quiz, this header said Fretboard trainer, plan links said note trainer.
-  let h = '<h2>Note quiz</h2>';
-  h += '<div class="card tight">';
-  h += '<div class="seg" id="trMode">' + MODES.map(m =>
-    '<button data-k="' + m.k + '" class="' + (m.k === mode ? 'on' : '') + '">' + m.label + '</button>').join('') + '</div>';
-  if (mode !== 'study'){
-    h += '<h3>Difficulty</h3><select id="trTier" style="width:100%">' + TIERS.map((t, i) =>
-      '<option value="' + i + '" ' + (i === S.trainer.tier ? 'selected' : '') + '>Tier ' + t.label + '</option>'
-    ).join('') + '</select>';
-    h += '<p class="muted small" style="margin:6px 2px 2px">' + tier.tip + '</p>';
-  }
-  h += '</div>';
-
-  // Both halves are tabs of one page now, so this is a switch, not a page load.
-  h += '<button class="card tight" data-live="tuner" style="display:block; width:100%; text-align:left; font:inherit; cursor:pointer; border-color:var(--line-hi)">' +
-    // Titled "Play it, don't tap it" while sitting directly above a board captioned
-    // "tap frets to hear them". The point is that the Live tabs listen; say that.
-    '<b style="color:var(--hl)">The Live tabs listen to your bass</b>' +
-    // Was one 62-word sentence. Five destinations, five short lines.
-    '<div class="muted small" style="margin-top:2px">They hear the bass itself, so you play instead of tapping.' +
-    '<br><b>Tuner</b> — get in tune, string by string.' +
-    '<br><b>Find it</b> — it names a note, you go and play it. Feeds the stats below.' +
-    '<br><b>Ear</b> — it plays a note, you find it by ear.' +
-    '<br><b>Drills</b> — play a whole shape in the right order.' +
-    '<br><b>Songs</b> — it follows the roadmap and counts how often you were on the root.</div></button>';
-
-  if (mode === 'study') h += studyHtml();
-  else h += quizShellHtml(mode, tier);
-
-  // stats
-  h += '<div id="statsWrap">' + statsHtml() + '</div>';
-  // theory cards in context
-  h += theoryCard('bcef');
-  if (mode === 'octave') h += theoryCard('octave');
-  if (S.trainer.tier >= 3) h += theoryCard('bstring');
-  if (S.trainer.tier >= 4) h += theoryCard('enharm');
-
-  el.innerHTML = h;
-
-  if (mode === 'study') mountStudy();
-  else { newQuestion(); mountQuiz(); }
-  mountHeatNeck();
-
-  bindSeg('trMode', k => { S.trainer.mode = k; save(); renderTrainer(); });
-  const tsel = document.getElementById('trTier');
-  if (tsel) tsel.addEventListener('change', () => {
-    S.trainer.tier = +tsel.value; S.trainer.focus = null; save(); renderTrainer();
-  });
-  const rst = document.getElementById('trReset');
-  if (rst) rst.addEventListener('click', trainerResetStats);
-}
-function trainerResetStats(){
-  if (confirm('Reset all trainer stats (score, accuracy, heatmap)?')){
-    S.stats = defaultState().stats; save(); renderTrainer();
-  }
-}
-
-/* ---------- study mode ---------- */
-function studyHtml(){
-  const st = S.trainer.study;
-  const names = TUNING.names;
-  let h = '<div class="card">';
-  h += '<p class="muted small" style="margin:0 0 6px">Look around, tap frets to hear them. When you feel ready, switch to a test mode above.</p>';
-  h += '<div class="row" style="margin-bottom:6px">';
-  h += '<div class="seg compact" id="stShow"><button data-k="1" class="' + (st.show ? 'on' : '') + '">Names on</button><button data-k="0" class="' + (!st.show ? 'on' : '') + '">Names hidden</button></div>';
-  h += '<div class="seg compact" id="stNat"><button data-k="1" class="' + (st.naturalsOnly ? 'on' : '') + '">Naturals only</button><button data-k="0" class="' + (!st.naturalsOnly ? 'on' : '') + '">All 12 notes</button></div>';
-  h += '</div>';
-  h += '<div class="row" style="margin-bottom:6px"><div class="seg compact" id="stFrets"><button data-k="5" class="' + ((st.maxFret || 12) === 5 ? 'on' : '') + '">Frets 0–5</button><button data-k="12" class="' + ((st.maxFret || 12) === 12 ? 'on' : '') + '">Frets 0–12</button></div></div>';
-  h += '<div class="seg compact" id="stStrings">' + names.slice().reverse().map(n => {
-    const on = !st.strings || st.strings.includes(n);
-    return '<button data-k="' + n + '" class="' + (on ? 'on' : '') + '">' + n + ' string</button>';
-  }).join('') + '</div>';
-  h += '<p class="muted small" style="margin:6px 2px 0">Tap the string buttons to show/hide strings — start with just E and A.</p>';
-  h += '<div id="studyFb" style="margin-top:8px"></div>' + fbCaption();
-  if (!st.show) h += '<p class="muted small">Names hidden — tap a fret to reveal + hear it. Self-quiz!</p>';
-  h += '</div>';
-  return h;
-}
-function mountStudy(){
-  const st = S.trainer.study;
-  const names = TUNING.names;
-  const active = st.strings ? st.strings.filter(n => names.includes(n)) : names.slice();
-  trainerFb = drawFretboard(document.getElementById('studyFb'), {
-    frets: st.maxFret || 12,
-    disable(si, f){ return !active.includes(names[si]); },
-    mark(si, f){
-      if (!active.includes(names[si])) return null;
-      const midi = TUNING.midi[si] + f;
-      const isNat = NATURALS.has(NAMES_S[pc(midi)]);
-      if (st.naturalsOnly && !isNat) return null;
-      if (!st.show) return null;
-      return { cls: isNat ? 'tone' : 'ghost', label: NAMES_S[pc(midi)] };
-    },
-    onTap(si, f, midi){
-      Audio_.note(midi);
-      const name = NAMES_S[pc(midi)];
-      const isNat = NATURALS.has(name);
-      // Same test as mark() above: is this fret already wearing its name?
-      const labelled = st.show && (!st.naturalsOnly || isNat);
-      if (labelled){ trainerFb.pulse(si, f); return; }
-      /* An UNMARKED fret used to answer only in sound: the reveal ran solely
-         with names hidden, and skipped accidentals even then, so on the default
-         board a tapped F# played and showed nothing. Every unmarked tap now
-         shows a transient PEEK naming what was heard — dressed as a peek
-         (is-peek, dashed violet), never as a scale tone, so the board's
-         permanent vocabulary stays visibly separate. */
-      trainerFb.setNote(si, f, 'peek', name);
-      const fb = trainerFb;
-      setTimeout(() => {
-        // Only through the SAME handle: a re-render swaps trainerFb, and
-        // clearing through the stale one would paint the old board back.
-        if (trainerFb === fb) try{ fb.clearNote(si, f); }catch(e){}
-      }, 1400);
-    }
-  });
-  bindSeg('stShow', k => { st.show = k === '1'; save(); renderTrainer(); });
-  bindSeg('stNat', k => { st.naturalsOnly = k === '1'; save(); renderTrainer(); });
-  bindSeg('stFrets', k => { st.maxFret = +k; save(); renderTrainer(); });
-  const ss = document.getElementById('stStrings');
-  ss.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
-    let cur = st.strings ? st.strings.slice() : names.slice();
-    if (cur.includes(b.dataset.k)){
-      if (cur.length > 1) cur = cur.filter(x => x !== b.dataset.k);
-    } else cur.push(b.dataset.k);
-    st.strings = cur; save(); renderTrainer();
-  }));
-}
-
-/* ---------- quiz modes ---------- */
-function quizShellHtml(mode, tier){
-  let h = '<div class="card">';
-  h += '<div class="row between" style="margin-bottom:4px">';
-  h += '<span class="small muted">Session: <b id="qScore" style="color:var(--text)">0</b> pts · streak <b id="qStreak" style="color:var(--root)">0</b></span>';
-  h += '<button class="btn small ghost" id="qSkip">Skip →</button></div>';
-  if (tier.strings.length > 1){
-    const f = S.trainer.focus;
-    h += '<div class="row" style="margin-bottom:4px"><span class="small muted">Drill:</span><div class="seg compact" id="qFocus">' +
-      '<button data-k="" class="' + (!f || !f.length ? 'on' : '') + '">All strings</button>' +
-      tier.strings.map(s => '<button data-k="' + s + '" class="' + (f && f.includes(s) ? 'on' : '') + '">' + s + ' only</button>').join('') +
-      '</div></div>';
-  }
-  h += '<div class="quiz-q" id="qText"></div>';
-  // 'name' shows the fret and asks for the note, so hearing it is the answer.
-  h += '<div id="quizFb"></div>' + fbCaption(mode !== 'name');
-  h += '<div id="qChoices"></div>';
-  h += '<div class="feedback" id="qFeed"></div>';
-  h += '</div>';
-  return h;
-}
-function mountQuiz(){
-  drawQuiz();
-  const skip = document.getElementById('qSkip');
-  if (skip) skip.addEventListener('click', () => { newQuestion(); drawQuiz(); });
-  bindSeg('qFocus', k => { S.trainer.focus = k ? [k] : null; save(); renderTrainer(); });
-}
-function drawQuiz(){
-  clearTimeout(T.timer);
-  T.qStart = Date.now();
-  const q = T.q;
-  const tier = tierFor(S.trainer.tier);
-  const qText = document.getElementById('qText');
-  const qChoices = document.getElementById('qChoices');
-  const qFeed = document.getElementById('qFeed');
-  document.getElementById('qScore').textContent = T.session.score;
-  document.getElementById('qStreak').textContent = T.session.streak;
-  qFeed.textContent = ''; qFeed.className = 'feedback';
-  qChoices.innerHTML = '';
-  T.lock = false;
-  if (!q){
-    qText.innerHTML = 'No notes available at this tier.';
-    document.getElementById('quizFb').innerHTML = '';
-    return;
-  }
-  const names = TUNING.names;
-  const frets = q.mode === 'find' ? tier.maxFret : (q.mode === 'octave' ? 12 : tier.maxFret);
-
-  if (q.mode === 'find'){
-    qText.innerHTML = 'Find <b>' + q.name + '</b> on the <b>' + q.sn + ' string</b>';
-    trainerFb = drawFretboard(document.getElementById('quizFb'), {
-      frets,
-      disable(si, f){ return si !== q.si; },
-      mark(){ return null; },
-      onTap(si, f, midi){ answerFind(si, f, midi); }
-    });
-  }
-  if (q.mode === 'name'){
-    qText.innerHTML = 'What note is the <b>marked fret</b>? <span class="muted small">(' + q.sn + ' string)</span>';
-    trainerFb = drawFretboard(document.getElementById('quizFb'), {
-      frets,
-      disable(si, f){ return !tier.strings.includes(names[si]); },
-      mark(si, f){ return (si === q.si && f === q.f) ? { cls:'asked', label:'?' } : null; },
-      // No onTap here on purpose: this mode marks a fret and asks what it is, so
-      // playing the fret IS the answer. The caption drops the invitation to match.
-    });
-    qChoices.innerHTML = '<div class="choices">' + q.choices.map(c =>
-      '<button class="btn" data-c="' + c + '">' + c + '</button>').join('') + '</div>';
-    qChoices.querySelectorAll('button').forEach(b =>
-      b.addEventListener('click', () => answerName(b)));
-    trainerFb.scrollToFret(q.f);
-    Audio_.note(q.midi);
-  }
-  if (q.mode === 'octave'){
-    qText.innerHTML = 'This is <b>' + q.name + '</b>. Find the <b>same note one octave up</b>: 2 strings up + 2 frets up.<br><span class="muted small" style="font-weight:400">The question starts on the tier\'s strings — the answer lands 2 strings higher, so all strings are open for tapping.</span>';
-    trainerFb = drawFretboard(document.getElementById('quizFb'), {
-      frets,
-      mark(si, f){ return (si === q.si && f === q.f) ? { cls:'asked', label:q.name } : null; },
-      onTap(si, f, midi){ answerOctave(si, f, midi); }
-    });
-    trainerFb.scrollToFret(q.f);
-    Audio_.note(q.midi);
-  }
-}
-function afterAnswer(ok, revealFn){
-  const qFeed = document.getElementById('qFeed');
-  recordAnswer(ok, T.q);
-  document.getElementById('qScore').textContent = T.session.score;
-  document.getElementById('qStreak').textContent = T.session.streak;
-  if (ok){
-    qFeed.textContent = ['Nice!','Locked in.','Correct!','That\'s it!'][Math.floor(Math.random() * 4)];
-    qFeed.className = 'feedback ok';
-  } else {
-    qFeed.className = 'feedback no';
-    if (revealFn) revealFn(qFeed);
-    qFeed.scrollIntoView({ block:'nearest', behavior:'smooth' });
-  }
-  T.lock = true;
-  const wrap = document.getElementById('statsWrap');
-  if (wrap){
-    wrap.innerHTML = statsHtml();
-    mountHeatNeck();
-    const rst = document.getElementById('trReset');
-    if (rst) rst.addEventListener('click', trainerResetStats);
-  }
-  T.timer = setTimeout(() => { newQuestion(); drawQuiz(); }, ok ? 850 : 2100);
-}
-function answerFind(si, f, midi){
-  if (T.lock) return;
-  const q = T.q;
-  Audio_.note(midi);
-  const ok = pc(midi) === pc(q.midi);
-  if (ok){
-    trainerFb.setNote(si, f, 'good', q.name);
-    trainerFb.pulse(si, f);
-  } else {
-    trainerFb.setNote(si, f, 'bad', NAMES_S[pc(midi)]);
-  }
-  afterAnswer(ok, feed => {
-    feed.textContent = 'That was ' + bothNames(midi) + '. ' + q.name + ' is marked in green.';
-    // reveal every correct spot on that string
-    for (let fr = 0; fr <= tierFor(S.trainer.tier).maxFret; fr++){
-      if (pc(TUNING.midi[q.si] + fr) === pc(q.midi)) trainerFb.setNote(q.si, fr, 'good', q.name);
-    }
-  });
-}
-function answerName(btn){
-  if (T.lock) return;
-  const q = T.q;
-  const ok = btn.dataset.c === q.correctLabel;
-  btn.classList.add(ok ? 'good' : 'bad');
-  btn.textContent = (ok ? '✓ ' : '✕ ') + btn.textContent;
-  if (!ok){
-    const right = document.querySelector('#qChoices button[data-c="' + q.correctLabel + '"]');
-    if (right){ right.classList.add('good'); right.textContent = '✓ ' + right.textContent; }
-  }
-  trainerFb.setNote(q.si, q.f, ok ? 'good' : 'bad', q.correctLabel);
-  Audio_.note(q.midi);
-  afterAnswer(ok, feed => { feed.textContent = 'It\'s ' + q.correctLabel + ' — ' + q.sn + ' string, fret ' + q.f + '.'; });
-}
-function answerOctave(si, f, midi){
-  if (T.lock) return;
-  const q = T.q;
-  if (si === q.si && f === q.f) return; // tapped the given note
-  Audio_.note(midi);
-  const ok = pc(midi) === pc(q.midi) && midi > q.midi;
-  if (ok) trainerFb.setNote(si, f, 'good', q.name);
-  else trainerFb.setNote(si, f, 'bad', NAMES_S[pc(midi)]);
-  afterAnswer(ok, feed => {
-    feed.textContent = 'The shape: 2 strings up + 2 frets up (green).';
-    trainerFb.setNote(q.si + 2, q.f + 2, 'good', q.name);
-  });
-}
-
-/* ---------- stats ---------- */
-function statsHtml(){
-  const st = S.stats;
-  if (!st.answered){
-    return '<div class="card"><b class="t-title3">No answers yet</b>' +
-      '<div class="muted small" style="margin-top:2px">Pick a test mode above. Your accuracy, streak and a map of the frets you miss will build up here.</div></div>';
-  }
-  const acc = Math.round(100 * st.correct / st.answered);
-  const names = TUNING.names;
-
-  let h = '<div class="card"><b class="t-title3">Your progress</b> <span class="muted small">saved on this device</span>';
-  h += '<div class="statgrid">';
-  h += '<div class="stat"><b>' + acc + '<i>%</i></b><span>accuracy</span></div>';
-  h += '<div class="stat"><b>' + st.correct + '</b><span>correct</span></div>';
-  h += '<div class="stat"><b>' + st.bestStreak + '</b><span>best streak</span></div>';
-  /* Week 1's checkpoint is "in under 2 seconds", so this number is what decides
-     whether you move on — it cannot be the one stat that hides. Three answers is
-     enough to show a figure, and below that it says what it is waiting for
-     rather than leaving the checkpoint pointing at nothing. */
-  const spd = st.speed || [];
-  if (spd.length >= 3){
-    const avg = spd.reduce((a, b) => a + b, 0) / spd.length;
-    h += '<div class="stat"><b>' + avg.toFixed(1) + '<i>s</i></b><span>seconds per answer</span></div>';
-  }
-  h += '</div>';
-  if (spd.length >= 3){
-    const avg = spd.reduce((a, b) => a + b, 0) / spd.length;
-    h += '<div class="muted small" style="margin-top:6px"><b>Seconds per answer</b> is the average over your last ' +
-      spd.length + ' — week 1\'s checkpoint asks for <b>under 2s</b>, and you are ' +
-      (avg < 2 ? 'there.' : 'at ' + avg.toFixed(1) + 's.') + '</div>';
-  } else {
-    h += '<div class="muted small" style="margin-top:6px"><b>Seconds per answer</b> appears here after ' +
-      (3 - spd.length) + ' more answer' + (3 - spd.length === 1 ? '' : 's') +
-      ' — it is what week 1\'s "under 2 seconds" checkpoint is asking about.</div>';
-  }
-
-  const tr = (st.tierRecent || {})[S.trainer.tier];
-  if (tr && tr.length >= 20 && S.trainer.tier < TIERS.length - 1 &&
-      tr.reduce((a, b) => a + b, 0) / tr.length >= 0.9){
-    h += '<div class="note-box good" style="margin-top:10px">You own this tier — your last 20 answers here are 90%+. Ready for tier ' + (S.trainer.tier + 2) + '?</div>';
-  }
-
-  // Per string: one bar, one number. (It used to state each figure three times.)
-  const rows = names.slice().reverse().filter(n => st.byString[n] && st.byString[n].a);
-  if (rows.length){
-    h += '<div class="t-eyebrow" style="margin:14px 0 6px">Accuracy by string</div>';
-    for (const n of rows){
-      const bs = st.byString[n];
-      const rec = bs.recent && bs.recent.length
-        ? Math.round(100 * bs.recent.reduce((a, b) => a + b, 0) / bs.recent.length)
-        : Math.round(100 * bs.c / bs.a);
-      const pass = bs.recent && bs.recent.length >= 20 && rec >= 90;
-      h += '<div class="sbar' + (n === names[0] ? ' is-lowest' : '') + '">' +
-        '<span class="sbar-name">' + n + '</span>' +
-        '<span class="sbar-track"><i style="width:' + rec + '%"></i></span>' +
-        '<span class="sbar-val">' + rec + '%' + (pass ? ' ✓' : '') + '</span></div>';
-    }
-    h += '<div class="muted small" style="margin-top:6px">Bars show your <b>last 20</b> answers per string — that\'s what the week 2 and 3 checkpoints look at.</div>';
-  }
-
-  // The misses belong on the instrument, not in a table of the same coordinates.
-  const heatKeys = Object.keys(st.heat).filter(k => st.heat[k] > 0);
-  if (heatKeys.length){
-    h += '<div class="t-eyebrow" style="margin:16px 0 4px">Frets you miss most</div>';
-    h += '<div id="heatNeck"></div>';
-    h += '<div class="muted small">Bigger, brighter marks = more misses there. Drill those spots.</div>';
-  }
-  h += '<div class="row" style="margin-top:14px"><button class="btn small ghost" id="trReset">Reset progress</button></div>';
-  h += '</div>';
-  return h;
-}
-
-/** Draw the mistake heatmap onto a read-scale neck. */
-function mountHeatNeck(){
-  const host = document.getElementById('heatNeck');
-  if (!host || !window.BassNeck) return;
-  const names = TUNING.names;
-  const worst = Math.max.apply(null, Object.keys(S.stats.heat).map(k => S.stats.heat[k]).concat([1]));
-  const markers = [];
-  for (const key in S.stats.heat){
-    const v = S.stats.heat[key];
-    if (!v) continue;
-    const parts = key.split(':');
-    const si = names.indexOf(parts[0]);
-    const fret = +parts[1];
-    if (si < 0 || isNaN(fret)) continue;
-    markers.push({ si, fret, kind:'heat', label:String(v), heat: v / worst });
-  }
-  if (!markers.length){ host.innerHTML = ''; return; }
-  // Frame the span that actually contains misses, so the worst one is never
-  // hidden behind a horizontal scroll.
-  const frets = markers.map(m => m.fret);
-  const lo = Math.max(0, Math.min.apply(null, frets) - 1);
-  const hi = Math.min(12, Math.max(Math.max.apply(null, frets) + 1, lo + 4));
-  BassNeck.render(host, {
-    strings: names, fromFret: lo <= 1 ? 0 : lo, toFret: hi, scale: readScale(), markers,
-    title:'The frets you miss most often',
-  });
-}
 /* ================= METRONOME ================= */
 const Metro = (() => {
   let running = false, bpm = 60, beat = 0, nextTime = 0, timer = null;
@@ -1288,606 +742,12 @@ function mountMetronome(){
   Metro.ui();
 }
 
-/* ================= FEATURE 5: PRACTICE PLAN ================= */
-/* The plan itself lives in shared/course.js (BassCourse) — 12 weeks in 3
-   phases, held to invariants by trainer/test/course.test.js. It moved out of
-   this IIFE because a plan nothing can see is a plan nothing can check: the
-   3-week version scheduled You Shook Me against a C root no week had taught,
-   and only extraction made that a testable rule. This file keeps thin
-   delegates so its render code reads as before. */
-const WEEKS = window.BassCourse.WEEKS;
-const PHASES = window.BassCourse.PHASES;
-function phaseOf(n){ return window.BassCourse.phaseOf(n); }
-
-/* ================= THIS WEEK — the three stores, joined =================
-   This page owns bassTheoryTrainer.v1. Drills and Songs each keep their own
-   key, and nothing ever read all three, so a week of real playing showed up
-   here as a self-reported streak. This is the one place they are joined — and
-   they are read DEFENSIVELY, because they are written by another page and can
-   be absent, half-written, or not even the right shape. */
-const DRILL_KEY = 'bassTrainer.drills.v1';
-const SONG_KEY = 'bassTrainer.songs.v1';
-function readStore(key){
-  try{
-    const raw = localStorage.getItem(key);
-    if (!raw) return {};
-    const v = JSON.parse(raw);
-    if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
-    return v;
-  }catch(e){ return {}; }
-}
-function storeItems(key){
-  const all = readStore(key);
-  return Object.keys(all).map(k => all[k]).filter(x => x && typeof x === 'object' && !Array.isArray(x));
-}
-/** A local-date key `days` before today, in the same format as todayKey(). */
-function isoBack(days){
-  const d = new Date(todayKey() + 'T12:00:00');
-  d.setDate(d.getDate() - days);
-  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
-}
-/** Would this drill attempt bank a mastery day? Asked of the engine, not re-derived. */
-function banksMasteryDay(a){
-  return !!(a && a.cold && a.direction !== 'down' && window.BassDrill &&
-            BassDrill.masteryOf([a]) !== 'new');
-}
-function drillRollup(){
-  const today = todayKey(), wk = isoBack(6), prevFrom = isoBack(13), prevTo = isoBack(7);
-  const out = { total:0, due:0, mastered:0, runs:0, runsPrev:0, banked:0, bankedPrev:0,
-                nextDue:null, dueLabel:null, ranToday:false };
-  for (const it of storeItems(DRILL_KEY)){
-    // Stored drills carry cfg.tuning:5 (the id embeds it). Anything else can
-    // only be a hand-edited store; Drills would not show it, so nor does this.
-    if (it.cfg && it.cfg.tuning && it.cfg.tuning !== 5) continue;
-    out.total++;
-    const due = typeof it.due === 'string' ? it.due : null;
-    if (!due || due <= today){
-      out.due++;
-      // Named, so tonight's list can say which shape is waiting rather than
-      // just showing a number in a tile.
-      if (!out.dueLabel) out.dueLabel = it.label || it.id || null;
-    }
-    else if (!out.nextDue || due < out.nextDue) out.nextDue = due;
-    const attempts = Array.isArray(it.attempts) ? it.attempts.filter(a => a && typeof a === 'object') : [];
-    const ascending = attempts.filter(a => a.direction !== 'down');
-    if (window.BassDrill && BassDrill.masteryOf(ascending) === 'mastered') out.mastered++;
-    const bankedNow = {}, bankedThen = {};
-    for (const a of attempts){
-      const d = typeof a.date === 'string' ? a.date : null;
-      if (!d) continue;
-      // Any run today is what keeps a finished review visibly credited on
-      // tonight's list after the run itself has rescheduled the due date away.
-      if (d === today) out.ranToday = true;
-      const inWeek = d >= wk && d <= today, inPrev = d >= prevFrom && d <= prevTo;
-      if (inWeek) out.runs++; else if (inPrev) out.runsPrev++;
-      if (!banksMasteryDay(a)) continue;
-      if (inWeek) bankedNow[d] = 1; else if (inPrev) bankedThen[d] = 1;
-    }
-    out.banked += Object.keys(bankedNow).length;
-    out.bankedPrev += Object.keys(bankedThen).length;
-  }
-  return out;
-}
-function songRollup(){
-  const today = todayKey(), wk = isoBack(6);
-  const out = { songs:0, plays:0, best:0, bestId:null, bestFull:true, bestSections:0, bestOf:0, thisWeek:0 };
-  for (const rec of storeItems(SONG_KEY)){
-    const plays = Number(rec.plays) || 0;
-    if (plays > 0){ out.songs++; out.plays += plays; }
-    const acc = Number(rec.bestAccuracy) || 0;
-    if (acc > out.best){
-      out.best = Math.min(1, acc); out.bestId = rec.id;
-      out.bestFull = rec.bestFull !== false;
-      out.bestSections = Number(rec.bestSections) || 0;
-      out.bestOf = Number(rec.bestOf) || 0;
-    }
-    if (typeof rec.lastPlayed === 'string' && rec.lastPlayed >= wk && rec.lastPlayed <= today) out.thisWeek++;
-  }
-  return out;
-}
-function songTitle(id){
-  const list = (window.BassSongs && BassSongs.SONGS) || [];
-  const hit = list.filter(s => s.id === id)[0];
-  return hit ? hit.title : String(id || 'a song');
-}
-/* ---- the set against the gig-ready bar ----
-   Readiness is BassSongs' rule (two distinct 90%+ memory days), asked of the
-   engine per song rather than re-derived here — two definitions of "ready"
-   would drift, and this screen would be the one telling the flattering lie. */
-const SET_KEY = 'bassTrainer.sets.v1';
-function readinessRows(){
-  const list = (window.BassSongs && BassSongs.SONGS) || [];
-  const store = readStore(SONG_KEY);
-  return list.map(song => {
-    const rec = store[song.id];
-    const days = rec && Array.isArray(rec.memoryDays) ? new Set(rec.memoryDays).size : 0;
-    return { song, rec, days, status: BassSongs.songReadiness(rec, song) };
-  });
-}
-/** Banked setlist runs — written by the Songs tab into their OWN store, never
-    into the songs store, whose values this file iterates as songs. */
-function setRuns(){
-  const v = readStore(SET_KEY);
-  return Array.isArray(v.runs) ? v.runs.filter(r => r && typeof r === 'object') : [];
-}
-function setBoardHtml(){
-  const rows = readinessRows();
-  if (!rows.length) return '';
-  const ready = rows.filter(r => r.status === 'gig-ready').length;
-  let h = '<div class="card tight"><div class="t-eyebrow">The set · ' + ready + ' of ' + rows.length + ' gig-ready</div>';
-  for (const r of rows){
-    // Week 10's copy promises "the set board names them: lowest scores, fewest
-    // memory days" — so each row carries its best memory-run %. A song with no
-    // memory run shows NOTHING: 0% would read as a run, not an absence.
-    const memBest = r.rec && Number(r.rec.memoryBest) > 0 ? Math.round(Number(r.rec.memoryBest) * 100) : null;
-    h += '<div class="dr-row"><span class="dr-name">' + r.song.title + '</span>' +
-      (memBest != null ? '<span class="t-data">best ' + memBest + '% from memory</span>' : '') +
-      (r.status !== 'gig-ready' && r.days ? '<span class="t-data">memory day ' + r.days + ' of 2</span>' : '') +
-      '<span class="pill' + (r.status === 'gig-ready' ? ' good' : '') + '">' + r.status + '</span></div>';
-  }
-  // The full bar, stated where gig-ready becomes tappable: full tempo and the
-  // whole roadmap are conditions, not flavour, so the caption names them.
-  h += '<p class="muted small" style="margin:var(--sp2) 0 0"><b>Gig-ready</b> = two memory days: the <b>whole roadmap</b> ' +
-    'at <b>full tempo</b> with the app’s click, 90%+ <b>from memory</b>, on two <b>separate days</b> — the bar the ' +
-    'drill engine already uses for mastery, applied to a song.</p></div>';
-  return h;
-}
-/** Answers inside a date window, from the day-stamped roll-up both apps write. */
-function quizWindow(fromISO, toISO){
-  const daily = (S.stats && S.stats.daily && typeof S.stats.daily === 'object') ? S.stats.daily : {};
-  let a = 0, c = 0;
-  for (const d in daily){
-    if (d < fromISO || d > toISO) continue;
-    const v = daily[d] || {};
-    a += Number(v.a) || 0; c += Number(v.c) || 0;
-  }
-  return { a, c, pct: a ? Math.round(100 * c / a) : null };
-}
-function practiceDaysBetween(fromISO, toISO){
-  const log = (S.practice && S.practice.log) || {};
-  return Object.keys(log).filter(d =>
-    d >= fromISO && d <= toISO && ((log[d] && log[d].items || []).length > 0)).length;
-}
-const trendWord = (now, before) => now > before ? 'up from' : now < before ? 'down from' : 'level with';
-function thisWeekHtml(){
-  const today = todayKey(), wk = isoBack(6), prevFrom = isoBack(13), prevTo = isoBack(7);
-  const dr = drillRollup(), sg = songRollup();
-  const q = quizWindow(wk, today), qPrev = quizWindow(prevFrom, prevTo);
-  const days = practiceDaysBetween(wk, today), daysPrev = practiceDaysBetween(prevFrom, prevTo);
-  const answered = Number(S.stats.answered) || 0;
-  const lifetime = answered ? Math.round(100 * (Number(S.stats.correct) || 0) / answered) : null;
-  // Drills and Songs are tabs of this page now: switch to them, don't reload.
-  const links = '<div class="row" style="margin-top:var(--sp3)">' +
-    '<button class="btn small" data-live="drill">↪ Open Drills</button>' +
-    '<button class="btn small" data-live="songs">↪ Open Songs</button>' +
-    '</div>';
-
-  // Nothing anywhere: a wall of zeros reads as failure on day one.
-  if (!dr.total && !sg.plays && !answered && !days){
-    return '<div class="card tight"><div class="t-eyebrow">This week</div>' +
-      '<div class="muted small" style="margin-top:2px">' +
-      'Nothing recorded yet in any of the three places that keep records — the <b>Note quiz</b>, ' +
-      '<b>Drills</b> and <b>Songs</b>. Play anything in any of them and this card fills in, with ' +
-      'last week beside this week as soon as there is a last week.' +
-      '</div>' + links + '</div>';
-  }
-
-  const tiles =
-    // "1 drills due now" and "1 days practised" both shipped; every count that
-    // can be 1 now agrees with its noun, and the spelling is British throughout.
-    '<div class="stat"><b>' + dr.due + '</b><span>drill' + (dr.due === 1 ? '' : 's') + ' due now</span></div>' +
-    '<div class="stat"><b>' + dr.mastered + '</b><span>drill' + (dr.mastered === 1 ? '' : 's') + ' mastered</span></div>' +
-    '<div class="stat"><b>' + sg.plays + '</b><span>song play' + (sg.plays === 1 ? '' : 's') + '</span></div>' +
-    '<div class="stat"><b>' + days + '</b><span>day' + (days === 1 ? '' : 's') + ' this week</span></div>';
-
-  const lines = [];
-  lines.push('<div class="muted small" style="margin-top:var(--sp3)"><b>Drills:</b> ' + (dr.total
-    ? dr.due + ' of ' + dr.total + ' due now, ' + dr.mastered + ' mastered, ' + dr.runs + ' run' +
-      (dr.runs === 1 ? '' : 's') + ' in the last 7 days' +
-      (!dr.due && dr.nextDue ? ' — next review ' + dr.nextDue : '')
-    : 'none yet — a drill checks the order you play a shape in, which the note quiz cannot.') + '</div>');
-  // Once the first song reaches the bar, the count becomes the headline the
-  // Performance phase is graded on — before that it would just read "0 ready".
-  const rdRows = readinessRows();
-  const gigReady = rdRows.filter(r => r.status === 'gig-ready').length;
-  lines.push('<div class="muted small"><b>Songs:</b> ' + (sg.plays
-    ? sg.plays + ' play' + (sg.plays === 1 ? '' : 's') + ' across ' + sg.songs + ' song' + (sg.songs === 1 ? '' : 's') +
-      (sg.best
-        ? ' · best on the root <b>' + Math.round(sg.best * 100) + '%</b> (' + songTitle(sg.bestId) + ', ' +
-          (sg.bestFull ? 'full play' : sg.bestSections + ' of ' + sg.bestOf + ' sections') + ')'
-        : ' · no graded play yet — the app’s own click is the mode that can score you') +
-      (gigReady ? ' · <b>' + gigReady + ' of ' + rdRows.length + ' gig-ready</b>' : '')
-    : 'none yet — play along with a record and it counts how often you were on the section’s root.') + '</div>');
-  lines.push('<div class="muted small"><b>Note quiz:</b> ' + (q.a
-    ? q.pct + '% of ' + q.a + ' answers in the last 7 days'
-    : (lifetime != null ? 'nothing this week · ' + lifetime + '% lifetime over ' + answered + ' answers'
-                        : 'nothing answered yet')) + '</div>');
-
-  /* Am I better than last week? Only claims with data behind them get made — but
-     a skill line that goes SILENT for want of a previous week leaves the card
-     answering "you showed up more", which is not the question. So the two lines
-     that are about getting better say where they stand either way, and only the
-     comparison waits for data. */
-  const cmp = [];
-  if (q.pct != null && qPrev.pct != null)
-    cmp.push('Note-quiz accuracy <b>' + q.pct + '%</b>, ' + trendWord(q.pct, qPrev.pct) + ' <b>' + qPrev.pct + '%</b> the 7 days before');
-  else if (q.pct != null)
-    cmp.push('Note-quiz accuracy <b>' + q.pct + '%</b> — no earlier week of answers to hold it against yet');
-  if (dr.banked || dr.bankedPrev)
-    cmp.push('Mastery days banked <b>' + dr.banked + '</b>, ' + trendWord(dr.banked, dr.bankedPrev) + ' <b>' + dr.bankedPrev + '</b>');
-  else if (dr.total)
-    cmp.push('Mastery days banked <b>0</b> so far — one comes from the day’s first run of a shape, played clean and in time with the click');
-  // > 0, not != null: best is 0 until something is graded, and "0%" reads as
-  // "you are terrible at this" rather than "there is no data".
-  if (sg.best > 0)
-    cmp.push('Best on the root <b>' + Math.round(sg.best * 100) + '%</b> in a song' +
-      (sg.bestFull ? '' : ' (part of a roadmap — a full play is what a best is kept from)'));
-  if (dr.runs || dr.runsPrev)
-    cmp.push('Drill runs <b>' + dr.runs + '</b>, ' + trendWord(dr.runs, dr.runsPrev) + ' <b>' + dr.runsPrev + '</b>');
-  if (days || daysPrev)
-    cmp.push('Days practised <b>' + days + '</b>, ' + trendWord(days, daysPrev) + ' <b>' + daysPrev + '</b>');
-
-  const cmpHtml = cmp.length
-    ? '<div class="muted small" style="margin-top:var(--sp3)"><b>vs the week before</b>' +
-      cmp.map(c => '<div>' + c + '</div>').join('') + '</div>'
-    : '<div class="muted small" style="margin-top:var(--sp3)">This is the first week with anything in it, so there is ' +
-      'nothing to compare against yet — next week this line puts the two side by side.</div>';
-
-  return '<div class="card tight"><div class="t-eyebrow">This week</div>' +
-    '<div class="statgrid">' + tiles + '</div>' + lines.join('') + cmpHtml + links + '</div>';
-}
-
-function weekOf(n){ return window.BassCourse.weekOf(n); }
-function dayLog(){
-  const k = todayKey();
-  const e = S.practice.log[k];
-  // A day whose record is missing OR the wrong shape both mean "nothing yet".
-  if (!e || typeof e !== 'object' || !Array.isArray(e.items))
-    S.practice.log[k] = { items:[], week:S.practice.week };
-  return S.practice.log[k];
-}
-function practiceStats(){
-  const dates = Object.keys(S.practice.log).filter(d =>
-    (((S.practice.log[d] || {}).items) || []).length > 0).sort();
-  const total = dates.length;
-  // streak: consecutive days ending today or yesterday
-  let streak = 0;
-  const oneDay = 86400000;
-  let cur = new Date(todayKey() + 'T12:00:00');
-  const set = new Set(dates);
-  const tk = todayKey();
-  if (!set.has(tk)) cur = new Date(cur.getTime() - oneDay);
-  while (true){
-    const key = cur.getFullYear() + '-' + String(cur.getMonth()+1).padStart(2,'0') + '-' + String(cur.getDate()).padStart(2,'0');
-    if (set.has(key)){ streak++; cur = new Date(cur.getTime() - oneDay); }
-    else break;
-  }
-  return { total, streak };
-}
-
-/**
- * Tonight's list: the week's items, plus the drill review that is due today.
- *
- * A review was scheduled by the drill engine and shown only as a number in a
- * tile called "drills due now" — so following the plan to 5/5 meant skipping the
- * one piece of work the app had actually scheduled for today. It goes first,
- * because that is the order the engine's own screen argues for.
- */
-function todayItems(wk){
-  const dr = drillRollup();
-  if (dr.due){
-    const review = {
-      id:'rev', cat:'Review', min:5, review:true,
-      text:'<b>Run the review that is due today</b>' + (dr.dueLabel ? ': ' + dr.dueLabel : '') +
-        (dr.due > 1 ? ' (first of ' + dr.due + ' due)' : '') +
-        '. A shape you last played days ago is the one with something to prove, so this comes before new work.',
-      link:{ label:'Run today’s review · ' + dr.due + ' due', live:'drill' },
-    };
-    return [review].concat(wk.items);
-  }
-  /* A review that was RUN must stay credited: it used to vanish the moment the
-     run rescheduled it, so "0/6 today" silently became "0/5" and the one piece
-     of work the app itself scheduled left no trace of being done. `done:true`
-     is DERIVED from the drill store's own attempts — renderPractice never
-     writes it into the day log and never lets it be unticked. */
-  if (dr.ranToday){
-    return [{
-      id:'rev', cat:'Review', min:5, review:true, done:true,
-      text:'<b>Review — done today.</b> The drill work is run and rescheduled; tonight\'s list will say when it comes back.',
-    }].concat(wk.items);
-  }
-  return wk.items;
-}
-
-function renderPractice(){
-  const el = document.getElementById('tab-practice');
-  const wk = weekOf(S.practice.week);
-  const log = dayLog();
-  const ps = practiceStats();
-  const items = todayItems(wk);
-  // `i.done` is the derived tick (a review already run today) — it counts in
-  // the numerator exactly like a logged item, it just never lives in the log.
-  const itemDone = i => i.done || log.items.includes(i.id);
-  const doneCount = items.filter(itemDone).length;
-  const pct = Math.round(100 * doneCount / items.length);
-  const totalMin = items.reduce((a, i) => a + i.min, 0);
-
-  let h = '<h2>Practice</h2>';
-  // Everything that keeps a record, in one place, at the top.
-  h += thisWeekHtml();
-  // streak/overview
-  if (ps.total === 0 && doneCount === 0){
-    h += '<div class="card tight"><b class="t-title3">Day 1 — welcome.</b>' +
-      '<div class="muted small" style="margin-top:2px">Work through the ' + items.length + ' items below and you\'ve started. ' +
-      'Your streak begins today.</div></div>';
-  } else {
-    /* Day 1 gets a "Day 1 — welcome" line saying what tonight is; every day after
-       it used to get three numbers and nothing else. This is the same sentence,
-       for the other days: what tonight is, and whether anything is waiting. */
-    const rev = items.find(i => i.review);
-    const revDone = rev && itemDone(rev);
-    h += '<div class="card tight"><div class="statgrid">' +
-      '<div class="stat"><b>' + ps.streak + '</b><span>day streak</span></div>' +
-      '<div class="stat"><b>' + ps.total + '</b><span>day' + (ps.total === 1 ? '' : 's') + ' practised</span></div>' +
-      '<div class="stat"><b>' + doneCount + '/' + items.length + '</b><span>today</span></div>' +
-      '</div><div class="muted small" style="margin-top:var(--sp2)">' +
-      (doneCount === items.length
-        ? 'Tonight is done — ' + items.length + ' of ' + items.length + '. Everything resets tomorrow.'
-        : 'Tonight: <b>week ' + wk.n + '</b>, ' + items.length + ' items, about ' + totalMin + ' min' +
-          (rev && !revDone ? ' — starting with the <b>review that is due</b>, which is first on the list.'
-                           : rev && revDone ? ' — today’s review is done.'
-                           : '. Nothing is due for review, so it is straight through the list.')) +
-      '</div></div>';
-  }
-
-  // The destination, stated once above the week picker: nothing on screen ever
-  // said where twelve weeks were going, so "gig-ready" arrived undefined at
-  // week 9 and the phases graded toward a goal the player had never been told.
-  h += '<div class="card tight" id="courseHead"><div class="t-eyebrow">The course</div>' +
-    '<div class="muted small" style="margin-top:2px">Twelve weeks, one destination: <b>ten songs at full tempo, ' +
-    'from memory, in a set</b>. Three phases get you there, and each week card below says how its phase is graded.</div></div>';
-
-  // Week picker: twelve buttons need grouping, so one row per phase with the
-  // phase name as the label — the shape of the course is visible at a glance.
-  for (const ph of PHASES){
-    h += '<div class="wp-phase" data-phase="' + ph.n + '"><span class="t-eyebrow wp-label">' + ph.name + '</span>' +
-      '<div class="weekpick">' + ph.weeks.map(n => {
-        const w = weekOf(n);
-        const cpsDone = w.checkpoints.every(c => S.practice.checkpoints[c.id]);
-        return '<button class="btn ' + (n === S.practice.week ? 'primary' : '') + '" data-wk="' + n +
-          '" aria-label="Week ' + n + '">' + n + (cpsDone ? ' ✓' : '') + '</button>';
-      }).join('') + '</div></div>';
-  }
-
-  // today's session
-  const ph = phaseOf(wk.n);
-  h += '<div class="card">';
-  h += '<div class="t-eyebrow" style="margin-bottom:2px">' + ph.name + ' · phase ' + ph.n + ' of 3</div>';
-  // The phase's own proof, verbatim from the course data (PHASES[].grades) —
-  // it existed as data and was rendered nowhere, so a week card never said
-  // what its phase was for. Phase 3's sentence also carries the 40-minute
-  // honesty that used to live in a separate, forked paragraph here.
-  h += '<p class="muted small" style="margin:0 0 6px">' + ph.grades + '</p>';
-  h += '<div class="row between"><b>Week ' + wk.n + ': ' + wk.title + '</b><span class="ptime">' + totalMin + ' min</span></div>';
-  h += '<p class="muted small" style="margin:4px 0 4px">' + wk.goal + '</p>';
-  /* Built from the items, so it cannot disagree with them. The hard-coded version
-     said "10' technique" beside an 8-minute technique item, always summed to 30
-     against a header that read 35 or 40, and mentioned neither the tune-up, the
-     review nor the bonus. */
-  h += '<p class="muted small" style="margin:0">Tonight: ' +
-    items.map(i => i.cat.toLowerCase() + ' ' + i.min + '\'').join(' → ') +
-    '. Check things off as you go — it resets each day.</p>';
-  h += '<div class="progressbar"><i style="width:' + pct + '%"></i></div>';
-  for (const it of items){
-    const done = itemDone(it);
-    h += '<div class="pitem ' + (done ? 'done' : '') + '">';
-    // A derived tick (it.done) is disabled and carries no data-toggle: it states
-    // a fact from the drill store, so unticking it here could only tell a lie.
-    h += '<input type="checkbox" data-item="' + it.id + '" ' + (done ? 'checked' : '') +
-         (it.done ? ' disabled' : '') + ' aria-label="done">';
-    h += '<div class="ptext"><span class="pmain"' + (it.done ? '' : ' data-toggle="' + it.id + '"') +
-         '><span class="pcat">' + it.cat + ' · ' + it.min + ' min</span><br>' + it.text + '</span>';
-    if (it.diagram) h += '<div class="drill-host" data-diagram="' + it.diagram + '"></div>';
-    h += '<div class="plink row">';
-    if (it.met) h += '<button class="btn small" data-met="' + it.met + '"><svg viewBox="0 0 24 24" class="btn-ic"><path d="M5 19V7l12-3v12"/><circle cx="4" cy="19" r="2.4"/><circle cx="16" cy="16" r="2.4"/></svg>Metronome ' + it.met + '</button>';
-    // Both link slots render the same way. link2 was defined on two week items
-    // and rendered by nothing, so the plan's only routes into Drills and Songs
-    // existed in the data and never on the screen.
-    for (const key of ['link', 'link2']){
-      const ln = it[key];
-      if (!ln) continue;
-      if (ln.spec) h += '<button class="btn small" data-dl="' + encodeURIComponent(JSON.stringify(ln.spec)) + '">↪ ' + ln.label + '</button>';
-      // A Live mode is a tab of this same page now: switch, don't navigate.
-      // `preset` rides along so the link lands CONFIGURED — a link that names a
-      // drill or a song and then opens the mode's default is a broken promise.
-      else if (ln.live) h += '<button class="btn small" data-live="' + ln.live + '"' +
-        (ln.preset ? ' data-preset="' + encodeURIComponent(JSON.stringify(ln.preset)) + '"' : '') +
-        '>↪ ' + ln.label + '</button>';
-      else if (ln.href) h += '<a class="btn small" style="text-decoration:none; display:inline-flex; align-items:center" href="' +
-        ln.href + '" target="_blank" rel="noopener">↗ ' + ln.label + '</a>';
-    }
-    h += '</div></div></div>';
-  }
-  if (doneCount === items.length) h += '<p class="okmark" style="text-align:center; margin:10px 0 2px">Session complete — see you tomorrow.</p>';
-  h += '</div>';
-
-  // metronome
-  h += metronomeHtml();
-
-  // checkpoints
-  h += '<div class="card"><b>Week ' + wk.n + ' checkpoints</b>';
-  // "They gate" promised a door: nothing is locked, ticking all three changes
-  // nothing, and week 3 opens with none of them ticked. Say what they are for.
-  h += '<p class="muted small" style="margin:4px 0 6px">Check these honestly — they are how <b>you</b> decide ' +
-    'you are ready for the next week. Nothing is locked: you can open any week whenever you like, but a week ' +
-    'built on a checkpoint you were generous about is a week built on sand. They stay checked (unlike the daily list).</p>';
-  for (const cp of wk.checkpoints){
-    const done = !!S.practice.checkpoints[cp.id];
-    h += '<div class="checkpoint' + (done ? ' is-done' : '') + '"><label class="chk"><input type="checkbox" data-cp="' + cp.id + '" ' + (done ? 'checked' : '') + '> <span>' + cp.text + '</span></label></div>';
-  }
-  h += '</div>';
-
-  // The set at a glance, while the phase is about the set: ten songs against
-  // the gig-ready bar, read from the song store the Songs tab writes.
-  if (ph.n === 3) h += setBoardHtml();
-
-  // theory dose
-  const cards = wk.theory.filter(id => !S.practice.dismissed.includes(id));
-  if (cards.length){
-    h += '<h3>This week\'s theory dose</h3>';
-    for (const id of cards) h += theoryCard(id);
-  }
-
-  // The gig-readiness report: the end of the COURSE, not of week 3. It only
-  // appears once every checkpoint of every week is ticked, because it is a
-  // claim about the whole course — the old "3 weeks done" card is gone, and
-  // weeks 4–12 are its replacement.
-  if (WEEKS.every(w => w.checkpoints.every(c => S.practice.checkpoints[c.id]))){
-    h += '<div class="card" style="border-color:var(--good)"><b class="t-title3">12 weeks done — the gig-readiness report</b>';
-    h += '<p class="muted small" style="margin:4px 0 6px">The whole course, song by song, against the bar. ' +
-      'Copy it and paste it into a chat with Claude to get a set-two program built on what is actually banked.</p>';
-    h += '<div class="copybox" id="reportBox">' + gigReportText() + '</div>';
-    h += '<button class="btn primary" id="copyReport">Copy report</button>';
-    h += '</div>';
-  }
-
-  // restore dismissed tips
-  if (S.practice.dismissed.length){
-    h += '<div class="row" style="margin:8px 2px"><button class="btn small ghost" id="restoreTips">💡 Restore ' + S.practice.dismissed.length + ' dismissed theory tip' + (S.practice.dismissed.length > 1 ? 's' : '') + '</button></div>';
-  }
-
-  // resources
-  h += '<div class="card resource"><b>Resources</b><ul style="margin:8px 0 0; padding-left:18px">' +
-    '<li><a href="https://www.studybass.com/study-guide/" target="_blank" rel="noopener">StudyBass study guide</a> — structured free lessons, great theory grounding</li>' +
-    '<li><a href="https://www.talkingbass.net/lessonmap/" target="_blank" rel="noopener">TalkingBass lesson map</a> — huge free lesson index by topic</li>' +
-    '<li><a href="https://www.youtube.com/@BassBuzz" target="_blank" rel="noopener">BassBuzz (YouTube)</a> — start with “5 Beginner Bass Mistakes”</li>' +
-    '<li><a href="https://www.songsterr.com/a/wsa/acdc-tnt-bass-tab-s407" target="_blank" rel="noopener">Songsterr: T.N.T. bass tab</a> — scrolling tab with playback; the Plus tier mutes the bass track, slows the tempo and loops a section, which is the setup Songs mode assumes</li>' +
-    '<li><a href="https://bigbasstabs.com/" target="_blank" rel="noopener">BigBassTabs</a> — free bass tab library for your next songs</li>' +
-    '</ul></div>';
-
-  el.innerHTML = h;
-
-  // wire up
-  el.querySelectorAll('[data-wk]').forEach(b => b.addEventListener('click', () => {
-    S.practice.week = +b.dataset.wk; save(); renderPractice();
-  }));
-  function toggleItem(id, force){
-    const log2 = dayLog();
-    const on = force != null ? force : !log2.items.includes(id);
-    if (on){ if (!log2.items.includes(id)) log2.items.push(id); }
-    else log2.items = log2.items.filter(x => x !== id);
-    save(); renderPractice();
-  }
-  el.querySelectorAll('[data-item]').forEach(c => c.addEventListener('change', () => toggleItem(c.dataset.item, c.checked)));
-  // [data-toggle], not every .pmain: the derived review row renders without the
-  // attribute, and toggling `undefined` would push it into the day log.
-  el.querySelectorAll('.pmain[data-toggle]').forEach(p => p.addEventListener('click', () => toggleItem(p.dataset.toggle)));
-  el.querySelectorAll('[data-cp]').forEach(c => c.addEventListener('change', () => {
-    S.practice.checkpoints[c.dataset.cp] = c.checked; save(); renderPractice();
-  }));
-  el.querySelectorAll('[data-met]').forEach(b => b.addEventListener('click', () => {
-    Metro.setBpm(+b.dataset.met); Metro.start();
-    const mc = document.getElementById('metCard');
-    if (mc) mc.scrollIntoView({ behavior:'smooth', block:'center' });
-  }));
-  el.querySelectorAll('[data-dl]').forEach(b => b.addEventListener('click', () => {
-    deepLink(JSON.parse(decodeURIComponent(b.dataset.dl)));
-  }));
-  el.querySelectorAll('.drill-host').forEach(hostEl => {
-    if (window.BassDiagrams) BassDiagrams.draw(hostEl.dataset.diagram, hostEl, TUNING.names);
-  });
-  const rt = document.getElementById('restoreTips');
-  if (rt) rt.addEventListener('click', () => { S.practice.dismissed = []; save(); renderPractice(); });
-  const cpBtn = document.getElementById('copyReport');
-  if (cpBtn) cpBtn.addEventListener('click', () => {
-    const txt = document.getElementById('reportBox').textContent;
-    (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(
-      () => { cpBtn.textContent = 'Copied'; setTimeout(() => cpBtn.textContent = 'Copy report', 1500); },
-      () => { /* fallback: select text */ const r = document.createRange(); r.selectNodeContents(document.getElementById('reportBox')); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); }
-    );
-  });
-  mountMetronome();
-}
-
-/* The end-of-course report. It replaced the old "3 weeks done — report to
-   Claude" card when the course grew to 12 weeks: the paste block now asks for
-   a SET-TWO program, and its evidence is the set — song by song against the
-   gig-ready bar — rather than three weeks of fundamentals. */
-function gigReportText(){
-  const ps = practiceStats();
-  const st = S.stats;
-  // Every count-noun pair goes through this: "1 shapes drilled" shipped, and a
-  // report the player pastes as their own words must not read like a printout.
-  const n_ = (n, one, many) => n + ' ' + (n === 1 ? one : (many || one + 's'));
-  const acc = st.answered ? Math.round(100 * st.correct / st.answered) : 0;
-  const cps = WEEKS.map(w =>
-    'W' + w.n + ' ' + w.checkpoints.map(c => (S.practice.checkpoints[c.id] ? '✓' : '✗')).join('')
-  ).join('; ');
-  const rig = '5-string bass (BEADG)';
-  // Drills and Songs keep their own records; a report that omits them describes
-  // a third of the practice that actually happened.
-  const dr = drillRollup(), sg = songRollup();
-  const drLine = dr.total
-    ? 'Drills: ' + n_(dr.total, 'shape') + ' drilled, ' + dr.mastered + ' mastered (cold first run, in time with the click, two ' +
-      'separate days), ' + n_(dr.runs, 'run') + ' in the last 7 days\n'
-    : 'Drills: none run yet\n';
-  // The set, song by song, against the one bar every screen uses.
-  const rows = readinessRows();
-  const ready = rows.filter(r => r.status === 'gig-ready').length;
-  const songLines = rows.map(r =>
-    '  - ' + r.song.title + ' (' + r.song.bpm + ' bpm): ' + r.status +
-    (r.rec && r.rec.bestAccuracy ? ', best ' + Math.round(r.rec.bestAccuracy * 100) + '% on the root' : '') +
-    (r.days ? ', ' + n_(r.days, 'memory day') : '')
-  ).join('\n');
-  const rank = { 'new': 0, 'learning': 1, 'gig-ready': 2 };
-  const weakest = rows.slice().sort((a, b) =>
-    rank[a.status] - rank[b.status] ||
-    ((a.rec && a.rec.bestAccuracy) || 0) - ((b.rec && b.rec.bestAccuracy) || 0)
-  ).slice(0, 3).map(r => r.song.title);
-  const runs = setRuns();
-  const bestSet = runs.reduce((a, r) => Math.max(a, Number(r.overall) || 0), 0);
-  const setLine = runs.length
-    ? 'Set runs banked: ' + n_(runs.length, 'run') + ', longest ' +
-      n_(runs.reduce((a, r) => Math.max(a, (r.songs || []).length), 0), 'song') +
-      ', best ' + Math.round(bestSet * 100) + '% overall\n'
-    : 'Set runs banked: none yet\n';
-  return 'Hi Claude! I just finished the 12-week AC/DC course in my Bass Trainer app — the goal was ten songs, ' +
-    'full tempo, from memory, in a set. Please design set two: the next 3 months.\n\n' +
-    'My setup: ' + rig + ', goal = rock/metal, 30-40 min/evening.\n' +
-    'Checkpoints: ' + cps + '\n' +
-    'Days practised: ' + ps.total + ' (current streak ' + ps.streak + ')\n' +
-    'Note quiz: ' + acc + '% lifetime accuracy over ' + n_(st.answered, 'question') + ', best streak ' + st.bestStreak + '\n' +
-    drLine +
-    'The set (' + ready + ' of ' + rows.length + ' gig-ready — a 90%+ memory play on two separate days):\n' +
-    songLines + '\n' +
-    'Weakest three, in order: ' + weakest.join(', ') + '\n' +
-    setLine +
-    'Please give me: a 12-week set-two program in the same weekly shape (tune-up first, ' +
-    'checkpoints, up to 40 min/evening), 8-10 next songs that stretch beyond AC/DC root-eighths ' +
-    '(riffs, walking lines, a slow blues), and the technique and theory the new songs will need.';
-}
-
 /* ================= BOOT ================= */
 let rzTimer = null, lastWide = window.matchMedia('(min-width:1000px)').matches;
 
-/** Wire this app up. The shell owns the nav and the hash, so it passes in the
-    router; nothing here decides which tab opens first. */
-function mount(opts){
-  if (opts && opts.navigate) navigate = opts.navigate;
-
-  // Deep links into a Live mode, wherever they are rendered. A data-preset
-  // rider is handed to the Live half BEFORE navigating, so the mode consumes it
-  // as it opens; plain data-live buttons keep working with no preset at all.
-  document.querySelector('main').addEventListener('click', e => {
-    const b = e.target.closest('[data-live]');
-    if (!b) return;
-    if (b.dataset.preset && window.BassLive && BassLive.preset){
-      try{ BassLive.preset(JSON.parse(decodeURIComponent(b.dataset.preset))); }
-      catch(err){ /* a malformed preset must not break the navigation itself */ }
-    }
-    navigate(b.dataset.live);
-  });
-
+/** Wire this app up. The shell owns the nav and the hash; nothing here decides
+    which tab opens first. */
+function mount(){
   /* Unlock audio on first touch (mobile requirement). Scoped to this app's own
      tabs now that a Live mode's clicks land on the same body: only the
      metronome and the scale player use this context, and spinning a second
@@ -1910,44 +770,42 @@ function mount(opts){
   });
 }
 
-/**
- * Tick today's "Tune up" item off, because the Tuner just watched every string
- * land in the green. The Tuner used to promise this and not do it: you tuned all
- * five, came back, and the box was still empty.
- *
- * Owned here rather than in the Live half so that item ids stay this file's
- * business — the Live half only knows that tuning happened. Once a day, and
- * never against an item already ticked, so unticking it by hand sticks.
- * @returns {boolean} true if this call is what ticked it.
- */
-function markTuned(){
-  S = loadState();
-  const today = todayKey();
-  if (S.practice.tunedMarked === today) return false;
-  const item = (weekOf(S.practice.week).items || []).find(it => it.tune);
-  S.practice.tunedMarked = today;
-  if (!item){ save(); return false; }
-  const log = dayLog();
-  const already = log.items.includes(item.id);
-  if (!already) log.items.push(item.id);
-  save();
-  if (currentTab === 'practice') renderPractice();
-  return !already;
-}
+/* ---------------- one-time clean-out ----------------
+   Four screens were retired when the app was refocused on the game: the
+   twelve-week practice plan, the Note quiz, Ear training and the pattern
+   Drills. Their records are unreachable now — nothing renders a week log, a
+   quiz accuracy or a drill's review date — so leaving them in localStorage
+   would be leaving dead weight in the one place the player cannot see to
+   clear. This runs once, keyed by its own flag, and is the only code in the
+   app that deletes anything.
 
-window.BassTheory = { mount, showTab: show, markTuned };
+   The two charts' own settings moved to a NEW key rather than being migrated
+   out of the old one, so this drops the old key whole. Songs and the game keep
+   their own stores and are not touched. */
+const WIPE_FLAG = 'bassTrainer.retired.v1';
+const RETIRED_KEYS = [
+  'bassTheoryTrainer.v1',   // practice log, checkpoints, quiz stats, chart prefs
+  'bassTrainer.drills.v1'   // every drill's tempo, mastery and review date
+];
+function clearRetiredStores(){
+  try {
+    if (localStorage.getItem(WIPE_FLAG)) return;
+    RETIRED_KEYS.forEach(k => localStorage.removeItem(k));
+    localStorage.setItem(WIPE_FLAG, '1');
+  } catch(e){ /* a browser refusing storage has nothing to clear */ }
+}
+clearRetiredStores();
+
+window.BassTheory = { mount, showTab: show };
 
 /* ---- test seam ----
-   trainer/test/*.js and the scratchpad smoke script drive this app from page
-   scope: they read the live question (T.q), plant checkpoints in S and force a
-   re-render. Those were globals when this file was a <script> in the page.
-   Now that both apps share one document they cannot be, so the handful the
-   suites actually hold on to is published here deliberately. Accessors, not
-   copies: S is REASSIGNED on every tab switch (it is re-read from the store),
-   and a snapshot would hand the suite a state object that save() no longer
-   writes. */
+   trainer/test/*.js drive this app from page scope: they set a chart's options
+   and force a re-render. Those were globals when this file was a <script> in
+   the page; now that both apps share one document they cannot be, so the
+   handful the suites hold on to is published here deliberately. An accessor,
+   not a copy: S is REASSIGNED on every tab switch (it is re-read from the
+   store), and a snapshot would hand the suite a state object that save() no
+   longer writes. */
 Object.defineProperty(window, 'S', { configurable:true, get:() => S, set:v => { S = v; } });
-Object.defineProperty(window, 'T', { configurable:true, get:() => T, set:v => { T = v; } });
 window.save = save;
-window.renderPractice = renderPractice;
 })();

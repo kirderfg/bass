@@ -1019,7 +1019,7 @@ test('a fumbled box is remembered, and the note map shows where it was', async (
     await page.evaluate(() => gvBreach());
     await page.waitForTimeout(250);
     const rec = await page.evaluate(() => {
-      const st = JSON.parse(localStorage.getItem('bassTheoryTrainer.v1')).stats || {};
+      const st = JSON.parse(localStorage.getItem('bassTrainer.gamemem.v1')).stats || {};
       return { recent: Object.keys(st.scaleRecent || {}), heat: Object.keys(st.scaleHeat || {}) };
     });
     assert.equal(rec.recent.length, 1, 'the box was not booked against its own key');

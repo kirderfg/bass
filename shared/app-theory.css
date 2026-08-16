@@ -1,6 +1,12 @@
 /* ============================================================
-   Bass Theory Trainer — the Learn half of the page
-   (Practice, Scales, Chords, note quiz).
+   The Learn half of the page — the two charts you look things up
+   on (Scales, Chords) and the click that runs beside them.
+
+   It was four screens: a twelve-week practice plan and a note quiz
+   sat here too, and most of this file dressed them — checkbox rows,
+   week pickers, quiz choice grids, stat bars, a copyable report.
+   The game asks the questions now, so those rules went with the
+   markup they styled.
 
    Lifted out of index.html when the two apps became one document.
    Loads AFTER shared/theme.css, which is the trap this repo keeps
@@ -32,53 +38,6 @@
   position:absolute; top:6px; right:6px; background:transparent; border:0;
   color:var(--dim); font-size:18px; width:44px; height:44px; cursor:pointer; border-radius:8px;
 }
-/* ---------- buttons that carry an inline icon ---------- */
-.btn-ic{width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.9;
-  stroke-linecap:round; stroke-linejoin:round; vertical-align:-3px; margin-right:5px;}
-/* ---------- checkbox rows: the box is 26px, so the LABEL carries the 44px target ---------- */
-label.chk{
-  display:flex; align-items:center; gap:10px; min-height:44px; cursor:pointer; font-size:15px;
-}
-/* ---------- practice ---------- */
-.pitem{display:flex; gap:10px; align-items:flex-start; padding:10px 0; border-bottom:1px solid var(--line);}
-.pitem:last-child{border-bottom:0;}
-.pitem input{margin-top:2px; width:26px; height:26px;}
-.pitem .pmain{cursor:pointer; display:block;}
-.pitem.done .pmain{color:var(--dim); text-decoration:line-through;}
-.ptext{flex:1; font-size:15px; line-height:1.55;}
-.ptime{color:var(--root); font-weight:700; font-size:13px;}
-.pcat{font-size:11.5px; letter-spacing:.8px; text-transform:uppercase; color:var(--dim); font-weight:700;}
-.plink{margin-top:6px;}
-.progressbar{height:8px; background:var(--panel2); border-radius:99px; overflow:hidden; margin:8px 0 2px;}
-.progressbar i{display:block; height:100%; background:var(--good); border-radius:99px; transition:width .3s;}
-.statgrid{display:grid; grid-template-columns:repeat(2,1fr); gap:var(--sp2); margin:var(--sp3) 0 0;}
-@media (min-width:520px){ .statgrid{grid-template-columns:repeat(4,1fr);} }
-.stat b i{font-style:normal; font-size:14px; color:var(--t3); font-weight:650;}
-.sbar{display:flex; align-items:center; gap:var(--sp2); margin:5px 0;}
-.sbar-name{width:16px; font-weight:800; font-size:12.5px; color:var(--t3);}
-.sbar.is-lowest .sbar-name{color:var(--low-string);}
-.sbar-track{flex:1; height:8px; background:var(--s2); border-radius:99px; overflow:hidden;}
-.sbar-track i{display:block; height:100%; background:var(--tone); border-radius:99px; transition:width var(--slow) var(--ease);}
-.sbar-val{width:52px; text-align:right; font-family:var(--mono); font-size:11.5px; color:var(--t2); font-variant-numeric:tabular-nums;}
-.weekpick{display:flex; gap:6px; margin:8px 0;}
-.weekpick button{flex:1;}
-/* Twelve weeks pick as three phase rows: an eyebrow label above each row, so
-   the shape of the course is readable before any button is. */
-.wp-phase{margin:8px 0 0;}
-.wp-phase .wp-label{display:block; margin:0 2px 3px;}
-.wp-phase .weekpick{margin:0;}
-.wp-phase:last-of-type{margin-bottom:8px;}
-/* ---------- trainer ---------- */
-.quiz-q{
-  font-size:17px; text-align:center; padding:10px 6px; font-weight:600;
-}
-.quiz-q b{color:var(--hl);}
-.choices{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px;}
-.choices .btn{font-size:17px;}
-.choices .btn.good{background:var(--good-tint); border-color:var(--good); color:var(--good);}
-.choices .btn.bad{background:var(--s2); border:2px solid var(--bad); color:var(--bad);}
-.feedback{min-height:24px; text-align:center; font-weight:700; margin-top:6px;}
-.feedback.ok{color:var(--good);} .feedback.no{color:var(--bad);}
 /* ---------- metronome ---------- */
 .bpm-big{font-size:40px; font-weight:800; text-align:center; font-variant-numeric:tabular-nums;}
 .bpm-big small{font-size:14px; color:var(--dim); font-weight:600;}
@@ -102,17 +61,3 @@ body.metro-on{padding-bottom:calc(var(--nav-h) + 74px + env(safe-area-inset-bott
 /* at desk width the nav is a left rail, so the transport clears the rail
    instead of the (now absent) bottom bar */
 @media (min-width:1000px){ #metrobar{left:calc(200px + var(--sp3));} }
-/* ---------- copyable report, resources, checkpoints ---------- */
-.copybox{
-  background:var(--s0); border:1px dashed var(--line-hi); border-radius:10px; padding:10px;
-  font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; white-space:pre-wrap;
-  max-height:220px; overflow:auto; margin:8px 0;
-}
-.resource a{color:var(--tone); text-decoration:none; font-weight:600;}
-.resource li{margin:7px 0;}
-.checkpoint{border-left:3px solid var(--line-hi); padding-left:10px; margin:8px 0;}
-.checkpoint.is-done{border-left-color:var(--good);}
-.okmark{color:var(--good); font-weight:800;}
-@media (min-width:700px){
-  .choices{grid-template-columns:repeat(4,1fr);}
-}

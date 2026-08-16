@@ -1,6 +1,8 @@
 /* ============================================================
    Bass Live Trainer — the Live half of the page
-   (Tuner, Find it, Ear training, Drills, Songs).
+   (Play, Tuner, Songs). Ear training and the pattern Drills lived
+   here too, until the app was refocused on the game; their rules
+   went with their markup.
 
    Lifted out of trainer/index.html when the two apps became one
    document. Loads AFTER shared/theme.css, which is the trap this
@@ -86,7 +88,7 @@ body .mic-card{display:flex; flex-wrap:wrap; align-items:center; gap:10px;
 .verdict.ok{color:var(--good);} .verdict.no{color:var(--bad);} .verdict.warn{color:var(--root);}
 .heard{text-align:center; font-size:13px; color:var(--dim); min-height:20px;}
 
-/* ---- Fret Quest (Find it): THE CONSOLE ----
+/* ---- Fret Quest (Play): THE CONSOLE ----
    The game's canvases are drawn at a low internal resolution and scaled up:
    image-rendering keeps the pixels square instead of smearing them. The JS
    snaps the scene to a whole multiple of 320×150 (gvFitScene), so the wrapper
@@ -632,6 +634,14 @@ body .mic-card{display:flex; flex-wrap:wrap; align-items:center; gap:10px;
 .gv-mapnote{margin:var(--sp3) 0 0; color:var(--t4); max-width:78ch;}
 .gv-mapnote b{color:var(--t2);}
 .gv-mapnote .gv-map-weakkey{color:var(--bad);}
+/* The five salvaged rules. A definition list, because that is what they are —
+   a short claim and the sentence that pays it off — and the pair reads as one
+   block at every width rather than becoming a two-column table on a desk. */
+.gv-maprules{margin-top:var(--sp5); padding-top:var(--sp4); border-top:1px solid var(--line);}
+.gv-rules{margin:var(--sp3) 0 0; max-width:78ch;}
+.gv-rules dt{font-weight:600; color:var(--t2); margin-top:var(--sp3);}
+.gv-rules dt:first-child{margin-top:0;}
+.gv-rules dd{margin:2px 0 0; color:var(--t4); font-size:var(--fs-caption); line-height:1.55;}
 /* Dimming, at a strength you can still READ: the renderer's own is-outside is
    tuned for a marker you are meant to ignore, and every dot on this map is
    meant to be legible — "not on this stage yet" is the message, not "gone". */
@@ -652,30 +662,15 @@ body .mic-card{display:flex; flex-wrap:wrap; align-items:center; gap:10px;
    "streak" collapse to different widths and the row reads as broken. */
 .stat-row{display:flex; gap:8px; justify-content:center; margin:8px 0 0; flex-wrap:wrap;}
 .stat-row .stat{padding:6px 12px; min-width:74px;}
-/* ---- drills ---- */
-#secDrill label span{display:block; margin-bottom:3px;}
+/* ---- a named row with pills after it ----
+   Written for the drill shelf; it outlived the drills because the setlist and
+   the gig-ready board are the same shape — a name, then what is true of it. */
 .dr-row{display:flex; gap:var(--sp2); align-items:center; justify-content:space-between;
   flex-wrap:wrap; padding:var(--sp2) 0; border-top:1px solid var(--hair);}
 .dr-row:first-child{border-top:0;}
 .dr-row .dr-name{font-size:14px; font-weight:650; color:var(--t1); flex:1 1 150px;}
-/* the checkbox itself is 26px by design, so the LABEL carries the 44px target */
-.dr-check{gap:var(--sp2); min-height:44px; padding:0 var(--sp2) 0 0; cursor:pointer;}
-.dr-step{min-width:44px; text-align:center;}
-/* stacked on a phone the second column needs air; as a grid column it must not */
-@media (max-width:999px){ #drPick .two-col > div + div{margin-top:var(--sp5);} }
-@media (min-width:1000px){ #drPick .row > label{max-width:340px;} }
-#drPanel .note-box{margin-top:var(--sp3);}
-#drPanel p{margin:6px 0 0;}
-#drPanel .t-eyebrow{color:inherit; opacity:.85;}
 /* ---- songs ---- */
 .sg-item{border-top:1px solid var(--hair); padding:var(--sp4) 0 var(--sp3);}
-/* The plan's "let the app listen" link lands on ONE named song: the ring says
-   which entry the link meant, instead of leaving the player at the top of a
-   five-song list. Outline, so nothing shifts; the code removes it after a
-   moment or on the first touch. */
-/* #sgSetCard gets the same ring: "Open the Setlist card" links point at it. */
-.sg-item.is-target, #sgSetCard.is-target{outline:2px solid var(--hl); outline-offset:6px; border-radius:var(--r-sm);
-  background:color-mix(in srgb, var(--hl) 6%, transparent);}
 .sg-item:first-child{border-top:0; padding-top:0;}
 .sg-item p{margin:var(--sp2) 0 0;}
 .sg-strip{display:flex; flex-wrap:wrap; gap:var(--sp1); margin:var(--sp3) 0 0;}

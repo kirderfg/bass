@@ -9,7 +9,6 @@ const { openApp } = require('./harness.js');
 
 const SILENT = 987.767;            // above the detector's 420 Hz ceiling
 const DESK = { width: 1440, height: 900 };
-const DRILL_KEY = 'bassTrainer.drills.v1';
 
 test('every theory card can actually be dismissed', async () => {
   // The ✕ was an inline onclick="dismissCard(...)", which resolves against
@@ -19,7 +18,7 @@ test('every theory card can actually be dismissed', async () => {
   try {
     const { page } = app;
     let dismissed = 0;
-    for (const tab of ['practice', 'scales', 'chords', 'trainer']) {
+    for (const tab of ['scales', 'chords']) {
       await page.click('#tabbar button[data-tab="' + tab + '"]');
       await page.waitForSelector('#tab-' + tab + '.on', { timeout: 3000 });
       // Dismissing removes the card, so take the first one until none are left.
@@ -35,12 +34,12 @@ test('every theory card can actually be dismissed', async () => {
         if (dismissed > 20) throw new Error('dismiss did not remove cards');
       }
     }
-    assert.ok(dismissed >= 5, 'only ' + dismissed + ' theory cards found to dismiss');
+    assert.ok(dismissed >= 4, 'only ' + dismissed + ' theory cards found to dismiss');
     // Dismissals are remembered, so they do not come back on the next visit.
     // (The hash follows the tab now, so a bare reload lands on the last one.)
-    await page.goto(page.url().replace(/#.*$/, '') + '#practice');
-    await page.waitForSelector('#tab-practice.on', { timeout: 4000 });
-    assert.equal(await page.$('#tab-practice [data-dismiss]'), null,
+    await page.goto(page.url().replace(/#.*$/, '') + '#scales');
+    await page.waitForSelector('#tab-scales.on', { timeout: 4000 });
+    assert.equal(await page.$('#tab-scales [data-dismiss]'), null,
       'a dismissed card came back after a reload');
     assert.deepEqual(app.errors, [], 'page errors');
   } finally { await app.close(); }
@@ -49,16 +48,15 @@ test('every theory card can actually be dismissed', async () => {
 test('hunting for a note is not counted as getting it wrong', async () => {
   /* Find it exists to make you hunt. Every wrong note played while hunting used
      to bank an answer AND the eventual find banked another, so four questions
-     all answered correctly reported "4 correct, 8 asked" and the practice plan
-     reported 50% accuracy. One stored answer per question, graded on the first
-     attempt — which is what the heat map and the "under 2 seconds" checkpoint
-     already assume. */
-  const app = await openApp(SILENT, '/index.html#find', DESK);
+     all answered correctly read as "4 correct, 8 asked". One stored answer per
+     question, graded on the FIRST attempt — which is what the weak-spot map and
+     the adaptive picker both assume. */
+  const app = await openApp(SILENT, '/index.html#play', DESK);
   try {
     const { page } = app;
     await page.click('#startBtn');
     await page.waitForSelector('#secFind:not(.hidden)', { timeout: 5000 });
-    await page.evaluate(() => localStorage.removeItem('bassTheoryTrainer.v1'));
+    await page.evaluate(() => localStorage.removeItem('bassTrainer.gamemem.v1'));
 
     // Four questions, each hunted for (two wrong notes) and then found.
     await page.evaluate(async () => {
@@ -75,11 +73,16 @@ test('hunting for a note is not counted as getting it wrong', async () => {
       }
     });
     const st = await page.evaluate(() =>
-      JSON.parse(localStorage.getItem('bassTheoryTrainer.v1')).stats);
-    assert.equal(st.answered, 4,
-      'four questions banked ' + st.answered + ' answers — hunting is being counted');
-    assert.equal(st.correct, 0,
-      'a question found only after two wrong notes is not a first-attempt correct');
+      JSON.parse(localStorage.getItem('bassTrainer.gamemem.v1')).stats);
+    /* Counted as ENTRIES, not positions: the picker brings a missed note back,
+       so four questions can be three positions with one of them asked twice. */
+    const banked = Object.values(st.noteRecent).flat();
+    assert.equal(banked.length, 4,
+      'four questions banked ' + banked.length + ' answers — hunting is being counted');
+    assert.deepEqual(banked, [0, 0, 0, 0],
+      'a question found only after two wrong notes is not a first-attempt find');
+    assert.equal(Object.values(st.heat).reduce((a, b) => a + b, 0), 4,
+      'each hunted question should take one mark, not one per wrong note');
 
     // The session panel keeps the two facts apart instead of blurring them.
     const panel = await page.evaluate(() => ({
@@ -90,155 +93,6 @@ test('hunting for a note is not counted as getting it wrong', async () => {
     assert.equal(panel.found, '4', 'four notes were found');
     assert.equal(panel.clean, '0', 'none of them first time');
     assert.equal(panel.asked, '4', 'four questions, not eight attempts');
-    assert.deepEqual(app.errors, [], 'page errors');
-  } finally { await app.close(); }
-});
-
-test('the speed the week-1 checkpoint asks about is actually shown', async () => {
-  // The checkpoint said to check '"avg answer" in trainer stats'. Those words
-  // appeared nowhere in the app, and the figure was hidden until five answers.
-  const app = await openApp(SILENT, '/index.html', DESK);
-  try {
-    const { page } = app;
-    await page.waitForSelector('#tab-practice.on .pitem', { timeout: 4000 });
-    const cps = await page.evaluate(() => document.getElementById('tab-practice').innerText);
-    assert.doesNotMatch(cps, /avg answer/, 'the checkpoint still points at a stat that does not exist');
-    assert.doesNotMatch(cps, /"Your stats"/, 'and at a panel by the wrong name');
-    const named = (cps.match(/seconds per answer/i) || [])[0];
-    assert.ok(named, 'the checkpoint should name the figure the app really shows');
-
-    await page.evaluate(() => {
-      const st = JSON.parse(localStorage.getItem('bassTheoryTrainer.v1')) || {};
-      st.stats = Object.assign({ answered: 0, correct: 0, byString: {}, heat: {} }, st.stats);
-      st.stats.answered = 3; st.stats.correct = 3; st.stats.speed = [1.4, 1.6, 1.5];
-      localStorage.setItem('bassTheoryTrainer.v1', JSON.stringify(st));
-    });
-    await page.click('#tabbar button[data-tab="trainer"]');
-    await page.waitForSelector('#tab-trainer.on', { timeout: 3000 });
-    const stats = await page.evaluate(() => document.getElementById('statsWrap').innerText);
-    assert.match(stats, /seconds per answer/i, 'three answers should be enough to show a figure');
-    assert.match(stats, /1\.5s/, 'the average of 1.4, 1.6 and 1.5 should be shown');
-    assert.match(stats, /under 2s/, 'and held against what the checkpoint asks for');
-    assert.deepEqual(app.errors, [], 'page errors');
-  } finally { await app.close(); }
-});
-
-test('a stored drill with cfg.tuning: 5 is still due on tonight\'s list', async () => {
-  /* Drill ids embed cfg.tuning, and every store written before the 4-string
-     mode was removed carries cfg.tuning: 5. Those records — review dates and
-     mastery history — must keep loading byte-for-byte, so the plan still puts
-     the stored review first on tonight's list. */
-  const app = await openApp(SILENT, '/index.html', DESK);
-  try {
-    const { page } = app;
-    await page.waitForSelector('#tab-practice.on .pitem', { timeout: 4000 });
-    await page.evaluate((dk) => {
-      localStorage.setItem(dk, JSON.stringify({
-        d5: {
-          id: 'd5', label: 'E minor pentatonic · Open position · frets 0–5',
-          due: '2020-01-01', box: 1, ci: 'blocked', bpm: 60, attempts: [],
-          cfg: { tuning: 5, type: 'scale' },
-        },
-      }));
-    }, DRILL_KEY);
-    await page.reload();
-    await page.waitForSelector('#tab-practice.on .pitem', { timeout: 4000 });
-    const text = await page.evaluate(() => document.getElementById('tab-practice').innerText);
-    assert.equal(await page.evaluate(() =>
-      document.querySelector('#tab-practice .pitem [data-item]').dataset.item), 'rev',
-      'the stored drill should still be recognised and due');
-    assert.match(text, /1\s+drill due now/, 'the plan should count the stored drill');
-    assert.match(text, /E minor pentatonic · Open position/,
-      'the review should be named, not just counted');
-    assert.deepEqual(app.errors, [], 'page errors');
-  } finally { await app.close(); }
-});
-
-test('the quiz that marks a fret does not offer to play it for you', async () => {
-  // "Name the note" marks a fret and asks what it is, above a caption reading
-  // "Tap any fret to hear it" — an invitation to cheat the quiz being taken.
-  const app = await openApp(SILENT, '/index.html#trainer', DESK);
-  try {
-    const { page } = app;
-    await page.waitForSelector('#tab-trainer.on', { timeout: 4000 });
-    await page.click('#tModeSeg button[data-k="name"]').catch(async () => {
-      await page.click('[data-k="name"]');
-    });
-    await page.waitForSelector('#quizFb .neck-svg', { timeout: 3000 });
-    const quiz = await page.evaluate(() => ({
-      caption: document.getElementById('tab-trainer').innerText,
-      taps: document.querySelectorAll('#quizFb .neck-hit').length,
-    }));
-    assert.equal(quiz.taps, 0, 'the board still has tap targets that would play the answer');
-    assert.doesNotMatch(quiz.caption, /Tap any fret to hear it/,
-      'and still invites the player to use them');
-    assert.deepEqual(app.errors, [], 'page errors');
-  } finally { await app.close(); }
-});
-
-test('the minutes on the practice card agree with the items on it', async () => {
-  // A hard-coded "Daily shape" line said 10' technique beside an 8-minute
-  // technique item, always summed to 30 against a header reading 35 or 40, and
-  // mentioned neither the tune-up, the review nor the bonus.
-  const app = await openApp(SILENT, '/index.html', DESK);
-  try {
-    const { page } = app;
-    await page.waitForSelector('#tab-practice.on .pitem', { timeout: 4000 });
-    for (const week of [1, 2, 3]) {
-      await page.click('[data-wk="' + week + '"]');
-      await page.waitForTimeout(250);
-      const r = await page.evaluate(() => {
-        const sec = document.getElementById('tab-practice');
-        const header = (sec.innerText.match(/(\d+) min/) || [])[1];
-        const line = (sec.innerText.match(/Tonight: ([^\n]*?)\. Check things off/) || [])[1] || '';
-        const mins = [...line.matchAll(/(\d+)'/g)].map(m => +m[1]);
-        const items = [...sec.querySelectorAll('.pitem .pcat')]
-          .map(e => +(e.textContent.match(/(\d+) min/) || [])[1]);
-        return { header: +header, line, lineSum: mins.reduce((a, b) => a + b, 0),
-                 itemSum: items.reduce((a, b) => a + b, 0), n: mins.length, items: items.length };
-      });
-      assert.equal(r.n, r.items, 'week ' + week + ': the shape line lists ' + r.n +
-        ' blocks for ' + r.items + ' items');
-      assert.equal(r.lineSum, r.itemSum, 'week ' + week + ': the shape line sums to ' +
-        r.lineSum + ' but the items sum to ' + r.itemSum);
-      assert.equal(r.header, r.itemSum, 'week ' + week + ': the header says ' + r.header +
-        ' min for ' + r.itemSum + ' minutes of items');
-    }
-    assert.deepEqual(app.errors, [], 'page errors');
-  } finally { await app.close(); }
-});
-
-test('the drill board draws the frets its own heading names', async () => {
-  // A drill headed "Open position · frets 0–5" drew its box over frets 0–3 —
-  // the frets the shape happens to touch — so the picture and the heading
-  // disagreed about what the drill was. And it drew all twelve frets for six
-  // notes, leaving three quarters of the board empty on a desktop.
-  const app = await openApp(SILENT, '/index.html#drill', DESK);
-  try {
-    const { page } = app;
-    await page.click('#startBtn');
-    await page.waitForSelector('#drPick:not(.hidden)', { timeout: 5000 });
-    await page.click('#drStart');
-    await page.waitForSelector('#drRun:not(.hidden)', { timeout: 3000 });
-    const r = await page.evaluate(() => {
-      const svg = document.querySelector('#drBoard .neck-svg');
-      // No tap handler on this board, so the printed fret numbers are the record
-      // of what was drawn.
-      const cols = [...svg.querySelectorAll('.neck-fretnum')]
-        .map(e => parseInt(e.textContent, 10)).filter(n => !isNaN(n));
-      const card = svg.closest('.card').getBoundingClientRect().width;
-      return { title: document.getElementById('drRunTitle').textContent,
-               from: Math.min.apply(null, cols), to: Math.max.apply(null, cols),
-               board: svg.getBoundingClientRect().width, card };
-    });
-    const m = r.title.match(/frets (\d+)–(\d+)/);
-    assert.ok(m, 'the default drill should name a fret range: "' + r.title + '"');
-    assert.ok(r.from <= +m[1] && r.to >= +m[2],
-      'heading says frets ' + m[1] + '–' + m[2] + ' but the board draws ' + r.from + '–' + r.to);
-    assert.ok(r.to <= +m[2] + 3,
-      'the board runs to fret ' + r.to + ' for a drill that ends at ' + m[2]);
-    assert.ok(r.board > r.card * 0.7,
-      'the board is ' + Math.round(r.board) + 'px inside a ' + Math.round(r.card) + 'px card');
     assert.deepEqual(app.errors, [], 'page errors');
   } finally { await app.close(); }
 });

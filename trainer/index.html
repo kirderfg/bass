@@ -5,12 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bass Live Trainer — moved</title>
 <script>
-/* The Live Trainer is not a separate page any more: its five modes are five
-   tabs of the one app. This file exists only so links that were made when it
-   was a page still land where they pointed — including the practice plan's
-   old #drill and #songs deep links, which is why the hash is carried across
-   rather than dropped. replace(), not assign(), so Back does not bounce off
-   this redirect. */
+/* The Live Trainer is not a separate page any more: its modes are tabs of the
+   one app. This file exists only so links that were made when it was a page
+   still land where they pointed, which is why the hash is carried across
+   rather than dropped — the shell forwards the retired ones (#drill, #echo)
+   on to the game. replace(), not assign(), so Back does not bounce off this
+   redirect. */
 location.replace('../index.html' + (location.hash || ''));
 </script>
 <noscript><meta http-equiv="refresh" content="0; url=../index.html"></noscript>

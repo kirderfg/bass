@@ -2,11 +2,11 @@
   "name": "bass-trainer",
   "version": "1.0.0",
   "private": true,
-  "description": "Bass Trainer — one self-contained web page, Learn tabs plus mic-driven Live tabs, no build step",
+  "description": "Bass Trainer — one self-contained web page: a bass game, two chart tabs and two mic-driven Live modes, no build step",
   "scripts": {
-    "test": "node --test 'trainer/test/core.test.js' 'trainer/test/neck.test.js' 'trainer/test/drill.test.js' 'trainer/test/songs.test.js' 'trainer/test/course.test.js' 'trainer/test/game.test.js' 'trainer/test/scales.test.js'",
-    "test:watch": "node --test --watch 'trainer/test/core.test.js' 'trainer/test/neck.test.js' 'trainer/test/drill.test.js' 'trainer/test/songs.test.js' 'trainer/test/course.test.js' 'trainer/test/game.test.js' 'trainer/test/scales.test.js'",
-    "test:e2e": "node --test --test-concurrency=1 'trainer/test/integration.test.js' 'trainer/test/merged.test.js' 'trainer/test/shell.test.js' 'trainer/test/session.test.js' 'trainer/test/bookkeeping.test.js' 'trainer/test/polish.test.js' 'trainer/test/program.test.js' 'trainer/test/scalemode.test.js'",
+    "test": "node --test 'trainer/test/core.test.js' 'trainer/test/neck.test.js' 'trainer/test/songs.test.js' 'trainer/test/game.test.js' 'trainer/test/scales.test.js'",
+    "test:watch": "node --test --watch 'trainer/test/core.test.js' 'trainer/test/neck.test.js' 'trainer/test/songs.test.js' 'trainer/test/game.test.js' 'trainer/test/scales.test.js'",
+    "test:e2e": "node --test --test-concurrency=1 'trainer/test/integration.test.js' 'trainer/test/merged.test.js' 'trainer/test/shell.test.js' 'trainer/test/session.test.js' 'trainer/test/bookkeeping.test.js' 'trainer/test/polish.test.js' 'trainer/test/playalong.test.js' 'trainer/test/scalemode.test.js'",
     "test:all": "npm test && npm run test:e2e"
   }
 }

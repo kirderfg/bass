@@ -94,7 +94,7 @@ button{font-family:inherit;}
 .t-data{font-family:var(--mono); font-size:12px; line-height:1.4; font-weight:500; color:var(--t4); font-variant-numeric:tabular-nums;}
 .t-body{font-size:15.5px; line-height:1.6; max-width:62ch;}
 .num{font-variant-numeric:tabular-nums;}
-/* The bare headings the Practice/Scales/Chords markup is written with. Same
+/* The bare headings the Scales/Chords markup is written with. Same
    sizes as .t-title1 / .t-eyebrow — these carry the section rhythm too. */
 h2{font-size:clamp(22px,5.6vw,26px); line-height:1.15; font-weight:750; letter-spacing:-.02em; color:var(--t1); margin:var(--sp5) 2px var(--sp2);}
 h3{font-size:11px; margin:var(--sp4) 2px var(--sp2); color:var(--t3); font-weight:700; text-transform:uppercase; letter-spacing:.11em;}
@@ -218,10 +218,11 @@ section.tab.on{display:block; animation:fade .18s ease;}
 @keyframes fade{from{opacity:.4; transform:translateY(3px);} to{opacity:1; transform:none;}}
 
 /* ---------- nav ----------
-   Nine destinations in one undifferentiated row is a smear. Four of them work
-   with nothing but the screen; the other five listen to the bass. So the bar
-   is two labelled groups with a rule between them, and the Live group's label
-   is the warning: you need the bass plugged in. */
+   Five destinations, in two labelled groups with a rule between them. Three
+   listen to the bass and two work with nothing but the screen, and the Live
+   group's label is the warning: you need the bass plugged in. Two groups is
+   also a HEIGHT contract — --nav-h below is what the transport bar and the
+   game's fixed-height console are both measured against. */
 nav.tabbar{
   position:fixed; bottom:0; left:0; right:0; z-index:50;
   display:flex; flex-direction:column;

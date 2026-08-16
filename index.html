@@ -24,25 +24,27 @@
      own scope, because both declare TUNING, SCALES, NAMES and more.
      This file is the shell: the chrome they share, the markup they
      render into, and the router at the bottom that decides which of
-     the nine destinations has the screen.
+     the five destinations has the screen.
      ================================================================== -->
 <header>
   <h1 class="t-title2">Bass <span>Trainer</span></h1>
 </header>
 <main>
-  <!-- ---------- Learn: no microphone, ever ---------- -->
-  <section class="tab" id="tab-practice"></section>
+  <!-- ---------- Learn: no microphone, ever ----------
+       Reference only. Everything that used to DRILL you here — the note
+       quiz, the ear trainer, the pattern drills and the twelve-week
+       calendar — is the game now; these two are the charts you look
+       things up on between runs. -->
   <section class="tab" id="tab-scales"></section>
   <section class="tab" id="tab-chords"></section>
-  <section class="tab" id="tab-trainer"></section>
 
   <!-- ---------- Live: needs the bass plugged in ----------
-       All five Live modes share this one section, because they share one
+       All three Live modes share this one section, because they share one
        microphone, one level meter and one input picker. -->
   <section class="tab" id="tab-live">
     <!-- The mic gate, shown inline in whichever Live mode was asked for and
          never after the first grant. One button does both jobs: arriving at
-         #drill reads "Start listening & run the drill", not Start then Run. -->
+         #songs reads "Start listening & follow the song", not Start then Run. -->
     <div id="gate">
       <svg viewBox="0 0 120 48" class="gate-art" role="img" aria-hidden="true">
         <rect x="4" y="14" width="52" height="20" rx="4" fill="var(--wood)" stroke="var(--line)"/>
@@ -60,8 +62,6 @@
       <p><button class="btn primary" id="startBtn">Start listening</button></p>
       <p class="small muted">Nothing is recorded or uploaded — audio is analysed on your device and thrown away.</p>
       <p class="err hidden" id="gateErr"></p>
-      <!-- Read-only facts about tonight that do not need the microphone. -->
-      <div class="card tight hidden" id="gateExtra" style="margin-top:var(--sp3); text-align:left"></div>
     </div>
 
     <div id="app" class="hidden">
@@ -106,7 +106,7 @@
         <!-- The end of tuning was previously unmarked: five ✓ chips and no
              statement that the job was finished. -->
         <p class="note-box good hidden" id="tuneDone" style="margin:10px 0 0">All five strings are in tune.
-        <b>“Tune up” is ticked off tonight's practice</b> — go and play.</p>
+        <b>That's the tuning done</b> — <button class="btn small" data-tab-link="play">go and play</button>.</p>
         <p class="muted small" style="margin:10px 0 0">Play each <b>open</b> string in turn (no fingers on the neck): <b id="tStrings">B E A D G</b>. Line the needle up in the green zone.<br>
         <span style="opacity:.8">A <b>cent</b> is a hundredth of a fret's worth of pitch — 100 cents = 1 fret. Under 15 cents is close enough for rock.</span></p>
       </div><div class="card" id="tunerAside">
@@ -143,7 +143,7 @@
            One line, always: a narrow phone scrolls the strip sideways rather
            than wrapping it, because a wrapping strip moves the console. -->
       <div class="gv-head">
-        <h2>Find it</h2>
+        <h2>Play</h2>
         <div class="gv-modes" id="gvModes" role="group" aria-label="What the game asks for">
           <button data-gm="notes" aria-pressed="true">Notes</button>
           <button data-gm="scales" aria-pressed="false">Scales</button>
@@ -382,6 +382,32 @@
                losing which string it is reading. -->
           <div class="gv-mapboard neck" id="gvMapBoard"></div>
           <p class="t-caption gv-mapnote hidden" id="gvMapNote"></p>
+          <!-- THE FIVE RULES. These were the Note quiz tab's teaching cards,
+               shown one at a time as its difficulty tiers unlocked. That tab
+               is retired — the game asks the questions now — so the lessons
+               moved to the chart they are lessons about, and are all here at
+               once rather than doled out. -->
+          <div class="gv-maprules">
+            <b class="t-title3">Five rules that do most of the work</b>
+            <dl class="gv-rules">
+              <dt>B–C and E–F have nothing in between</dt>
+              <dd>Between most letter names there is a sharp, one fret apart. These two pairs are the
+              exceptions — they sit on neighbouring frets. Learn those two and the rest of the neck falls
+              into place.</dd>
+              <dt>One fret is a half step</dt>
+              <dd>Every fret raises the pitch by the smallest step there is; two frets make a whole step.
+              Every scale shape is a recipe of those steps, which is why the shapes move.</dd>
+              <dt>Two strings up, two frets up is the same note</dt>
+              <dd>That is the octave shape, and it works anywhere on the neck. Find a root and you
+              instantly know a second place to play it.</dd>
+              <dt>The low B is the E string, five frets up</dt>
+              <dd>Any note on the E string also lives on the B string five frets higher — E is fret 5, G is
+              fret 8. Learn the E string and the B string comes free.</dd>
+              <dt>C♯ and D♭ are one fret</dt>
+              <dd>One fret, two names; which one you use depends on the key. Under your finger it is
+              identical, so do not let the double names put you off.</dd>
+            </dl>
+          </div>
         </div>
       </details>
 
@@ -448,178 +474,6 @@
           fret lower — every ♯ has a flat name too: <b>C♯ = D♭</b> — same fret, same sound.</p>
         </div>
       </details>
-    </section>
-
-    <!-- Ear training's difficulty: same tiers as the Note quiz. The game above
-         carries its own copy of these controls inside its settings card. -->
-    <div class="card hidden" id="difficultyCard" style="padding:10px 12px">
-        <div class="small muted" style="margin-bottom:6px">Difficulty</div>
-        <select id="tierSel"></select>
-        <div class="small muted" style="margin:10px 0 6px">Drill</div>
-        <div class="seg" id="focusSeg"></div>
-    </div>
-
-    <!-- ================= ECHO ================= -->
-    <section id="secEcho" class="hidden">
-      <h2>Ear training</h2>
-      <div class="card">
-        <div class="q" id="eQ">Listen, then play it back</div>
-        <div class="qsub">No note name, no fret — use your ears. Play the note you heard, anywhere on the neck.</div>
-        <div class="row" style="justify-content:center; margin:10px 0">
-          <!-- "Play the note" sat directly under "Play the note you heard": one is
-               the app playing, the other is you. Only one of them is a button. -->
-          <button class="btn primary" id="ePlay">Let me hear it</button>
-          <button class="btn small" id="eNext">New note →</button>
-          <button class="btn small hidden" id="eShow">Show me the note</button>
-        </div>
-        <div class="verdict" id="eVerdict">&nbsp;</div>
-        <div class="heard" id="eHeard">&nbsp;</div>
-        <div class="stat-row">
-          <div class="stat"><b id="eScore">0</b><span>correct</span></div>
-          <div class="stat"><b id="eStreak">0</b><span>streak</span></div>
-        </div>
-        <p class="muted small" style="margin:10px 0 0">Play it in <b>any</b> octave — anywhere on the neck is fine. Matching the note by ear is the skill here, not the position.</p>
-      </div>
-    </section>
-
-    <!-- ================= DRILLS ================= -->
-    <section id="secDrill" class="hidden">
-      <h2>Drills</h2>
-
-      <!-- ---- running a drill ---- -->
-      <div class="card hidden" id="drRun">
-        <div class="row between">
-          <div>
-            <div class="t-eyebrow" id="drRunKind">Ascending</div>
-            <b class="t-title3" id="drRunTitle">—</b>
-          </div>
-          <span class="pill num" id="drProg">0 of 0</span>
-        </div>
-        <div class="row" style="margin-top:var(--sp2)">
-          <span class="t-caption">Dots say</span>
-          <div class="seg compact" id="drLabelSegRun" aria-label="What the dots say">
-            <button data-k="names">Names</button>
-            <button data-k="degrees">Degrees</button>
-          </div>
-        </div>
-        <div id="drBoard"></div>
-        <p class="t-caption hidden" id="drLegend" style="margin:0"></p>
-        <p class="t-caption" id="drHint" style="margin:var(--sp2) 0 0"></p>
-        <!-- a run that will not advance must never be a dead end -->
-        <div class="note-box warn hidden" id="drStall" style="margin-top:var(--sp3)"></div>
-        <div class="row hidden" id="drEscape" style="margin-top:var(--sp2)">
-          <button class="btn" id="drShow">Show me this note</button>
-          <button class="btn" id="drSkip">Skip this note</button>
-        </div>
-        <div id="drPanel"></div>
-        <div class="row" style="margin-top:var(--sp3)">
-          <button class="btn primary hidden" id="drGo">Again</button>
-          <button class="btn hidden" id="drFix">Fix that bit</button>
-          <button class="btn hidden" id="drTempoBtn">+8%</button>
-          <button class="btn hidden" id="drTempoDownBtn">−8%</button>
-          <button class="btn ghost" id="drRestart">Restart this run</button>
-          <button class="btn ghost" id="drBack">Change drill</button>
-        </div>
-        <div class="row" style="margin-top:var(--sp3)" id="drPills"></div>
-        <p class="t-caption" id="drPillNote" style="margin:var(--sp2) 0 0"></p>
-      </div>
-
-      <!-- ---- picking a drill ---- -->
-      <div class="card" id="drPick">
-        <!-- no "Drills" eyebrow here: the section's h2 above already says it -->
-        <h2 class="t-title3" style="margin:2px 0 4px">Play it in order</h2>
-        <p class="t-caption" style="margin:0">A drill checks the <b>order</b> you play notes in — not just whether you can
-        find one note. Nothing is flagged while you play: a wrong note stops the run, and you are told what happened
-        once it has stopped.</p>
-        <!-- the primary action stays above the fold: it is the whole point of this card -->
-        <div class="row" style="margin-top:var(--sp3)">
-          <button class="btn primary" id="drStart">Start the drill</button>
-          <button class="btn hidden" id="drStartPicked">Play what I picked instead</button>
-          <span class="t-caption" style="margin-left:var(--sp3)">Dots say</span>
-          <div class="seg compact" id="drLabelSeg" aria-label="What the dots say">
-            <button data-k="names">Names</button>
-            <button data-k="degrees">Degrees</button>
-          </div>
-        </div>
-        <p class="t-caption hidden" id="drDueCta" style="margin:var(--sp2) 0 0"></p>
-        <p class="t-caption" id="drPreview" style="margin:var(--sp3) 0 0"></p>
-        <!-- Whether this run can bank a mastery day, stated next to the button
-             that starts it. The rule used to be discoverable only afterwards. -->
-        <p class="note-box hidden" id="drBankNote" style="margin:var(--sp2) 0 0"></p>
-        <p class="t-caption hidden" id="drLegendPick" style="margin:var(--sp1) 0 0"></p>
-        <p class="t-caption hidden" id="drTargetNote" style="margin:var(--sp2) 0 0"></p>
-        <div class="two-col" style="margin-top:var(--sp4)">
-          <div>
-            <div class="t-eyebrow">What to drill</div>
-            <div class="seg compact" id="drTypeSeg" style="margin:6px 0 0">
-              <button data-k="scale" class="on">Scale</button>
-              <button data-k="chromatic">Chromatic 1-2-3-4</button>
-              <button data-k="octave">Octave shape</button>
-              <button data-k="rhythm">Rhythm</button>
-            </div>
-
-            <div class="row" style="margin-top:var(--sp3); align-items:flex-end">
-              <label style="flex:2 1 170px" id="drScaleWrap">
-                <span class="t-caption">Scale</span>
-                <select id="drScaleSel"></select>
-              </label>
-              <label style="flex:1 1 96px" id="drRootWrap">
-                <span class="t-caption">Root</span>
-                <select id="drRootSel"></select>
-              </label>
-            </div>
-            <div class="row" style="margin-top:var(--sp2); align-items:flex-end">
-              <label style="flex:2 1 190px" id="drWinWrap">
-                <span class="t-caption">Where on the neck</span>
-                <select id="drWinSel"></select>
-              </label>
-              <label style="flex:1 1 110px" id="drStringWrap">
-                <span class="t-caption">String</span>
-                <select id="drStringSel"></select>
-              </label>
-              <!-- rhythm drills only: what to sustain, and for how long -->
-              <label style="flex:2 1 170px" id="drPatWrap">
-                <span class="t-caption">Pattern</span>
-                <select id="drPatSel"></select>
-              </label>
-              <label style="flex:1 1 96px" id="drBarsWrap">
-                <span class="t-caption">Length</span>
-                <select id="drBarsSel"></select>
-              </label>
-            </div>
-
-            <!-- hidden for rhythm drills: a "middle" of the same note over and
-                 over is not a different task, so the choice would be noise -->
-            <div id="drVarWrap">
-              <div class="t-eyebrow" style="margin:var(--sp4) 0 6px">How much of it</div>
-              <div class="seg compact" id="drVarSeg">
-                <button data-v="full" class="on">Whole shape</button>
-                <button data-v="middle">Middle only</button>
-              </div>
-            </div>
-
-            <div class="t-eyebrow" style="margin:var(--sp4) 0 6px">Click</div>
-            <div class="row">
-              <label class="row dr-check">
-                <input type="checkbox" id="drMet"><span class="t-caption">Metronome</span>
-              </label>
-              <button class="btn small dr-step" id="drBpmDown" aria-label="Slower">−</button>
-              <span class="pill num" id="drBpmTxt">60 bpm</span>
-              <button class="btn small dr-step" id="drBpmUp" aria-label="Faster">+</button>
-            </div>
-          </div>
-          <div>
-            <div class="t-eyebrow">Due today</div>
-            <div id="drDue" style="margin-top:6px"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ---- everything you have drilled ---- -->
-      <div class="card" id="drShelf">
-        <div class="t-eyebrow">Your drills</div>
-        <div id="drShelfBody" style="margin-top:6px"></div>
-      </div>
     </section>
 
     <!-- ================= SONGS ================= -->
@@ -765,7 +619,10 @@
         <span class="small muted">Bass</span>
         <span class="small muted">Listening for a <b>5-string, B E A D G</b></span>
       </div>
-      <p class="small muted" style="margin:8px 0 0" id="feedNote">Answers here feed the same progress stats as the Theory Trainer's practice checkpoints.</p>
+      <!-- Overwritten by gvFeedNote on every mode switch; this is the text
+           the game's own screen would set, so the card never flashes a
+           sentence about a screen you are not on. -->
+      <p class="small muted" style="margin:8px 0 0" id="feedNote">Every note you find banks XP toward the next level, and the ones you fumble come back sooner.</p>
     </div>
   </div>
   </section>
@@ -775,22 +632,31 @@
   <span class="mb-bpm" id="mbBpm">60 bpm</span>
   <button class="btn small" id="mbStop">■ Stop</button>
 </div>
+<!-- FIVE destinations, and the first one is the app.
+
+     This used to be nine, and the front door was a twelve-week calendar
+     you read rather than played. The exercises that lived in the other
+     slots — the note quiz, the ear trainer, the pattern drills — are
+     modes of the game now, or on its roadmap, so the nav says what is
+     left: play the game, tune, follow a song, or look something up.
+
+     STILL TWO GROUPS, in the order you use them: Play leads because it
+     is the app, and the two charts follow because you consult them
+     between runs. A third group for Play on its own would be honest and
+     would also make the phone's nav taller than --nav-h, which the
+     transport bar and every fixed-height console are measured against. -->
 <nav class="tabbar" id="tabbar">
   <div class="rail-title">Bass <span>Trainer</span></div>
-  <div class="tab-group" role="group" aria-label="Learn — works with no microphone">
-    <div class="tab-grouplabel" aria-hidden="true">Learn</div>
-    <button data-tab="practice"><svg viewBox="0 0 24 24" class="ic"><rect x="4" y="3" width="16" height="18" rx="2.5"/><path d="M8.5 9.5l2 2 4-4.5"/><path d="M9 15h7"/></svg>Practice</button>
+  <div class="tab-group" role="group" aria-label="Play, tune and follow songs — needs your bass plugged in">
+    <div class="tab-grouplabel" aria-hidden="true">Live<span class="needs-short">plug in</span><span class="needs-long">needs your bass plugged in</span></div>
+    <button data-tab="play"><svg viewBox="0 0 24 24" class="ic"><path d="M8 5.5v13l11-6.5z"/></svg>Play</button>
+    <button data-tab="tuner"><svg viewBox="0 0 24 24" class="ic"><path d="M4 15a8 8 0 0 1 16 0"/><path d="M12 15l4.5-5"/><circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/><path d="M3.5 18h17"/></svg>Tuner</button>
+    <button data-tab="songs"><svg viewBox="0 0 24 24" class="ic"><circle cx="7" cy="17.5" r="3"/><circle cx="18" cy="15" r="3"/><path d="M10 17.5V6l11-2.5V15"/></svg>Songs</button>
+  </div>
+  <div class="tab-group" role="group" aria-label="Look it up — works with no microphone">
+    <div class="tab-grouplabel" aria-hidden="true">Look it up</div>
     <button data-tab="scales"><svg viewBox="0 0 24 24" class="ic"><path d="M4 17.5a2.5 2.5 0 1 0 5 0V6l9-2.5v9"/><path d="M13 13.5a2.5 2.5 0 1 0 5 0"/></svg>Scales</button>
     <button data-tab="chords"><svg viewBox="0 0 24 24" class="ic"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="8" cy="6" r="2.2" fill="currentColor" stroke="none"/><circle cx="14" cy="12" r="2.2" fill="currentColor" stroke="none"/><circle cx="10" cy="18" r="2.2" fill="currentColor" stroke="none"/></svg>Chords</button>
-    <button data-tab="trainer"><svg viewBox="0 0 24 24" class="ic"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>Note quiz</button>
-  </div>
-  <div class="tab-group" role="group" aria-label="Live — needs your bass plugged in">
-    <div class="tab-grouplabel" aria-hidden="true">Live<span class="needs-short">plug in</span><span class="needs-long">needs your bass plugged in</span></div>
-    <button data-tab="tuner"><svg viewBox="0 0 24 24" class="ic"><path d="M4 15a8 8 0 0 1 16 0"/><path d="M12 15l4.5-5"/><circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/><path d="M3.5 18h17"/></svg>Tuner</button>
-    <button data-tab="find"><svg viewBox="0 0 24 24" class="ic"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/><path d="M8 10.5h5"/></svg>Find it</button>
-    <button data-tab="echo"><svg viewBox="0 0 24 24" class="ic"><path d="M4 12h1.5"/><path d="M8.5 8v8"/><path d="M12 5v14"/><path d="M15.5 8.5v7"/><path d="M19 11v2"/></svg>Ear</button>
-    <button data-tab="drill"><svg viewBox="0 0 24 24" class="ic"><path d="M4 18h4V9"/><path d="M10 18h4V5"/><path d="M16 18h4v-6"/></svg>Drills</button>
-    <button data-tab="songs"><svg viewBox="0 0 24 24" class="ic"><circle cx="7" cy="17.5" r="3"/><circle cx="18" cy="15" r="3"/><path d="M10 17.5V6l11-2.5V15"/></svg>Songs</button>
   </div>
 </nav>
 <script src="shared/neck.js"></script>
@@ -802,38 +668,45 @@
      moveable box, the run judge and the stage ladder), kept pure so
      trainer/test/scales.test.js can require() them in Node. -->
 <script src="shared/scales.js"></script>
-<!-- the Live Trainer's own rules for mastery and its song list. The Theory
-     half reads them too, so "This week" reports the same verdicts Drills and
-     Songs reached. -->
-<script src="shared/drill.js"></script>
+<!-- the song list and its roadmaps, for the one Live mode that plays along. -->
 <script src="shared/songs.js"></script>
-<!-- the 12-week course as data. Loaded before app-theory, which renders it
-     and keeps only thin delegates (weekOf etc.) of its own. -->
-<script src="shared/course.js"></script>
 <script src="trainer/core.js"></script>
 <script src="shared/app-theory.js"></script>
 <script src="shared/app-live.js"></script>
 <script>
 /* ==================================================================
-   ROUTER — nine destinations, two apps, one hash.
+   ROUTER — five destinations, two apps, one hash.
 
    The two halves know nothing about each other. This is the only place
    that knows both, and it is deliberately the only place that decides
    which section is on screen, when the analyser loop runs, and what a
    hash in the URL means.
+
+   `play` is the front door and the Live half still calls the game
+   `find` internally — that name is all over its state, its tests and
+   its markup. Rather than rename a thousand lines to change one word
+   on a button, the translation lives here, in the one file whose job
+   is already knowing both halves' vocabularies.
    ================================================================== */
 (function(){
 "use strict";
-const LEARN = ['practice','scales','chords','trainer'];
-const LIVE  = ['tuner','find','echo','drill','songs'];
+const LEARN = ['scales','chords'];
+const LIVE  = ['play','tuner','songs'];
+const MODE_OF = { play:'find', tuner:'tuner', songs:'songs' };
+/* Where the retired tabs send you. Everything that used to drill you is
+   the game now, so every retired exercise lands on Play; a bookmark
+   saved to #practice or #drill in the old app opens the new front door
+   rather than a blank screen. #find is the game's own old name. */
+const RETIRED = { practice:'play', trainer:'play', echo:'play', drill:'play', find:'play' };
 const live  = document.getElementById('tab-live');
 
 function go(dest){
-  if (!LEARN.includes(dest) && !LIVE.includes(dest)) dest = 'practice';
+  if (RETIRED[dest]) dest = RETIRED[dest];
+  if (!LEARN.includes(dest) && !LIVE.includes(dest)) dest = 'play';
   if (LIVE.includes(dest)){
     BassTheory.showTab(null);          // put the Learn sections away
     live.classList.add('on');
-    BassLive.showMode(dest);           // gates on the first Live mode, never again
+    BassLive.showMode(MODE_OF[dest]);  // gates on the first Live mode, never again
   } else {
     live.classList.remove('on');
     /* The stream and the AudioContext stay open, so coming back is instant and
@@ -844,7 +717,7 @@ function go(dest){
   }
   window.scrollTo(0, 0);
   /* Keep the hash pointing at where you are, so a reload lands back here rather
-     than on the practice plan — you reload mid-session, and being thrown back to
+     than on the game — you reload mid-session, and being thrown back to
      the front page each time is its own small tax. replaceState, not a hash
      assignment: it does not fire hashchange (no double-routing) and does not
      stack a history entry per tab, so Back still leaves the app. Guarded because
@@ -857,14 +730,23 @@ document.getElementById('tabbar').addEventListener('click', e => {
   const b = e.target.closest('button');
   if (b && b.dataset.tab) go(b.dataset.tab);
 });
+/* In-page routes: a screen that has finished its job says what to do next and
+   means it ("go and play" at the end of tuning). Delegated at <main> so any
+   section can offer one without wiring a handler of its own. */
+document.querySelector('main').addEventListener('click', e => {
+  const b = e.target.closest('[data-tab-link]');
+  if (b) go(b.dataset.tabLink);
+});
 
-/* Deep links. The Live half answered #tuner … #songs when it was its own page,
-   and trainer/index.html now redirects here carrying its hash, so those five
-   have to keep landing where they always did. The four Learn tabs answer to
-   their own names too. The hash is never WRITTEN on a tab switch: it is an
-   entry point, not a history trail. */
+/* Deep links, including every name this app has ever answered to:
+   trainer/index.html still redirects here carrying its hash, and four
+   tabs' worth of bookmarks are out in the world pointing at exercises
+   that are now modes of the game. RETIRED forwards those rather than
+   dropping them on the floor. The hash is never WRITTEN on a tab
+   switch: it is an entry point, not a history trail. */
 function destFromHash(){
   const h = (location.hash || '').replace(/^#/, '');
+  if (RETIRED[h]) return RETIRED[h];
   return (LEARN.includes(h) || LIVE.includes(h)) ? h : null;
 }
 window.addEventListener('hashchange', () => {
@@ -872,9 +754,9 @@ window.addEventListener('hashchange', () => {
   if (d) go(d);
 });
 
-BassTheory.mount({ navigate: go });
+BassTheory.mount();
 BassLive.mount();
-go(destFromHash() || 'practice');
+go(destFromHash() || 'play');
 })();
 </script>
 </body>

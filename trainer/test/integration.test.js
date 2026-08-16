@@ -36,11 +36,11 @@ test('the tuner tells a flat string which way to turn the peg', async () => {
   } finally { await app.close(); }
 });
 
-test('playing the requested note scores a point and records it for the practice checkpoints', async () => {
+test('playing the requested note scores a point and is remembered against that position', async () => {
   const app = await openWithNote(G2);
   try {
     await app.page.evaluate(() => {
-      localStorage.removeItem('bassTheoryTrainer.v1');
+      localStorage.removeItem('bassTrainer.gamemem.v1');
       setMode('find');
       // Ask for exactly the note our synthetic bass is playing: G on the E string.
       q = { si: 1, f: 3, midi: 43, sn: 'E', name: 'G' };
@@ -55,12 +55,13 @@ test('playing the requested note scores a point and records it for the practice 
     });
     assert.ok(verdict, 'app never accepted the correct note');
 
+    /* The game keeps two things and no more: which positions you have missed,
+       and a rolling last-6 per position for the picker. A find writes the
+       second and leaves the first alone. */
     const stats = await app.page.evaluate(() =>
-      JSON.parse(localStorage.getItem('bassTheoryTrainer.v1')).stats);
-    assert.equal(stats.correct, 1, 'one correct answer should be banked');
-    assert.equal(stats.byString.E.c, 1, 'credited to the E string');
-    assert.ok(Array.isArray(stats.byString.E.recent) && stats.byString.E.recent[0] === 1,
-      'written in the rolling last-20 format the Theory Trainer reads');
+      JSON.parse(localStorage.getItem('bassTrainer.gamemem.v1')).stats);
+    assert.deepEqual(stats.noteRecent['E:3'], [1], 'the find should be remembered at E:3');
+    assert.equal(stats.heat['E:3'], undefined, 'a clean find must not mark a weak spot');
     assert.deepEqual(app.errors, [], 'page errors');
   } finally { await app.close(); }
 });
@@ -73,7 +74,7 @@ test('playing the wrong note is rejected, and the question stays open', async ()
   const app = await openWithNote(A1); // playing A, but we will ask for G
   try {
     await app.page.evaluate(() => {
-      localStorage.removeItem('bassTheoryTrainer.v1');
+      localStorage.removeItem('bassTrainer.gamemem.v1');
       setMode('find');
       q = { si: 1, f: 3, midi: 43, sn: 'E', name: 'G' };
       wrongThisQ = 0; qStart = performance.now();
@@ -98,7 +99,7 @@ test('playing the wrong note is rejected, and the question stays open', async ()
     const r = await app.page.evaluate(() => ({
       sub: document.getElementById('fSub').textContent,
       asking: q && (q.name + ':' + q.sn + ':' + q.f),
-      stats: JSON.parse(localStorage.getItem('bassTheoryTrainer.v1')).stats,
+      stats: JSON.parse(localStorage.getItem('bassTrainer.gamemem.v1')).stats,
     }));
     assert.doesNotMatch(r.sub, /fret \d/,
       `the game gave a fret away by itself: "${r.sub}"`);
@@ -106,7 +107,8 @@ test('playing the wrong note is rejected, and the question stays open', async ()
       `a hint ladder is still running: "${r.sub}"`);
     assert.equal(r.asking, 'G:E:3',
       'the question moved on by itself while the player was still hunting');
-    assert.equal(r.stats.correct, 0);
+    assert.deepEqual(r.stats.noteRecent['E:3'], [0],
+      'the miss was not banked against the position the picker reads');
     assert.equal(r.stats.heat['E:3'], 1, 'the miss should show on the fretboard heatmap');
   } finally { await app.close(); }
 });
@@ -115,7 +117,7 @@ test('the right note in the wrong octave gets its own explanation', async () => 
   const app = await openWithNote(G3); // G, but an octave above the asked-for G2
   try {
     await app.page.evaluate(() => {
-      localStorage.removeItem('bassTheoryTrainer.v1');
+      localStorage.removeItem('bassTrainer.gamemem.v1');
       setMode('find');
       q = { si: 1, f: 3, midi: 43, sn: 'E', name: 'G' };
       wrongThisQ = 0; qStart = performance.now();
@@ -126,23 +128,6 @@ test('the right note in the wrong octave gets its own explanation', async () => 
       return el.className.includes('no') ? el.textContent : null;
     });
     assert.match(verdict, /octave/i, `expected an octave-specific message, got "${verdict}"`);
-  } finally { await app.close(); }
-});
-
-test('echo mode accepts the right pitch class played in any octave', async () => {
-  const app = await openWithNote(G2);
-  try {
-    await app.page.evaluate(() => {
-      setMode('echo');
-      echoTarget = 55;      // G3 — an octave above what we are about to play
-      tracker.reset();
-    });
-    const verdict = await until(app.page, () => {
-      const el = document.getElementById('eVerdict');
-      return el.className.includes('ok') ? el.textContent : null;
-    });
-    assert.ok(verdict, 'echo mode should accept the same note an octave away');
-    assert.match(verdict, /G/);
   } finally { await app.close(); }
 });
 
@@ -173,7 +158,7 @@ test('a still-ringing string does not answer the question that follows it', asyn
   const app = await openWithNote(G2, { seconds: 20, leadSeconds: 5, toneSeconds: 10 });
   try {
     await app.page.evaluate(() => {
-      localStorage.removeItem('bassTheoryTrainer.v1');
+      localStorage.removeItem('bassTrainer.gamemem.v1');
       setMode('find');
       q = { si: 1, f: 3, midi: 43, sn: 'E', name: 'G' };
       wrongThisQ = 0; qStart = performance.now();
@@ -188,10 +173,9 @@ test('a still-ringing string does not answer the question that follows it', asyn
     await new Promise(r => setTimeout(r, 4000));
 
     const stats = await app.page.evaluate(() =>
-      JSON.parse(localStorage.getItem('bassTheoryTrainer.v1')).stats);
-    assert.equal(stats.correct, 1, 'exactly one answer was actually played');
-    assert.equal(stats.answered, 1,
-      `the ring-out was judged again: ${stats.answered} answers recorded for one note`);
+      JSON.parse(localStorage.getItem('bassTrainer.gamemem.v1')).stats);
+    assert.deepEqual(stats.noteRecent['E:3'], [1],
+      `the ring-out was judged again: ${JSON.stringify(stats.noteRecent['E:3'])} for one note`);
     assert.deepEqual(stats.heat, {}, 'no phantom misses on the heatmap');
   } finally { await app.close(); }
 });
@@ -205,7 +189,7 @@ test('a note already sounding when Find-it opens dies unjudged', async () => {
     { seconds: 25, toneSeconds: 25 });
   try {
     const { page } = app;
-    await page.evaluate(() => localStorage.removeItem('bassTheoryTrainer.v1'));
+    await page.evaluate(() => localStorage.removeItem('bassTrainer.gamemem.v1'));
     await page.click('#startBtn');
     await page.waitForSelector('#secFind:not(.hidden)', { timeout: 5000 });
     // Well past the 600ms entry grace: the pre-entry ring is dead, not parked.
@@ -213,26 +197,16 @@ test('a note already sounding when Find-it opens dies unjudged', async () => {
     const r = await page.evaluate(() => ({
       verdict: document.getElementById('fVerdict').textContent.trim(),
       cls: document.getElementById('fVerdict').className,
-      stats: (JSON.parse(localStorage.getItem('bassTheoryTrainer.v1') || '{}').stats) || null,
+      stats: (JSON.parse(localStorage.getItem('bassTrainer.gamemem.v1') || '{}').stats) || null,
       asked: document.getElementById('fAsked').textContent,
     }));
     assert.equal(r.verdict.replace(/ /g, ''), '',
       `the pre-entry note was judged: "${r.verdict}"`);
     assert.equal(r.cls, 'verdict', 'a verdict class was painted');
-    assert.ok(!r.stats || !r.stats.answered,
+    assert.ok(!r.stats || !Object.keys(r.stats.noteRecent || {}).length,
       'the pre-entry note banked an answer: ' + JSON.stringify(r.stats));
     assert.equal(r.asked, '0', 'the session panel counted a question nobody answered');
     assert.deepEqual(app.errors, [], 'page errors');
-  } finally { await app.close(); }
-});
-
-test('entering echo mode does not score the note the app itself just played', async () => {
-  const app = await openWithNote(E1);
-  try {
-    await app.page.evaluate(() => { setMode('echo'); echoTarget = 43; });
-    await new Promise(r => setTimeout(r, 600));
-    const verdict = await app.page.evaluate(() => document.getElementById('eVerdict').textContent.trim());
-    assert.equal(verdict, '', `echo judged before the player did anything: "${verdict}"`);
   } finally { await app.close(); }
 });
 
@@ -486,14 +460,13 @@ test('being shown the answer banks a soft miss, not a find — and books it to c
   // Its bookkeeping is deliberately its OWN shape — softer than a wrong note,
   // harder than a find:
   //   · the position takes heat and a recent-miss (the picker must bring it back)
-  //   · the shared accuracy is NOT touched (asking to be shown is not an answer)
   //   · the session counts a question asked, no find, no first-try, streak gone
   //   · the note is booked into the review queue
   const app = await openWithNote(SILENT);
   try {
     const { page } = app;
     await page.evaluate(() => {
-      localStorage.removeItem('bassTheoryTrainer.v1');
+      localStorage.removeItem('bassTrainer.gamemem.v1');
       setMode('find');
       q = { si: 1, f: 3, midi: 43, sn: 'E', name: 'G' };
       wrongThisQ = 0; qStart = performance.now();
@@ -505,7 +478,7 @@ test('being shown the answer banks a soft miss, not a find — and books it to c
     await page.waitForTimeout(300);
     const r = await page.evaluate(() => ({
       verdict: document.getElementById('fVerdict').textContent,
-      stats: JSON.parse(localStorage.getItem('bassTheoryTrainer.v1')).stats,
+      stats: JSON.parse(localStorage.getItem('bassTrainer.gamemem.v1')).stats,
       score: document.getElementById('fScore').textContent,
       clean: document.getElementById('fClean').textContent,
       streak: document.getElementById('fStreak').textContent,
@@ -513,9 +486,6 @@ test('being shown the answer banks a soft miss, not a find — and books it to c
       xp: GV.run.state.xp, zaps: GV.run.state.zaps, combo: GV.run.state.combo,
     }));
     assert.match(r.verdict, /G/, 'a shown answer must name the note');
-    assert.equal(r.stats.answered, 0,
-      'being shown the answer polluted the shared accuracy (' + r.stats.answered + ' answered)');
-    assert.equal(r.stats.correct, 0, 'a shown answer was banked as a correct recall');
     assert.equal(r.stats.heat['E:3'], 1, 'the position took no heat — the picker will not bring it back');
     assert.deepEqual(r.stats.noteRecent['E:3'], [0], 'the rolling record does not show the miss');
     assert.equal(r.score, before.score, 'a shown answer counted as a note found');
@@ -536,31 +506,5 @@ test('being shown the answer banks a soft miss, not a find — and books it to c
     }, null, 4000);
     assert.ok(comesBack, 'the note you were shown never came back');
     assert.deepEqual(app.errors, [], 'page errors');
-  } finally { await app.close(); }
-});
-
-test('repeated guesses at one ear-training note count as a single answer', async () => {
-  // Regression: Echo recorded every wrong guess into the shared accuracy that
-  // the Theory Trainer's checkpoints read, penalising the act of practising.
-  const app = await openWithNote(G2);
-  try {
-    await app.page.evaluate(() => {
-      localStorage.removeItem('bassTheoryTrainer.v1');
-      setMode('echo');
-      echoTarget = 45;            // A2 — we will keep "playing" G at it
-      echoWrongThisTarget = 0;
-      A.muteUntil = 0;
-    });
-    await until(app.page, () => {
-      const el = document.getElementById('eVerdict');
-      return el.className.includes('no') ? el.textContent : null;
-    });
-    // Keep guessing the same wrong note for a few seconds.
-    await app.page.waitForTimeout(2500);
-
-    const stats = await app.page.evaluate(() =>
-      JSON.parse(localStorage.getItem('bassTheoryTrainer.v1')).stats);
-    assert.equal(stats.answered, 1,
-      `hunting for the note recorded ${stats.answered} answers against accuracy`);
   } finally { await app.close(); }
 });
