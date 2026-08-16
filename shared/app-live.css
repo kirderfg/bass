@@ -126,6 +126,11 @@ body .mic-card{display:flex; flex-wrap:wrap; align-items:center; gap:10px;
   #secFind{ --gv-gap:10px; --gv-hud-h:20px; --gv-q-h:66px; --gv-sub-h:38px;
     --gv-verdict-h:72px; --gv-stats-h:32px; --gv-heard-h:22px; }
 }
+/* Names mode reserves ONE line for the question — a big one — because that is
+   all it can ever be here (see the clamp below). Sheet music and Mixed keep two:
+   "Play this note on the E string" wraps in a 352px column. */
+#secFind.gv-nostaff{ --gv-q-h:38px; }
+@media (min-width:760px){ #secFind.gv-nostaff{ --gv-q-h:48px; } }
 /* Short screens (a laptop with browser chrome, a landscape phone): the page
    furniture gives its margins to the console. */
 @media (max-height:720px){
@@ -264,11 +269,16 @@ body .mic-card{display:flex; flex-wrap:wrap; align-items:center; gap:10px;
    A reserved compartment with exactly one occupant: the staff a reading
    question is written on. Nothing else may ever land here — this is the slot
    whose contents used to be 400px of hint fretboard arriving mid-question and
-   shoving the stage off the screen. Reserved in BOTH prompt modes, because the
-   console's height must not tell the player which mode they are in; empty, it
-   is quiet space between the question and its verdict, not an empty box. */
+   shoving the stage off the screen.
+
+   It is reserved in Sheet music (it holds the question) and in Mixed (where
+   the prompt flips per question, so the room has to be standing there before
+   the coin lands). In NAMES mode it does not exist: the constant-height
+   contract is per prompt mode, and holding 154px open for a staff that mode
+   never draws made the card a third empty on the screen people play most. */
 .gv-media{height:var(--gv-media-h); display:flex; align-items:center;
   justify-content:center; overflow:hidden;}
+#secFind.gv-nostaff .gv-media{display:none;}
 .gv-staffwrap{display:flex; justify-content:center; margin:0; max-height:100%;}
 /* Fixed INTEGER widths (1× or 2× the backing store) — fractional scales smear
    the staff lines, so the 1× 170×150 is the size the question staff is drawn
@@ -294,7 +304,11 @@ body .mic-card{display:flex; flex-wrap:wrap; align-items:center; gap:10px;
    down (a settings panel open), for a change that moved nothing. The console
    promises the page never moves during play; this is the browser doing it on
    the game's behalf, and it is switched off. */
-#secFind .gv-card, #secFind .gv-info, .gv-slot{overflow-anchor:none;}
+/* …and the same switch covers the whole section, not just the card: changing
+   the prompt changes the console's own height now, and an anchor node in the
+   settings panel below it would have Chrome "helpfully" scroll the page to
+   compensate. Nothing in this screen may move the page. */
+#secFind, #secFind *{overflow-anchor:none;}
 .gv-slot{display:flex; align-items:center; justify-content:center; overflow:hidden;}
 .gv-slot > *{width:100%; margin:0;}
 .gv-slot-q{height:var(--gv-q-h);}
@@ -302,6 +316,15 @@ body .mic-card{display:flex; flex-wrap:wrap; align-items:center; gap:10px;
 .gv-slot-verdict{height:var(--gv-verdict-h);}
 .gv-slot-heard{height:var(--gv-heard-h);}
 #secFind .q{padding:0; font-size:20px; line-height:1.15; text-align:center;}
+/* ---- the question, in Names mode ----
+   With no staff to reserve room for, the question becomes the hero of the read
+   column instead of a caption above a hole. It is sized against the COLUMN, not
+   the viewport: the read column is 352px at 1280 and 412px at 1366/1440, and a
+   flat size big enough for the wide one wraps "Play F♯ on the B string" onto two
+   lines in the narrow one. One line, always, as large as the column can carry —
+   ~31px at 1280, the 36px cap at 1366 and up, 28px on a phone. */
+#secFind.gv-nostaff .gv-info{container-type:inline-size;}
+#secFind.gv-nostaff .q{font-size:clamp(22px, 8.6cqw, 36px);}
 /* TWO lines are reserved for the question at this size: "Play this note on
    the E string" (the reading mode's wording, and the longest the game asks)
    wraps in a 352px read column at 1280 — and a slot that fits the short

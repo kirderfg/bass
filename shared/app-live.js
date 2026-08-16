@@ -2334,10 +2334,14 @@ function onStableNote(reading){
            the position (no heat, no recent-miss write) — the prompt was
            ambiguous, and the ceiling is a game rule, not the neck. The copy
            hedges the wrong-string reading and counts its octaves honestly. */
+        /* Tightened to three lines at phone width: measured at 380×800 this
+           was the one verdict in the game that overflowed its reserved slot
+           (73px of text in 56px), and a correction the player cannot read in
+           full is not a correction. Every fact survives — the octave count,
+           the direction, the reason, the different-string hedge, the answer. */
         vEl.textContent = 'That’s the same ' + dispQ() + ' ' + octGap + ' ' + dirWord +
-          ' — that ' + dispQ() + ' lives past this stage’s frets on the ' + q.sn +
-          ' string, or you may be on a different string. You want the ' + q.sn +
-          ' string, fret ' + q.f + '.';
+          ' — past this stage’s frets, or on another string. You want the ' +
+          q.sn + ' string, fret ' + q.f + '.';
         vEl.className = 'verdict no';
         countWrong({ soft:true });
       } else if (GV.promptKind === 'staff'){
@@ -2872,11 +2876,31 @@ function renderGameUI(){
     }));
   }
   syncSeg(snd, 'data-snd', k => (k === 'true') === GV.sound);
+  syncPromptLayout();
   updateSetupNow();
   updateBestNote();
   drawClefRef();
   renderNoteMap();   // the map follows the stage it is dimming against
   gvFitScene();   // entering/re-rendering the game: keep the pixels integer
+}
+
+/** Whether this console reserves room for a staff at all.
+
+    The constant-height contract is per PROMPT MODE, not across them: its job
+    is that nothing moves WHILE YOU PLAY, and changing the prompt is a settings
+    change that already restarts the run. So:
+      · Sheet music reserves the staff slot — it is the question.
+      · Mixed reserves it too: the prompt flips per QUESTION there, and a
+        console that changed height every other question would be the exact
+        defect this whole design exists to prevent.
+      · Names reserves NOTHING. The slot is removed, not emptied — 154px of
+        held-open air in the middle of the mode most people play is a third of
+        the card doing nothing.
+    Read from GV.prompt (the setting), never GV.promptKind (this question's
+    coin flip), or Mixed would jump. */
+function syncPromptLayout(){
+  const sec = document.getElementById('secFind');
+  if (sec) sec.classList.toggle('gv-nostaff', GV.prompt === 'name');
 }
 
 /** The note map's own controls. Built once, synced in place — same rule as the

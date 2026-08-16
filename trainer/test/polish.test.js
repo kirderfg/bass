@@ -447,6 +447,7 @@ test('leaving Ear mode takes its "playing the note" pill with it', async () => {
 const CONSOLE_VIEWPORTS = [
   { width: 1280, height: 800 },    // the desktop this is played on
   { width: 1366, height: 768 },    // the tight laptop
+  { width: 1366, height: 700 },    // …with a toolbar and a bookmarks bar
   { width: 1440, height: 900 },
   { width: 380, height: 800 },     // and it must not have broken the phone
 ];
@@ -467,10 +468,11 @@ const CONSOLE_PROBE = () => {
     headBot: document.querySelector('header').getBoundingClientRect().bottom,
     floor: window.innerHeight - navH,
     scrollTop: doc.scrollTop,
+    docH: doc.scrollHeight, winH: window.innerHeight,
   };
 };
 
-test('the game console is one fixed height that fits the screen, in every state', async () => {
+test('the game console is one fixed height per prompt mode, and fits the screen', async () => {
   for (const vp of CONSOLE_VIEWPORTS) {
     const app = await openApp(SILENT, '/index.html#find', vp);
     try {
@@ -486,34 +488,39 @@ test('the game console is one fixed height that fits the screen, in every state'
         return m;
       };
 
-      /* --- A: every state the game can be in — pace × prompt × {fresh, a
-             verdict painted, the answer shown, lights out} — and the whole
-             play area is on screen in all of them. --- */
-      for (const pace of ['chill', 'steady']) {
-        for (const prompt of ['name', 'staff']) {
-          await page.evaluate(([p, r]) => {
+      /* --- A: within ONE prompt mode, every state the game can be in — pace ×
+             {fresh, stall nudge, answer shown, burnt fuse} — is the same height,
+             and the whole play area is on screen throughout.
+             ACROSS prompt modes it may differ: Names reserves nothing for a
+             staff, and switching prompt is a settings change that restarts the
+             run, not something that happens while you are playing. --- */
+      const scenes = {};
+      for (const prompt of ['name', 'staff', 'mix']) {
+        await page.evaluate((r) => {
+          document.querySelector(`#gvPromptSeg button[data-r="${r}"]`).click();
+        }, prompt);
+        await page.waitForTimeout(200);
+        scenes[prompt] = await page.evaluate(() => document.getElementById('gvScene').style.width);
+        for (const pace of ['chill', 'steady']) {
+          await page.evaluate((p) => {
             document.querySelector(`#gvPaceSeg button[data-p="${p}"]`).click();
-            document.querySelector(`#gvPromptSeg button[data-r="${r}"]`).click();
-          }, [pace, prompt]);
+          }, pace);
           await page.waitForTimeout(150);
-          // a fresh question
-          await page.evaluate(() => document.getElementById('gvRestart').click());
-          await page.waitForTimeout(120);
-          await look(`${pace}/${prompt}/fresh`);
-          // the stall nudge: the one thing that rewrites the coaching line
+          await look(`${prompt}/${pace}/fresh`);
+          // the stall nudge — the one thing that rewrites the coaching line
           await page.evaluate(() => { lastProgressAt = performance.now() - 60000; });
           await page.waitForTimeout(900);
-          await look(`${pace}/${prompt}/nudge`);
-          // being shown the answer — the longest thing Show me can write
+          await look(`${prompt}/${pace}/nudge`);
+          // being shown the answer
           await page.evaluate(() => document.getElementById('fSkip').click());
           await page.waitForTimeout(150);
-          await look(`${pace}/${prompt}/shown`);
+          await look(`${prompt}/${pace}/shown`);
           // …and the longest verdict of all: a burnt fuse's correction
           await page.evaluate(() => document.getElementById('gvRestart').click());
           await page.waitForTimeout(120);
           await page.evaluate(() => gvBreach());
           await page.waitForTimeout(120);
-          await look(`${pace}/${prompt}/verdict`);
+          await look(`${prompt}/${pace}/verdict`);
         }
       }
       for (const m of seen) {
@@ -524,45 +531,80 @@ test('the game console is one fixed height that fits the screen, in every state'
           `Show me ends at ${m.ctlBot}, the screen ends at ${m.floor}`);
       }
 
-      /* --- B: nothing the game does moves the page. --- */
+      /* --- B: nothing the game does moves the page — including switching the
+             prompt, which changes the console's own height. --- */
       const moved = seen.filter(m => m.scrollTop !== seen[0].scrollTop);
       assert.deepEqual(moved.map(m => m.state), [],
         at + 'the page scrolled by itself during play');
 
-      /* --- C: one height, every state. --- */
-      const hs = [...new Set(seen.map(m => m.cardH))];
-      assert.ok(Math.max(...hs) - Math.min(...hs) <= 2,
-        at + 'the console changes height between states: ' + hs.join(' / '));
+      /* --- C: one height per prompt mode. --- */
+      const byPrompt = {};
+      for (const m of seen) (byPrompt[m.state.split('/')[0]] ||= []).push(m.cardH);
+      for (const k in byPrompt) {
+        const hs = [...new Set(byPrompt[k])];
+        assert.ok(Math.max(...hs) - Math.min(...hs) <= 2,
+          at + k + ': the console changes height between states: ' + hs.join(' / '));
+      }
+      /* --- D: and the SHAPE of the contract: Names reserves nothing for a
+             staff (so it is shorter), while Mixed reserves it exactly as Sheet
+             music does — the prompt flips per question there, so a Mixed
+             console that matched Names would jump every other question. --- */
+      const h = k => byPrompt[k][0];
+      assert.ok(h('name') < h('staff') - 20,
+        at + `Names still reserves a staff slot (name ${h('name')} vs staff ${h('staff')})`);
+      assert.ok(Math.abs(h('mix') - h('staff')) <= 2,
+        at + `Mixed does not reserve the staff slot (mix ${h('mix')} vs staff ${h('staff')})`);
+      /* --- E: the stage must not jump when the prompt changes. --- */
+      assert.equal(new Set(Object.values(scenes)).size, 1,
+        at + 'the scene changed size between prompt modes: ' + JSON.stringify(scenes));
 
       /* --- B again, for the settings: opening the panel may scroll (the
              player asked for it); CHANGING a setting may not. --- */
       await page.click('#gvSettings > summary');
       await page.waitForSelector('#gvPromptSeg button', { state: 'visible' });
+      /* Park the page part-way down the (now long) document rather than at its
+         end: switching to Names makes the console ~120px shorter, and a page
+         scrolled to the very bottom gets CLAMPED by the browser — which would
+         read as the app scrolling when it is the same thing that happens when
+         any disclosure closes. From here the app is the only thing that could
+         move it. */
+      await page.evaluate(() => { document.scrollingElement.scrollTop = 120; });
       await page.waitForTimeout(150);
       const base = await page.evaluate(CONSOLE_PROBE);
       /* Clicked in the page, not through Playwright: Playwright scrolls a
          control into view before clicking it, and the question here is whether
          the APP scrolls — the handler is the same one either way. */
-      const change = async (label, fn, arg) => {
+      const change = async (label, fn, arg, sameHeight = true) => {
         const was = await page.evaluate(() => document.scrollingElement.scrollTop);
         await page.evaluate(fn, arg);
         await page.waitForTimeout(180);
         const m = await page.evaluate(CONSOLE_PROBE);
-        assert.equal(m.scrollTop, was, at + 'changing ' + label + ' scrolled the page');
-        assert.ok(Math.abs(m.cardH - base.cardH) <= 2,
+        /* The bar is "the APP did not scroll", not "the number did not move":
+           switching to Names makes the console ~120px shorter, and a page
+           already scrolled to its end cannot stay scrolled past the new end —
+           the browser clamps it, exactly as it does when a <details> closes.
+           So the expectation is the clamp, and anything else is the app. */
+        const maxScroll = Math.max(0, m.docH - m.winH);
+        assert.equal(m.scrollTop, Math.min(was, maxScroll),
+          at + 'changing ' + label + ' scrolled the page');
+        if (sameHeight) assert.ok(Math.abs(m.cardH - base.cardH) <= 2,
           at + 'changing ' + label + ' changed the console height');
       };
       for (const sel of ['#gvPaceSeg button[data-p="turbo"]',
-                         '#gvPromptSeg button[data-r="mix"]',
                          '#gvFretSeg button[data-fr="all"]',
                          '#gvFocusSeg button[data-f="E"]']) {
         await change(sel, s => document.querySelector(s).click(), sel);
+      }
+      // The prompt is allowed to change the height — but never the scroll.
+      for (const r of ['name', 'staff', 'mix', 'name']) {
+        await change('the prompt to ' + r,
+          v => document.querySelector(`#gvPromptSeg button[data-r="${v}"]`).click(), r, false);
       }
       await change('the stage', () => {
         const sel = document.getElementById('gvWorld');
         sel.value = '4';
         sel.dispatchEvent(new Event('change', { bubbles: true }));
-      });
+      }, undefined, false);
       assert.deepEqual(app.errors, [], 'page errors');
     } finally { await app.close(); }
   }
