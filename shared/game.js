@@ -93,6 +93,8 @@
    *   'wrong'    — a miss (streak breaks; stage lights are NOT touched —
    *                only the fuse burning out costs one, i.e. 'breach')
    *   'breach'   — the clock ran out: the cannon fuse burnt to nothing
+   *   'partial'  — part of a question was done before it ended (a scale run's
+   *                landed notes): pays XP, never counts as a find
    *   'skip'     — player asked to be shown the answer and moved on
    * There is no 'assisted' kind: it existed only for an answer the reveal
    * hint had already shown, and the hint system is gone. Being shown the
@@ -128,6 +130,13 @@
         // The hunt already broke the combo (every wrong is judged first).
         gain = Math.round(4 * m);
         s.xp += gain; s.zaps++;
+      } else if (kind === 'partial') {
+        /* Work done inside a question that never completed — the notes of a
+           scale run that landed before the fuse died. It PAYS (four notes of
+           a six-note shape is four notes of work) but it is not a find: no
+           zap, no combo, and whatever broke the combo stays broken. */
+        gain = Math.round(4 * m);
+        s.xp += gain;
       } else if (kind === 'wrong') {
         s.combo = 0;
       } else if (kind === 'breach') {

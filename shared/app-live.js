@@ -349,6 +349,16 @@ const GV = {
      reference card below the console, never anything the game consults.
      root is a pitch class; view: box | neck; labels: names | degrees. */
   study:{ root:9, type:'minPent', view:'box', labels:'names' },
+  /* WHICH RUNG OF WHICH LADDER. The stage control has two meanings — how much
+     NECK in Notes mode, how far up the SCALE ladder here — so it has two
+     stored values. Sharing one made a Notes stage-5 player's first ever scale
+     question an eleven-note run in any key from any position; a first-time
+     scale player starts at rung 1 whatever their Notes rung is. */
+  scaleTier:0,
+  /* How many strings the player's bass HAS. Scale mode's top rung anchors on
+     the low B unless this says there isn't one. (Notes mode's neck comes from
+     the shared tier table and is untouched by this.) */
+  strings5:true,
   run:null,
   runBestKey:null,       // the best-run key SNAPSHOTTED at run start (A settings
                          // change mid-run starts a new run, so a run can never
@@ -405,7 +415,7 @@ if (typeof matchMedia === 'function'){
     Hearts/combo never scale. */
 function gvMult(){
   const paceM = GV.pace === 'turbo' ? 1.5 : GV.pace === 'steady' ? 1.25 : 1;
-  const stageM = 1 + tier * 0.1;
+  const stageM = 1 + gvTier() * 0.1;
   /* Scale mode pays by the LENGTH OF THE RUN: one question there is six notes
      (eleven at the top stage), so it is worth six notes' work — half a point
      per note, i.e. ×3 for a box and ×5.5 for up-and-back. The prompt and focus
@@ -425,7 +435,7 @@ function gvBestKey(){
      single notes are not the same achievement, so they never share a slot.
      Only pace and stage move the difficulty there — the prompt, string and
      fret axes are Notes-mode axes. */
-  if (scaleMode()) return 'scale|' + GV.pace + '|' + tier;
+  if (scaleMode()) return 'scale|' + GV.pace + '|' + GV.scaleTier;
   return GV.pace + '|' + tier + '|' + GV.prompt + '|' + (focus || 'all') + '|' + GV.frets;
 }
 
@@ -439,6 +449,12 @@ function gvLoad(){
     GV.sound = s.sound !== false;   // default ON
     if (FRET_WINS.hasOwnProperty(s.frets)) GV.frets = s.frets;
     if (s.gameMode === 'scales' || s.gameMode === 'notes') GV.gameMode = s.gameMode;
+    /* The scale ladder's own rung — never seeded from the Notes tier. A
+       player who has never played scale mode starts at the bottom of it. */
+    /* window.BassScales, not the SCL alias: gvLoad runs long before that
+       const is initialised, and a TDZ throw here would lose every setting. */
+    GV.scaleTier = Math.min(window.BassScales.STAGES.length - 1, Math.max(0, s.scaleTier | 0));
+    GV.strings5 = s.strings5 !== false;
     if (s.map){
       if (MAP_SPELLS.indexOf(s.map.spell) >= 0) GV.map.spell = s.map.spell;
       GV.map.stage = s.map.stage !== false;
@@ -458,7 +474,8 @@ function gvLoad(){
 function gvSave(){
   try { localStorage.setItem(GV_KEY, JSON.stringify({
     pace:GV.pace, prompt:GV.prompt, xp:GV.xp, best:GV.best, gameMode:GV.gameMode,
-    calm:GV.calm, sound:GV.sound, frets:GV.frets, map:GV.map, study:GV.study })); } catch(e){}
+    calm:GV.calm, sound:GV.sound, frets:GV.frets, map:GV.map, study:GV.study,
+    scaleTier:GV.scaleTier, strings5:GV.strings5 })); } catch(e){}
 }
 /* Fret-region focus for the question pool. Windows overlap on purpose —
    fret 5 belongs to both hands' territory. */
@@ -584,10 +601,12 @@ function gvNewRun(){
   if (skip) skip.disabled = false;
   renderHud();
 }
-/** Feed one judgement to the run and let every dependent surface follow. */
-function gvJudge(kind){
+/** Feed one judgement to the run and let every dependent surface follow.
+    `scale` shades the difficulty multiplier for a judgement that is only
+    worth part of a question (a scale run's landed notes). */
+function gvJudge(kind, scale){
   if (!GV.run) return null;
-  const r = GV.run.judge(kind, gvMult());
+  const r = GV.run.judge(kind, gvMult() * (scale == null ? 1 : scale));
   if (r.ignored) return r;
   GV.xp = GV.run.state.xp;
   /* Bests bank LIVE, not only at lights-out: a Soundcheck run (which never
@@ -822,30 +841,46 @@ const SC = {
   stage:-1,           // the ladder rung this loop was drawn for
 };
 function scaleMode(){ return GV.gameMode === 'scales'; }
-/** The stage ladder's rung for the current stage — scale mode's meaning of the
-    same five-stage control Notes mode uses. */
-function scStage(){ return SCL.stage(tier); }
+/** WHICH RUNG the stage control is on, for the game being played. The one
+    control has two ladders behind it — Notes mode's neck (shared with the
+    Theory Trainer) and scale mode's own — and they are stored apart, so
+    arriving in scale mode from a high Notes stage starts at the bottom. */
+function gvTier(){ return scaleMode() ? GV.scaleTier : tier; }
+/** The stage ladder's rung for the current stage. */
+function scStage(){ return SCL.stage(GV.scaleTier); }
+/** The anchor strings this rung may use, minus the low B when the player has
+    told us their bass has four strings. */
+function scStrings(st){
+  const list = st.strings;
+  if (GV.strings5) return list;
+  const four = list.filter(si => si > 0);
+  return four.length ? four : list;
+}
 /** How many notes this question is worth. Six for a box, eleven up-and-back —
     the fuse and the XP both scale off this. */
 function scRunLength(){ return (SC.targets && SC.targets.length) || 6; }
-/** A chord symbol as it should be READ: the engraved ♯, never the ASCII #. */
+/** A chord symbol as it should be READ. The spelling is decided in
+    shared/scales.js (from the degree in the key), so this only has to catch
+    an ASCII # from anything older. */
 function dispSym(sym){ return String(sym).replace(/#/g, '♯'); }
-/** …and as it should be SPOKEN: "A sharp minor 7", never "A#m7". */
+/** …and as it should be SPOKEN: "A flat major", never "A♭". */
 function speakChord(chord){
   if (!chord) return '';
-  const name = SCL.NAMES[chord.rootPc].replace('#', ' sharp');
+  const name = String(chord.root || SCL.NAMES[chord.rootPc])
+    .replace(/[♯#]/g, ' sharp').replace(/[♭]/g, ' flat');
   const label = SCL.CHORDS[chord.quality].label;
   return name + ' ' + label;
 }
-/** What this stage asks a run to do, in words — the one instruction line. */
+/** What this stage asks a run to do, in words — the one instruction line.
+    Plain words: "the shape" and "your hand", never "the box, ascending". */
 function scRunWords(){
   return SC.shape === 'down' ? 'six notes, high to low'
-       : SC.shape === 'updown' ? 'six notes up and five back'
+       : SC.shape === 'updown' ? 'six notes up, then back down'
        : 'six notes, low to high';
 }
 /** Where the box may live on this stage. */
 function scSpec(st){
-  return { tuning:TUNING, anchorStrings:st.strings,
+  return { tuning:TUNING, anchorStrings:scStrings(st),
            minFret:st.minFret, maxFret:st.maxFret };
 }
 /** Draw a new key and loop for the stage, rejecting any key whose chords do
@@ -854,16 +889,50 @@ function scSpec(st){
 function scNewProgression(){
   const st = scStage();
   const wasKey = SC.prog ? SC.prog.keyPc : -1;
-  const keys = [0,1,2,3,4,5,6,7,8,9,10,11].sort(() => Math.random() - 0.5);
+  /* The rung's own key pool (the first two rungs stay on natural letters),
+     shuffled, then WEIGHTED: a loop whose boxes you keep fumbling comes back
+     sooner. Same arithmetic the note game's picker uses. */
+  const pool = (st.roots || [0,1,2,3,4,5,6,7,8,9,10,11]).slice()
+    .sort(() => Math.random() - 0.5);
+  const view = scView();
+  const cand = [];
   let fallback = null;
-  for (const keyPc of keys){
+  for (const keyPc of pool){
     const modeName = st.modes[Math.floor(Math.random() * st.modes.length)];
     const p = SCL.progression({ keyPc, mode:modeName, power:st.power }, Math.random);
     const chords = st.vamp ? [p.chords[0], p.chords[0], p.chords[0], p.chords[0]] : p.chords;
     if (!SCL.anchorChords(chords, scSpec(st)).every(Boolean)) continue;
     if (!fallback) fallback = { p, chords };
     if (keyPc === wasKey) continue;         // never the same key twice running
-    SC.prog = p; SC.chords = chords; SC.idx = 0;
+    /* A loop is worth as much as its WORST-remembered box — that is the one
+       the player needs another go at. */
+    let w = 0.2;
+    const keys = [];
+    for (const ch of chords){
+      const a = scAnchorFor(ch, st);
+      if (!a) continue;
+      const k = scKeyFor(ch, a);
+      keys.push(k);
+      w = Math.max(w, GAME.weightFor(view(k), false));
+    }
+    cand.push({ p, chords, w, keys });
+  }
+  if (cand.length){
+    /* A box booked for a comeback outranks the roll: serving it here is what
+       makes a fumbled shape come back SOON rather than at chance. */
+    const bookable = new Set();
+    for (const c of cand) for (const k of c.keys) bookable.add(k);
+    const due = scReviewQ.next(qCount, null, k => bookable.has(k));
+    if (due){
+      const hit = cand.filter(c => c.keys.indexOf(due) >= 0)[0];
+      if (hit){ SC.prog = hit.p; SC.chords = hit.chords; SC.idx = 0; return; }
+    }
+    let total = 0;
+    for (const c of cand) total += c.w;
+    let roll = Math.random() * total;
+    let pick = cand[cand.length - 1];
+    for (const c of cand){ roll -= c.w; if (roll <= 0){ pick = c; break; } }
+    SC.prog = pick.p; SC.chords = pick.chords; SC.idx = 0;
     return;
   }
   /* Every fitting key was the one we just played (or none fits at all — which
@@ -874,33 +943,80 @@ function scNewProgression(){
     the shape fits — the same hand every time — while the later ones pick
     among the strings that can host it, which is what "more positions" means. */
 function scAnchorFor(chord, st){
+  const strings = scStrings(st);
   const base = { rootPc:chord.rootPc, scaleKey:chord.scaleKey, tuning:TUNING,
                  minFret:st.minFret, maxFret:st.maxFret };
   if (st.positions === 'any'){
-    const opts = st.strings
+    const opts = strings
       .map(si => SCL.anchorFor(Object.assign({ anchorStrings:[si] }, base)))
       .filter(Boolean);
     if (opts.length) return opts[Math.floor(Math.random() * opts.length)];
   }
-  return SCL.anchorFor(Object.assign({ anchorStrings:st.strings }, base));
+  return SCL.anchorFor(Object.assign({ anchorStrings:strings }, base));
 }
+/* ---- which boxes you fumble ----
+   A box is a ROOT, a SHAPE and a PLACE: the same A minor pentatonic played
+   from the E string and from the B string are two different things to
+   remember. Keyed that way, stored beside the note game's own record (so the
+   note map's weak-spot overlay can show scale misses too), and read back by
+   the key picker above — a box missed four times used to come back at chance. */
+function scKeyFor(chord, anchor){
+  return 'sc:' + chord.scaleKey + ':' + chord.rootPc + ':' +
+         (anchor ? anchor.si + ':' + anchor.fret : '?');
+}
+/** The stored record for the weighting, in the shape BassGame.weightFor wants. */
+function scView(){
+  const sr = (loadShared().stats || {}).scaleRecent || {};
+  return key => sr[key] ? { tries: sr[key].length, recent: sr[key] } : null;
+}
+/** Bank how a run went, against the exact box it asked for. `landedFrac` also
+    lights the positions on the note map's weak-spot overlay. */
+function scRecord(ok){
+  if (!SC.chord || !SC.anchor) return;
+  const key = scKeyFor(SC.chord, SC.anchor);
+  const notes = SC.targets.map(t => TUNING.names[t.si] + ':' + t.fret)
+    .filter((v, i, a) => a.indexOf(v) === i);
+  saveStats(st => {
+    st.scaleRecent = st.scaleRecent || {};
+    const r = st.scaleRecent[key] || (st.scaleRecent[key] = []);
+    r.push(ok ? 1 : 0);
+    if (r.length > 6) r.shift();
+    /* The note map marks POSITIONS, so a fumbled box marks the positions it
+       is made of — the same overlay, fed by both games. */
+    if (!ok){
+      st.scaleHeat = st.scaleHeat || {};
+      for (const k of notes) st.scaleHeat[k] = (st.scaleHeat[k] || 0) + 1;
+    }
+  });
+  if (!ok) scReviewQ.add(key, qCount);
+}
+/* Missed boxes book a comeback, the same way missed notes do. */
+const scReviewQ = GAME.createReviewQueue();
 /** One chord, one run, one question. `retry` guards the one recursive path
     below — a stage whose table could not place a chord would otherwise spin. */
 function newScaleQuestion(retry){
   if (GV.nextQTimer != null){ clearTimeout(GV.nextQTimer); GV.nextQTimer = null; }
   const st = scStage();
-  /* A new loop when the old one has been played through — and whenever the
-     STAGE has changed, because the rung decides what the chords may be (a
-     vamp or a walk, one family or two) and how much neck the box may use.
-     Finishing the previous stage's loop on the new rung's rules would be a
-     chart nobody chose. */
-  if (!SC.chords || SC.idx >= SC.chords.length || SC.stage !== tier){
-    SC.stage = tier;
-    scNewProgression();
+  /* THE SECOND ASK. A reveal teaches for three seconds and then used to ask a
+     DIFFERENT chord, so the shape just drawn was never played. After a Show
+     me or a burnt fuse the same chord comes straight back — uncredited, with
+     the box still on screen — and it is booked to return later as well. */
+  const again = SC.repose;
+  SC.repose = false;
+  if (!again){
+    /* A new loop when the old one has been played through — and whenever the
+       STAGE has changed, because the rung decides what the chords may be (one
+       chord or four, one family or two) and how much neck the box may use.
+       Finishing the previous stage's loop on the new rung's rules would be a
+       chart nobody chose. */
+    if (!SC.chords || SC.idx >= SC.chords.length || SC.stage !== GV.scaleTier){
+      SC.stage = GV.scaleTier;
+      scNewProgression();
+    }
   }
-  const chord = SC.chords[SC.idx];
-  SC.idx++;
-  const anchor = scAnchorFor(chord, st);
+  const chord = again && SC.chord ? SC.chord : SC.chords[SC.idx];
+  if (!again) SC.idx++;
+  const anchor = again && SC.anchor ? SC.anchor : scAnchorFor(chord, st);
   if (!anchor){                       // cannot happen on a tested ladder (see
     if (retry) return;                // scales.test.js); if it ever did, one
     scNewProgression();               // fresh key is the way out — and only one
@@ -908,9 +1024,10 @@ function newScaleQuestion(retry){
   }
   SC.chord = chord;
   SC.anchor = anchor;
-  SC.shape = st.shape;
+  SC.shape = again ? SC.shape : SCL.runShapeFor(st, Math.random);
+  SC.second = !!again;                // this ask pays nothing: it was given away
   SC.targets = SCL.runTargets({ scaleKey:chord.scaleKey, si:anchor.si,
-                                fret:anchor.fret, tuning:TUNING, shape:st.shape });
+                                fret:anchor.fret, tuning:TUNING, shape:SC.shape });
   SC.run = SCL.createScaleRun(SC.targets);
   SC.landed = 0; SC.wrong = 0; SC.waived = false; SC.asked = false;
   /* Scale mode poses a chord, not a note: the note question is cleared so
@@ -924,6 +1041,9 @@ function newScaleQuestion(retry){
   GV.promptKind = 'name';             // there is no staff in scale mode
   renderScalePrompt();
   scRenderChart();
+  /* The second ask of a chord that was just given away keeps the SHAPE on
+     screen — the whole point of asking again is that the drawing gets used. */
+  if (SC.second){ scDrawBox(); scShowMedia('box'); }
   scRenderPips();
   const v = document.getElementById('fVerdict');
   v.innerHTML = '&nbsp;'; v.className = 'verdict';
@@ -933,35 +1053,75 @@ function newScaleQuestion(retry){
      are for — only the chord and the outcome. */
   const toastLead = GV.srToast ? GV.srToast + '. ' : '';
   GV.srToast = null;
-  srAnnounce(toastLead + 'Next chord: ' + speakChord(SC.chord) + '. Play its box — ' +
-    scRunWords() + '.');
+  srAnnounce(toastLead + (SC.second ? 'Same chord again: ' : 'Next chord: ') +
+    speakChord(SC.chord) + '. Play its shape — ' + scRunWords() + '.');
+  /* The study card below follows the chord on screen — unless the player has
+     it open, in which case they are studying something on purpose. */
+  scSyncStudyCard();
   gvSpawn();
   updateFindStats();
 }
-/** The chord, as big as the read column can carry it — and nothing else. */
+/** The chord, as big as the read column can carry it — and nothing else.
+    The sub-line says what to do with it, and the word "box" in it is a real
+    link to the Scale card — the same door the staff prompt opens for the
+    clef card. */
 function renderScalePrompt(){
   document.getElementById('fQ').textContent = SC.chord ? dispSym(SC.chord.symbol) : '';
-  subWriteIfChanged('Play its box — <b>' + scRunWords() + '</b>.', 'scale:' + SC.shape);
+  const boxWord = '<a href="#" class="gv-boxhelp-link">box</a>';
+  subWriteIfChanged('Play its ' + boxWord + ' — <b>' + scRunWords() + '</b>.',
+    'scale:' + SC.shape);
   gvShowStaff(false);
+}
+/** The Scale card starts on the chord you are being asked, so opening it is
+    never a hunt for the shape you were just shown. A card the player has
+    OPENED is theirs — it is not moved under them. */
+function scSyncStudyCard(){
+  const card = document.getElementById('gvScaleStudy');
+  if (!SC.chord || (card && card.open)) return;
+  GV.study.root = SC.chord.rootPc;
+  GV.study.type = SC.chord.scaleKey === 'majPent' ? 'majPent' : 'minPent';
+  GV.study.view = 'box';
+  gvSave();
+  if (typeof renderScaleStudyUI === 'function') renderScaleStudyUI();
 }
 /** The chart you are playing: four bars, the current one lit. It shows the
     chords and only the chords — naming the scale here would answer the
     question the bell is asking. */
+/* THE RULE THE GAME TESTS, in the words a second-week player has.
+   It sits under the chart on every question, permanently: the mapping used to
+   appear NOWHERE on this screen, so the only route from "I don't know" to "I
+   know" was paying for Show me over and over. */
+const SC_RULE = 'An <b>m</b>, <b>m7</b> or <b>5</b> after the letter → that ' +
+  'letter’s <b>minor</b> shape. Just a letter → <b>major</b> shape.';
+const SC_RULE_SPOKEN = 'The rule: an m, m7 or 5 after the letter means that ' +
+  'letter’s minor pentatonic shape; a letter on its own means the major one.';
 function scRenderChart(){
   const el = document.getElementById('gvChart');
   if (!el || !SC.prog) return;
-  const bars = SC.chords.map((ch, i) =>
-    '<div class="gv-chart-bar' + (i === SC.idx - 1 ? ' on' : (i < SC.idx - 1 ? ' done' : '')) +
-    '">' + dispSym(ch.symbol) + '</div>').join('');
-  /* A vamp is not a progression: naming the loop "i–VII–VI–VII" over four
-     bars of one chord would be a chart of something nobody is playing. */
-  const vamp = scStage().vamp;
-  el.innerHTML = '<span class="gv-chart-key">' + dispSym(SC.prog.key) + ' ' + SC.prog.mode +
-    ' · ' + (vamp ? 'vamp on the one chord' : SC.prog.name) + '</span>' +
+  const st = scStage();
+  /* A drill is not a chart. On the rungs where every chord is voiced as a 5
+     the game grades the MINOR shape of each root, so printing "A minor ·
+     i-VII-VI-VII" beside it would be a key signature the graded answer
+     contradicts. Those rungs say what they are: same shape, four roots. */
+  const drill = st.power || st.vamp;
+  /* One chord over and over is one bar with a repeat sign, not four identical
+     bars — and "vamp" is a word nobody has in week two. */
+  const bars = st.vamp
+    ? '<div class="gv-chart-bar on repeat">' + dispSym(SC.chords[0].symbol) + '</div>'
+    : SC.chords.map((ch, i) =>
+        '<div class="gv-chart-bar' + (i === SC.idx - 1 ? ' on' : (i < SC.idx - 1 ? ' done' : '')) +
+        '">' + dispSym(ch.symbol) + '</div>').join('');
+  const head = st.vamp ? 'One chord, over and over'
+    : drill ? 'Same shape, four chords'
+    : 'Key of ' + dispSym(SC.prog.key) + ' ' + SC.prog.mode + ' · ' + SC.prog.name;
+  el.innerHTML = '<span class="gv-chart-key">' + head + '</span>' +
     '<div class="gv-chart-bars">' + bars + '</div>' +
-    '<p class="gv-chart-caption">Bar ' + SC.idx + ' of 4 — a new key when the loop comes round.</p>';
-  el.setAttribute('aria-label', 'Chord loop in ' + dispSym(SC.prog.key) + ' ' + SC.prog.mode +
-    ': ' + SC.chords.map(ch => speakChord(ch)).join(', ') + '. Now on bar ' + SC.idx + ' of 4.');
+    '<p class="gv-chart-caption" id="gvRule">' + SC_RULE + '</p>';
+  el.setAttribute('aria-label', (st.vamp
+      ? 'One chord, repeated: ' + speakChord(SC.chords[0])
+      : (drill ? 'Four chords, one shape' : 'Chord loop in ' + dispSym(SC.prog.key) + ' ' + SC.prog.mode) +
+        ': ' + SC.chords.map(ch => speakChord(ch)).join(', ') +
+        '. Now on chord ' + SC.idx + ' of 4') + '. ' + SC_RULE_SPOKEN);
   scShowMedia('chart');
 }
 /** Exactly one of the two occupants of the reserved compartment. */
@@ -973,7 +1133,11 @@ function scShowMedia(which){
 }
 /** One pip per note of the run, filled as each note lands. Never the only
     signal: the verdict line counts the same notes in words, and the row
-    carries the count as its own label. */
+    carries the count as its own label — SPOKEN, politely and terse ("4 of
+    11"), because a screen-reader player used to hear the chord and then
+    nothing at all for six to eleven notes. Throttled to one utterance a
+    second so a fast run does not become a stream of chatter. */
+let scPipSaidAt = 0, scPipSaid = '';
 function scRenderPips(){
   const el = document.getElementById('gvPips');
   if (!el) return;
@@ -983,15 +1147,27 @@ function scRenderPips(){
   el.setAttribute('aria-label', SC.landed
     ? SC.landed + ' of ' + n + ' notes landed'
     : 'no notes landed yet — ' + n + ' to play');
+  const live = document.getElementById('gvPipLive');
+  if (!live) return;
+  const now = performance.now();
+  const words = SC.landed ? SC.landed + ' of ' + n : '';
+  /* The last note is always spoken — "6 of 6" is the one count that matters
+     even if it lands inside another count's second. */
+  const due = SC.landed === n || SC.landed === 0 || now - scPipSaidAt > 1000;
+  if (words !== scPipSaid && due){
+    scPipSaid = words; scPipSaidAt = now;
+    live.textContent = words;
+  }
 }
 /** Where the box lives, in words: "the E string, fret 5". */
 function scAnchorWords(){
   return SC.anchor ? 'the ' + TUNING.names[SC.anchor.si] + ' string, fret ' + SC.anchor.fret : '';
 }
 /** The scale this chord wanted, named — only ever on the way OUT of a
-    question (a burnt fuse, or Show me). */
+    question (a burnt fuse, or Show me). Spelled the way the CHORD is spelled:
+    a B♭7 chord does not want an "A♯ minor pentatonic". */
 function scScaleName(){
-  return SCL.NAMES[SC.chord.rootPc].replace('#', '♯') + ' ' +
+  return dispSym(SC.chord.root || SCL.NAMES[SC.chord.rootPc]) + ' ' +
     (SC.chord.scaleKey === 'majPent' ? 'major pentatonic' : 'minor pentatonic');
 }
 /** Give the answer away: name the scale, say where the shape starts, and DRAW
@@ -999,7 +1175,7 @@ function scScaleName(){
 function scReveal(lead){
   if (!SC.chord) return '';
   const words = dispSym(SC.chord.symbol) + ' wants ' + scScaleName() +
-    ' — the box starts on ' + scAnchorWords() + '.';
+    ' — start on ' + scAnchorWords() + '.';
   const v = document.getElementById('fVerdict');
   v.textContent = lead + words;
   v.className = 'verdict warn';
@@ -1007,32 +1183,60 @@ function scReveal(lead){
   scShowMedia('box');
   return words;
 }
+/** WHICH WAY the run goes, in the words the caption and the reader both use. */
+function scOrderWords(){
+  return SC.shape === 'down' ? 'play them high to low, 6 → 1'
+       : SC.shape === 'updown' ? 'play 1 → 6, then back down'
+       : 'play them low to high, 1 → 6';
+}
 /** The box, drawn: three strings, the four or five frets it lives in, and the
-    ORDER to play it in on the dots — which is exactly what the run grades. */
+    FINGER for every note on its dot.
+
+    One visual language, both places. The study card's dots have always been
+    fingers; this drawing used to number the same dots by PLAY ORDER, with
+    nothing on either saying which — so "3" meant ring finger on one card and
+    third note on the other. Fingers live in the dots now (they are the thing
+    that never changes as the shape slides) and the ORDER lives in the caption
+    under the board, which is also where an up-and-back run stops claiming to
+    be six notes when the pips count eleven. */
 function scDrawBox(){
   const cv = document.getElementById('gvBox');
   if (!cv || !SC.targets.length) return;
+  /* The compartment's height answers the VIEWPORT (gvFitScene), so the canvas
+     is sized to the space it actually gets rather than drawn big and squashed
+     down to a blur by CSS. */
+  const wrap = cv.parentElement;
+  const availW = Math.max(180, Math.min(320, (wrap && wrap.clientWidth) || 300));
+  const availH = Math.max(64, Math.min(150, (wrap && wrap.clientHeight) || 132));
+  if (cv.width !== Math.round(availW)) cv.width = Math.round(availW);
+  if (cv.height !== Math.round(availH)) cv.height = Math.round(availH);
   const ctx = cv.getContext('2d');
   const W = cv.width, H = cv.height;
   ctx.clearRect(0, 0, W, H);
-  /* One dot per POSITION, numbered by the first time the run asks for it —
-     so an up-and-back run still reads 1 to 6, with the way home implied. */
+  /* One dot per POSITION. The FINGER comes from the shape itself (one finger
+     per fret, counted from the lowest fret the shape touches), so it is the
+     same number wherever the shape has slid to — which is the whole point. */
+  const box = SCL.boxShape({ scaleKey:SC.chord.scaleKey, si:SC.anchor.si,
+                             fret:SC.anchor.fret, tuning:TUNING });
+  const fingers = SCL.boxFingers(SC.chord.scaleKey);
   const seen = new Map();
-  SC.targets.forEach((t, i) => {
+  box.forEach((t, i) => {
     const k = t.si + ':' + t.fret;
-    if (!seen.has(k)) seen.set(k, { si:t.si, fret:t.fret, degree:t.degree, order:i + 1 });
+    if (!seen.has(k)) seen.set(k, { si:t.si, fret:t.fret, degree:t.degree, finger:fingers[i] });
   });
   const spots = [...seen.values()];
   const sis = [...new Set(spots.map(s => s.si))].sort((a, b) => a - b);
   const lo = Math.min.apply(null, spots.map(s => s.fret));
   const hi = Math.max.apply(null, spots.map(s => s.fret));
   const f0 = Math.max(0, lo - 1), f1 = hi + 1, cols = f1 - f0 + 1;
-  const padL = 26, padR = 8, padB = 20;
+  const capH = 13;                       // the caption's own line, under everything
+  const padL = 24, padR = 6, padB = 15 + capH;
   const colW = Math.floor((W - padL - padR) / cols);
-  const rowH = 30;
+  const rowH = Math.max(16, Math.min(30, Math.floor((H - padB - 12) / sis.length)));
+  const r = Math.max(7, Math.min(12, Math.floor(rowH * 0.42)));
   const boardW = colW * cols;
-  const half = 15;                       // half a string gap: the board's margin
-  const top = Math.round((H - padB - (sis.length - 1) * rowH) / 2);
+  const half = Math.round(rowH / 2);     // half a string gap: the board's margin
+  const top = Math.max(r + 2, Math.round((H - padB - (sis.length - 1) * rowH) / 2));
   const boardH = (sis.length - 1) * rowH + half * 2;
   const yOf = si => top + (sis.length - 1 - sis.indexOf(si)) * rowH;   // low string at the bottom
   const xOf = fret => padL + (fret - f0) * colW + Math.round(colW / 2);
@@ -1050,31 +1254,39 @@ function scDrawBox(){
     const y = yOf(si);
     const g = 3 - sis.indexOf(si);
     ctx.fillStyle = '#8A8078'; ctx.fillRect(padL, y - (g >> 1), boardW, Math.max(1, g));
-    ctx.fillStyle = '#A79F94'; ctx.font = 'bold 12px monospace'; ctx.textAlign = 'right';
-    ctx.fillText(TUNING.names[si], padL - 6, y + 4);
+    ctx.fillStyle = '#A79F94'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'right';
+    ctx.fillText(TUNING.names[si], padL - 5, y + 4);
   });
   // fret numbers under the board — the anchor's own fret in the stage's amber
-  ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center';
+  ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center';
   for (let f = f0; f <= f1; f++){
     ctx.fillStyle = f === SC.anchor.fret ? '#F2A93B' : '#6E6A63';
-    ctx.fillText(String(f), xOf(f), H - 6);
+    ctx.fillText(String(f), xOf(f), H - capH - 3);
   }
-  // the notes: a disc per position — the roots brightest — its play order in it
+  // the notes: a disc per position — the roots brightest — its FINGER in it
   for (const s of spots){
     const x = xOf(s.fret), y = yOf(s.si);
-    pxCircle(ctx, x, y, 12, '#14110F', null);
-    pxCircle(ctx, x, y, 11, s.degree === 'R' ? '#F2A93B' : '#C77F1F', null);
+    pxCircle(ctx, x, y, r + 1, '#14110F', null);
+    pxCircle(ctx, x, y, r, s.degree === 'R' ? '#F2A93B' : '#C77F1F', null);
     ctx.fillStyle = '#14110F';
-    ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
-    ctx.fillText(String(s.order), x, y + 5);
+    ctx.font = 'bold ' + Math.max(10, r + 1) + 'px monospace'; ctx.textAlign = 'center';
+    ctx.fillText(String(s.finger), x, y + Math.round(r * 0.38) + 1);
   }
+  // the caption: what the numbers are, and which way to go
+  ctx.fillStyle = '#A79F94'; ctx.textAlign = 'center';
+  ctx.font = '10px system-ui, sans-serif';
+  ctx.fillText('numbers = fingers · ' + scOrderWords(), Math.round(W / 2), H - 2);
   cv.setAttribute('aria-label', scScaleName() + ', starting on ' + scAnchorWords() +
-    '. The dots are numbered 1 to ' + spots.length + ' in the order to play them: ' +
-    spots.map(s => TUNING.names[s.si] + ' string fret ' + s.fret).join(', ') + '.');
+    '. The number on each dot is the finger — 1 index to 4 pinky: ' +
+    spots.map(s => TUNING.names[s.si] + ' string fret ' + s.fret + ', finger ' + s.finger).join('; ') +
+    '. Then ' + scOrderWords() + '.');
 }
 /** Count this run into the session figures exactly once, however it ends. */
 function scAsk(){
-  if (SC.asked) return;
+  /* …except the SECOND ask of a chord that was just given away. That is the
+     player using the drawing, not being asked a question: it counts nowhere,
+     or a reveal would inflate the session's own figures. */
+  if (SC.asked || SC.second) return;
   SC.asked = true;
   sess.find.asked++;
 }
@@ -1101,9 +1313,10 @@ function scStableNote(reading, heardName){
      not the note it wants is a plain miss (a right note an octave out is,
      inside a box, simply a different note): the run parks where it is, the
      player tries again, and the run survives with its credit spent. */
+  const miss = SCL.missKind({ targets:SC.targets, index:SC.run.index(), midi:reading.midi });
   const res = SC.run.push(reading.midi);
   if (res.status === 'retry'){
-    scWrong(heardName);
+    scWrong(heardName, miss);
     return;
   }
   SC.landed = SC.run.index();
@@ -1115,8 +1328,36 @@ function scStableNote(reading, heardName){
   vEl.textContent = SC.landed + ' of ' + scRunLength() + ' — keep going.';
   vEl.className = 'verdict ok';
 }
+/** What a wrong note WAS, said in a way that teaches without answering.
+    Three sentences, because one generic line covered the two cases that most
+    need teaching — "I found an A, the game says my A isn't it" was the right
+    note in the wrong octave, and a note two steps ahead got the same words as
+    a note that is not in the shape at all. */
+function scMissWords(heardName, miss){
+  const at = 'Still on note ' + (SC.landed + 1) + ' of ' + scRunLength() + '.';
+  const name = disp(heardName);
+  if (miss && miss.kind === 'octave'){
+    const where = miss.dir === 'high'
+      ? 'that one is the top of the shape, not the bottom'
+      : 'that one is the bottom of the shape, not the top';
+    return { line: 'Right letter, wrong ' + (miss.octaves > 1 ? 'octaves' : 'octave') +
+             ' — ' + where + '. ' + at,
+             spoken: 'Right letter, wrong octave. ' + at };
+  }
+  if (miss && miss.kind === 'inbox'){
+    const line = miss.at > miss.want
+      ? 'That ' + name + ' is note ' + miss.at + ' of this shape — play note ' +
+        miss.want + ' first. '
+      : 'That ' + name + ' is note ' + miss.at + ' — you are past it, on note ' +
+        miss.want + '. ';
+    return { line: line + at, spoken: line };
+  }
+  return { line: 'That’s ' + article(name) + ' ' + name +
+           ' — not one of this shape’s six notes. ' + at,
+           spoken: 'Wrong note. ' + at };
+}
 /** A wrong note: buzz, park, retry. The run is never lost to one. */
-function scWrong(heardName){
+function scWrong(heardName, miss){
   SC.wrong++;
   wrongThisQ++;
   lastProgressAt = performance.now();
@@ -1133,33 +1374,46 @@ function scWrong(heardName){
   }
   if (SC.wrong === 1){ scAsk(); sess.find.streak = 0; }
   gvJudge('wrong');                       // the combo breaks; the run does not
-  const at = 'Still on note ' + (SC.landed + 1) + ' of ' + scRunLength() + '.';
   const vEl = document.getElementById('fVerdict');
   /* The correction never names the note the run is waiting for: being shown
      the answer is what Show me is for, and it has a price. */
-  vEl.textContent = 'That’s ' + article(disp(heardName)) + ' ' + disp(heardName) +
-    ' — not the next note of this box. ' + at;
+  const words = scMissWords(heardName, miss);
+  vEl.textContent = words.line;
   vEl.className = 'verdict no';
-  srAnnounce('Wrong note. ' + at);
+  srAnnounce(words.spoken);
   updateFindStats();
 }
+/** How many wrong notes turn a run from "found it" into "hunted for it".
+    Brute-forcing a six-note shape one fret at a time still finished the run
+    and still bumped the RUNS and QUESTIONS tiles, so a Soundcheck player could
+    farm the figures without knowing a thing. Past this many misses the run is
+    still ASKED and still ends — it simply is not a find. */
+function scHuntLimit(){ return scRunLength(); }
 /** The whole box is in: the cannon fires. */
 function scComplete(){
-  const clean = SC.run.result().clean && !SC.waived;
+  const clean = SC.run.result().clean && !SC.waived && !SC.second;
+  /* A second ask of a chord that was just given away is practice, not recall:
+     it ends the question and draws no XP, no streak and no record. */
+  const hunted = SC.wrong >= scHuntLimit();
   scAsk();
-  sess.find.score++;
+  if (!hunted && !SC.second) sess.find.score++;
   if (clean){ sess.find.clean++; sess.find.streak++; }
   else sess.find.streak = 0;
-  const r = gvJudge(clean ? 'clean' : 'dirty');
+  const r = SC.second ? null : gvJudge(clean ? 'clean' : (hunted ? 'wrong' : 'dirty'));
+  scRecord(clean);
   gvCue('ding');
   const sym = dispSym(SC.chord.symbol);
   const vEl = document.getElementById('fVerdict');
   vEl.textContent = clean
     ? 'FIRE! ' + sym + ' — all ' + scRunLength() + ', first time.'
-    : 'The box is in — ' + sym + ' done.';
+    : hunted
+      ? 'Found it the long way (' + SC.wrong + ' misses) — that one does not count as a find.'
+      : SC.second
+        ? 'That’s the shape — ' + sym + ' played back.'
+        : 'The shape is in — ' + sym + ' done.';
   vEl.className = 'verdict ok';
   srAnnounce(sym + ': run complete, ' + scRunLength() + ' notes' +
-    (clean ? ', clean' : '') + '.');
+    (clean ? ', clean' : hunted ? ', but hunted — not counted as a find' : '') + '.');
   gvZap();                                  // the cannon rings the bell
   updateFindStats();
   if (r && r.over) return;                  // the over screen owns the stage
@@ -1173,13 +1427,21 @@ function scBreach(){
   scAsk();
   sess.find.streak = 0;
   const r = gvJudge('breach');
+  /* PARTIAL CREDIT: four notes of a six-note run is four notes of work, and
+     paying nothing for them taught the player that a run they cannot finish
+     is worth abandoning. Paid at the 'dirty' rate, pro rata, and never for a
+     second ask (that shape was already given away). */
+  if (!SC.second && SC.landed > 0 && GV.run && !GV.run.state.over){
+    gvJudge('partial', SC.landed / scRunLength());
+  }
+  scRecord(false);
   gvCue('phut');
   const lights = (r && r.hearts != null && GV.run)
     ? ' ' + r.hearts + ' of ' + GV.run.state.maxHearts + ' stage light' +
       (GV.run.state.maxHearts === 1 ? '' : 's') + ' left.'
     : '';
   const words = scReveal('Fuse out at ' + SC.landed + ' of ' + scRunLength() + '. ');
-  srAnnounce('The fuse burnt out. ' + words + lights);
+  srAnnounce('The fuse burnt out. ' + words + lights + ' Same chord again next.');
   updateFindStats();
   /* The run-ending correction has to SURVIVE the over screen (which wipes the
      verdict), so it rides into the overlay — phrased to sit mid-sentence
@@ -1188,8 +1450,17 @@ function scBreach(){
     gvGameOver('that last chord wanted ' + scScaleName() + ', from ' + scAnchorWords());
     return;
   }
-  // A drawn shape takes longer to read than a sentence.
+  /* …and the chord comes straight back, with the shape still on screen: a
+     reveal that teaches for three seconds and then asks something else is a
+     lesson nobody got to use. */
+  scBookRepose();
   GV.nextQTimer = setTimeout(newQuestion, 3400);
+}
+/** Ask the SAME chord again next — uncredited — and book it to come back
+    later as well, so the shape that had to be shown gets two more goes. */
+function scBookRepose(){
+  SC.repose = true;
+  if (SC.chord && SC.anchor) scReviewQ.add(scKeyFor(SC.chord, SC.anchor), qCount);
 }
 
 /* ---- the game's turn results ---- */
@@ -1283,8 +1554,10 @@ function gvGameOver(lastNote){
      fret 1") — the third breach's teaching, which must not be wiped with the
      verdict banner this function clears below. */
   const unit = scaleMode() ? ' run' : ' note';
+  const best = GV.best[bk] || 0;
+  const bestUnit = (scaleMode() ? ' run' : ' find') + (best === 1 ? '' : 's');
   const facts = s.zaps + (s.zaps === 1 ? unit : unit + 's') +
-    ' · best ' + (GV.best[bk] || 0) + ' 1st-try' + (scaleMode() ? ' runs' : ' finds');
+    ' · best ' + best + ' 1st-try' + bestUnit;
   const txt = document.getElementById('gvOverText');
   if (txt) txt.textContent = lastNote
     ? lastNote.charAt(0).toUpperCase() + lastNote.slice(1) + ' — ' + facts
@@ -1432,16 +1705,17 @@ function gvToast(text){
 }
 /** How long THIS question's fuse burns.
     Notes mode: the pace's own figure, tightened a little by level.
-    Scale mode: one fuse covers the WHOLE run, so it is paid per note —
-    roughly six seconds to find the first note and four a note after that on
-    Gig (half that on Encore), which is the same arithmetic the pace figures
-    already encode, multiplied out. */
+    Scale mode: one fuse covers the WHOLE run — a constant "what does this
+    chord want" term plus a small per-note term. The per-note term used to be
+    0.3 of a whole note-question EACH, which made a Gig fuse 30 seconds for
+    six notes a player can play in under two; it is 0.085 now, so a six-note
+    run gets ~12s and an eleven-note run ~17s at Gig, ~6s and ~9s at Encore. */
 function gvFuseMs(){
   const ms = GAME.approachMs(GV.pace, GAME.levelFor(GV.xp));
   if (ms == null || !scaleMode()) return ms;
   /* …and the ladder's own factor on top: the last rungs are the same shapes
      with less time to find them, which is what "faster" means up there. */
-  return Math.round(ms * (0.35 + 0.3 * scRunLength()) * scStage().fuse);
+  return Math.round(ms * (0.35 + 0.085 * scRunLength()) * scStage().fuse);
 }
 /* The DOM fuse bar — the timer a player can actually read (the canvas cord is
    flavour). Driven from the rAF loop but writes style at most ~5×/s, and the
@@ -1490,6 +1764,13 @@ function updateFuseBar(){
     bar.setAttribute('aria-valuetext', sec + ' second' + (sec === 1 ? '' : 's') + ' left');
   }
 }
+/** Is a reference card open on top of the game? The Scale card and the Note
+    map are study, not play — the fuse waits for them. */
+function gvStudyOpen(){
+  const a = document.getElementById('gvScaleStudy');
+  const b = document.getElementById('gvMap');
+  return !!((a && a.open) || (b && b.open));
+}
 function gvFrame(t){
   GV.raf = null;
   if (mode !== 'find') return;    // the loop dies with the tab; setMode restarts it
@@ -1507,7 +1788,15 @@ function gvFrame(t){
      wrong note (or spamming them) can no longer stall the fuse forever. */
   if (GV.phase === 'fight'){
     const dt = Math.max(0, Math.min(250, dtRaw));
-    if (outOfTuneThisQ){
+    /* STUDYING IS NOT PLAYING. Opening the Scale card or the Note map
+       mid-question used to cost clock: the fuse burnt while the player was
+       reading the very thing that answers it. While a study card is open the
+       fuse holds on the same spawnAt slide as the wrong-note freeze — and
+       unbudgeted, because the card being open is a deliberate, visible state
+       the player ends by closing it. */
+    if (gvStudyOpen()){
+      GV.spawnAt += dt;
+    } else if (outOfTuneThisQ){
       GV.spawnAt += GV.fuseBudget ? GV.fuseBudget.consume('tune', dt) : dt;
     } else if (performance.now() < GV.freezeUntil){
       GV.spawnAt += GV.fuseBudget ? GV.fuseBudget.consume('wrong', dt) : dt;
@@ -1554,9 +1843,15 @@ document.addEventListener('visibilitychange', () => {
    and the nav. */
 const GV_MEDIA_STEPS = [154, 138, 122, 106, 96, 84];
 /* Scale mode's compartment holds a chord chart or a five-fret box drawing,
-   neither of which needs a full staff's height — so its ladder starts lower
-   and the stage keeps the room instead. */
-const GV_MEDIA_STEPS_SCALE = [132, 118, 104, 92, 82, 76];
+   neither of which needs a full staff's height — so its ladder starts lower.
+   It also goes FURTHER down than Notes mode's, because scale mode carries two
+   rows Notes mode does not (this compartment, which the Names prompt removes
+   entirely, and the pip row): the rungs those two cost have to exist somewhere
+   or a 414×736 phone puts Show me under the nav, which is exactly what it did.
+   The box drawing sizes its own canvas to whatever it gets (scDrawBox), and
+   the chart's type steps down with it (the CSS below), so the low rungs are
+   small rather than clipped. */
+const GV_MEDIA_STEPS_SCALE = [132, 118, 104, 96, 88, 80, 74, 66, 58, 52];
 const GV_INFO_MIN = 300;    // the read column never squeezes below this
 function gvNavH(){
   const v = parseFloat(getComputedStyle(document.documentElement)
@@ -1597,7 +1892,15 @@ function gvFitScene(){
     // share is exactly the scene's width, so they line up with its edges.
     sec.style.setProperty('--gv-stage-w', (c.w + 2) + 'px');
   };
-  const setMedia = (h) => sec.style.setProperty('--gv-media-h', h + 'px');
+  const setMedia = (h) => {
+    sec.style.setProperty('--gv-media-h', h + 'px');
+    /* A compartment this short cannot hold the chart's header line as well as
+       its bars and the rule under them, so the header goes — it is the one
+       line whose content the chart's own aria-label repeats. A VIEWPORT
+       answer, like every other number this function picks: nothing the player
+       does inside the game can change it. */
+    sec.classList.toggle('gv-tight', h < 70);
+  };
   /* Fits = it sits above the bottom nav. Measured in DOCUMENT coordinates,
      because "fits" must mean "fits with the page at the top" — the whole point
      is that the page never has to move. Two targets: the whole console, and —
@@ -1634,8 +1937,39 @@ function gvFitScene(){
   const whole = [];
   for (let s = maxScale; s >= 1; s--) whole.push({ w:320 * s, h:150 * s });
   if (!whole.length) whole.push(null);      // narrower than 1×: card-width fit
-  if (ladder(whole)) return;
-  ladder([120, 96].map(px => ({ w: Math.round(px * 320 / 150), h: px })));
+  const soft = [120, 96, 82, 70, 60].map(px => ({ w: Math.round(px * 320 / 150), h: px }));
+  if (!scaleMode()){
+    if (ladder(whole)) return;
+    ladder(soft);
+    return;
+  }
+  /* ---- SCALE MODE'S OWN SEARCH ----
+     This mode carries two rows Notes mode's Names prompt does not have at all:
+     the compartment the chart lives in, and the pips. That room has to come
+     from somewhere, and a phone that spends it all on the compartment ends up
+     with a 132px chart above a postage-stamp stage — so here the SCENE is the
+     outer loop (biggest first) and the compartment takes what is left, the
+     opposite of the staff rule above. Two passes, because a legible chart is
+     worth more than the last few pixels of stage: first with compartments big
+     enough to hold the chart comfortably, then with the small ones. A desktop
+     takes the first pair it tries; a 414×736 phone ends up in the second pass
+     with a small chart and a small stage, and its whole console on screen —
+     which is where Show me used to sit 13px UNDER the nav. */
+  const scenes = whole.concat(soft);
+  let play = null;
+  const pass = (list) => {
+    for (const c of scenes){
+      for (const h of list){
+        setMedia(h); setScene(c);
+        if (fitsCard()) return true;
+        if (!play && fitsPlay()) play = [h, c];
+      }
+    }
+    return false;
+  };
+  if (pass(steps.filter(h => h >= 74))) return;
+  if (pass(steps.filter(h => h < 74))) return;
+  if (play){ setMedia(play[0]); setScene(play[1]); }
 }
 window.addEventListener('resize', gvFitScene);
 /** A circle built from 2px blocks, optionally rim-only — bubbles, pixel-style. */
@@ -1736,7 +2070,7 @@ function drawScene(t){
   if (!cv) return;
   const ctx = cv.getContext('2d');
   const W = cv.width, H = cv.height, FLOOR = 126;
-  const world = WORLDS[Math.min(tier, WORLDS.length - 1)];
+  const world = WORLDS[Math.min(gvTier(), WORLDS.length - 1)];
   const now = performance.now();
   const drift = REDUCED ? 0 : 1;             // ambient motion switch
   ctx.clearRect(0, 0, W, H);
@@ -2580,12 +2914,15 @@ function drawClefRef(){
      · This stage — dims everything the current stage never asks (other
        strings, frets past its ceiling, the accidentals below stage 5), so the
        map matches the questions instead of overwhelming them.
-     · My weak spots — the positions your own misses are piling up on
-       (stats.heat + the rolling per-position record the picker uses), drawn
-       in the miss colour ON TOP of their names. */
+     · My weak spots — the positions your own misses are piling up on, drawn
+       in the miss colour ON TOP of their names. BOTH games feed it: the note
+       game's per-position heat and rolling record, and the positions inside a
+       scale box that was fumbled — a player who keeps missing one shape
+       should see it here, not just hear about it. */
 function mapMarkers(){
   const st = loadShared().stats || {};
   const heat = st.heat || {}, recent = st.noteRecent || {};
+  const scHeat = st.scaleHeat || {};
   /* "What this stage asks" is not re-derived here: pool() IS that answer, and
      it already carries the string focus and the fret window as well as the
      stage. A second copy of the rule would drift from the questions. */
@@ -2599,7 +2936,8 @@ function mapMarkers(){
       const isNat = NATURALS.has(name);
       if (!isNat && GV.map.spell === 'natural') continue;   // naturals-only: draw nothing there
       const key = sn + ':' + f;
-      const weak = (heat[key] | 0) > 0 || (recent[key] || []).indexOf(0) >= 0;
+      const weak = (heat[key] | 0) > 0 || (recent[key] || []).indexOf(0) >= 0
+                || (scHeat[key] | 0) > 0;
       if (weak) weakSeen++;
       markers.push({
         si, fret:f,
@@ -3217,8 +3555,9 @@ const STAGE_SHORT = ['E+A, frets 0–5', 'E+A, frets 0–12', 'E A D G, frets 0�
 function updateBestNote(){
   const el = document.getElementById('gvBestNote');
   if (!el) return;
+  const n = GV.best[gvBestKey()] || 0;
   el.textContent = 'Best ' + GAME.PACES[GV.pace].label + ' set at this difficulty: ' +
-    (GV.best[gvBestKey()] || 0) + (scaleMode() ? ' 1st-try runs' : ' 1st-try finds');
+    n + ' 1st-try ' + (scaleMode() ? 'run' : 'find') + (n === 1 ? '' : 's');
 }
 /** The whole setup in one line, on the closed settings summary: the panel is
     shut during play, so what you are playing has to be readable without
@@ -3231,7 +3570,8 @@ function updateSetupNow(){
      time pressure. The other three axes are Notes-mode axes and are not in
      the panel there, so they are not in its summary either. */
   const bits = scaleMode()
-    ? ['Scales', 'Stage ' + (tier + 1), GAME.PACES[GV.pace].label]
+    ? ['Scales', 'Stage ' + (GV.scaleTier + 1), GAME.PACES[GV.pace].label,
+       GV.strings5 ? '5-string' : '4-string']
     : ['Notes', 'Stage ' + (tier + 1), GAME.PACES[GV.pace].label,
        GAME.PROMPTS[GV.prompt].label,
        focus ? focus + ' string only' : 'all strings'];
@@ -3267,7 +3607,7 @@ function renderGameUI(){
       '<option value="' + i + '">Stage ' + (i+1) + ' — ' +
       (scaleMode() ? SCL.STAGES[i].name : STAGE_SHORT[i]) + '</option>').join('');
   }
-  ws.value = String(tier);
+  ws.value = String(gvTier());
   /* The one stage control has two meanings, so it says which one it is
      wearing: how much NECK in Notes mode, how far up the SCALE LADDER here. */
   const stLabel = document.getElementById('gvStageLabel');
@@ -3275,8 +3615,8 @@ function renderGameUI(){
     ? 'Stage — how far up the scale ladder' : 'Stage — how much of the neck is in play';
   const nowEl = document.getElementById('gvStageNow');
   if (nowEl) nowEl.textContent = scaleMode()
-    ? SCL.stage(tier).blurb
-    : 'Now playing: ' + WORLDS[Math.min(tier, WORLDS.length - 1)].name;
+    ? SCL.stage(GV.scaleTier).blurb
+    : 'Now playing: ' + WORLDS[Math.min(gvTier(), WORLDS.length - 1)].name;
   const ps = document.getElementById('gvPaceSeg');
   if (ps && !ps.dataset.built){
     ps.dataset.built = '1';
@@ -3400,12 +3740,27 @@ function renderGameUI(){
     }));
   }
   syncSeg(snd, 'data-snd', k => (k === 'true') === GV.sound);
+  /* How many strings the bass has. Scale mode's top rung anchors shapes on the
+     low B; a four-string player had no way out of a third of its questions. */
+  const strs = document.getElementById('gvStringsSeg');
+  if (strs && !strs.dataset.built){
+    strs.dataset.built = '1';
+    strs.innerHTML = [['4','4 strings'], ['5','5 strings (low B)']].map(([k, label]) =>
+      '<button data-str="' + k + '">' + label + '</button>').join('');
+    strs.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+      const five = b.dataset.str === '5';
+      if (five === GV.strings5) return;
+      GV.strings5 = five; gvSave(); renderGameUI();
+      gvNewRun(); newQuestion();     // a different neck is a different set
+    }));
+  }
+  syncSeg(strs, 'data-str', k => (k === '5') === GV.strings5);
   /* The ladder, where the stage select can see it: this rung, and what the
      next one adds. */
   const ladder = document.getElementById('gvScaleLadder');
   if (ladder){
-    const next = tier + 1 < SCL.STAGES.length
-      ? ' Next: ' + SCL.STAGES[tier + 1].name.toLowerCase() + '.' : ' This is the last rung.';
+    const next = GV.scaleTier + 1 < SCL.STAGES.length
+      ? ' Next: ' + SCL.STAGES[GV.scaleTier + 1].name.toLowerCase() + '.' : ' This is the last rung.';
     ladder.textContent = SCL.STAGES.map((s, i) => (i + 1) + ' ' + s.name).join(' · ') + '.' + next;
   }
   /* Both notes below the panel describe the payout and the combo, and both
@@ -3416,7 +3771,7 @@ function renderGameUI(){
     : 'Bigger stages, sheet music and faster paces pay more XP.';
   const comboNote = document.getElementById('gvComboNote');
   if (comboNote) comboNote.textContent = scaleMode()
-    ? 'COMBO = runs nailed first-try in a row this set; the streak tile under the chord is your whole session.'
+    ? 'One RUN = one chord\'s shape played through. One SET = until the stage lights go out. COMBO counts runs nailed first try in a row this set; the tiles under the console count the whole session (since the page loaded).'
     : 'COMBO = 1st-try finds in a row this set; the streak tile under the question is your whole session.';
   syncPromptLayout();
   updateSetupNow();
@@ -3462,6 +3817,15 @@ function syncPromptLayout(){
      counts questions FOUND — and in scale mode a question is a whole run. */
   const found = document.querySelector('#fScore + span');
   if (found) found.textContent = scale ? 'runs' : 'found';
+  /* The clef guide teaches a staff scale mode never draws: it is reference for
+     the OTHER game, and a card offering to explain something not on screen is
+     one more thing to wade past. It goes away here (and shuts, so it cannot
+     come back open in a mode that has no use for it). */
+  const clef = document.getElementById('gvClefHelp');
+  if (clef){
+    if (scale) clef.open = false;
+    clef.classList.toggle('hidden', scale);
+  }
 }
 /** The mode strip: what the game asks for. Built once, synced in place — the
     same rule the settings segments follow, so a click never costs its focus. */
@@ -3501,6 +3865,22 @@ function setGameMode(m){
   GV.srToast = m === 'scales' ? 'Scales — a chord, and you play its box'
                               : 'Notes — one note at a time';
   newQuestion();
+  /* WHAT A BOX IS, once, the first time this mode is entered — the word was
+     load-bearing and undefined, and a beginner cannot ask a game what a word
+     means. newQuestion has just written the standing instruction, so this
+     lands after it and stands until the next question replaces it. */
+  if (m === 'scales' && !SC.saidBox){
+    SC.saidBox = true;
+    /* In the VERDICT slot, not the instruction line: the instruction line is
+       one line tall by contract and this is three. The first verdict of the
+       first run replaces it, which is exactly how long it should last. */
+    const v = document.getElementById('fVerdict');
+    if (v){
+      v.textContent = 'A box is a shape you can put your hand on: six notes ' +
+        'across three strings, four frets wide — learn it once and slide it.';
+      v.className = 'verdict teach';
+    }
+  }
   gvFitScene();
 }
 
@@ -3551,7 +3931,7 @@ function renderMapUI(){
 
    …and one more switch: dots say note NAMES or scale DEGREES. Everything here
    is display; nothing in it is read by the game. */
-const SC_STUDY_VIEWS = [['box', 'Moveable box'], ['neck', 'Whole neck']];
+const SC_STUDY_VIEWS = [['box', 'The hand shape'], ['neck', 'Whole neck']];
 /** The scale table lives with the drills (SCALES, further down this file):
     one scale vocabulary for the whole app. */
 function studyScale(){ return SCALES[GV.study.type] || SCALES.minPent; }
@@ -3609,7 +3989,7 @@ function renderScaleStudyUI(){
   const ls = document.getElementById('gvScLabelSeg');
   if (ls && !ls.dataset.built){
     ls.dataset.built = '1';
-    ls.innerHTML = [['names', 'Names'], ['degrees', 'Degrees']].map(([k, label]) =>
+    ls.innerHTML = [['names', 'Note names'], ['degrees', 'Step numbers']].map(([k, label]) =>
       '<button data-sl="' + k + '">' + label + '</button>').join('');
     ls.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
       GV.study.labels = b.dataset.sl; gvSave(); renderScaleStudyUI(); renderScaleStudy();
@@ -3623,7 +4003,7 @@ function updateScaleNow(){
   if (!el) return;
   el.textContent = studyRootName() + ' ' + studyScale().name.toLowerCase() + ' · ' +
     (GV.study.view === 'box' ? 'box' : 'whole neck') +
-    (GV.study.labels === 'degrees' ? ' · degrees' : '');
+    (GV.study.labels === 'degrees' ? ' · step numbers' : '');
 }
 /** The notes of the current pick, as positions on the neck. */
 function studyMarkers(){
@@ -3702,8 +4082,8 @@ function renderScaleStudy(){
     window: box ? win : null,
     windowLabel: box ? 'BOX · FRET ' + win[0] : false,
     title: studyRootName() + ' ' + sc.name.toLowerCase() +
-      (box ? ', the moveable box at fret ' + win[0] + ', with a finger number on every note'
-           : ', every position between frets 0 and 12'),
+      (box ? ', the hand shape at fret ' + win[0] + ', with a finger number on every note'
+           : ', every place it sits between frets 0 and 12'),
   });
   const chips = document.getElementById('gvScChips');
   if (chips){
@@ -3717,14 +4097,14 @@ function renderScaleStudy(){
   if (note){
     note.innerHTML = box
       ? (graded
-        ? 'This is the shape scale mode grades: six notes, low to high, anchored on <b>the ' +
+        ? 'This is the shape the game asks for: six notes, low to high, starting on <b>the ' +
           TUNING.names[anchor.si] + ' string at fret ' + anchor.fret + '</b>. The number on each dot is the ' +
-          '<b>finger</b> — 1 index, 2 middle, 3 ring, 4 pinky — one finger per fret, so the whole shape ' +
-          'slides to any root and the fingering never changes.'
+          '<b>finger</b> — 1 index, 2 middle, 3 ring, 4 pinky — one finger per fret. Slide the whole ' +
+          'shape up or down and the finger numbers never change: that is the point of it.'
         : 'The four frets your hand covers at fret ' + anchor.fret + ', with every ' + studyRootName() + ' ' +
           sc.name.toLowerCase() + ' note in them. The number on each dot is the <b>finger</b> — one per fret.')
       : 'Every <b>' + studyRootName() + ' ' + sc.name.toLowerCase() + '</b> note between frets 0 and 12. ' +
-        'The same shape keeps coming back — that is the box, in every place it fits.';
+        'The same shape keeps coming back — that is the hand shape, in every place it fits.';
     note.classList.remove('hidden');
   }
   const recipe = document.getElementById('gvScRecipe');
@@ -3732,7 +4112,8 @@ function renderScaleStudy(){
     const steps = [];
     for (let i = 1; i < sc.iv.length; i++) steps.push('+' + (sc.iv[i] - sc.iv[i - 1]));
     steps.push('+' + (12 - sc.iv[sc.iv.length - 1]) + ' → R');
-    recipe.textContent = 'Recipe: R ' + steps.join(' ') + ' (frets between the notes — same from any root).';
+    recipe.textContent = 'Frets between the notes: start ' + steps.join(' ') +
+      ' — the same jumps from any starting note.';
   }
   updateScaleNow();
 }
@@ -3799,6 +4180,14 @@ document.getElementById('tierSel').addEventListener('change', e => {
   tier = +e.target.value; focus = null; persistTier(); renderTierUI(); gvNewRun(); newQuestion();
 });
 document.getElementById('gvWorld').addEventListener('change', e => {
+  /* ONE control, TWO ladders. In scale mode this moves the scale rung and
+     leaves the shared Notes/Theory tier exactly where it was — the two are
+     stored apart, so neither game can drag the other up its own ladder. */
+  if (scaleMode()){
+    GV.scaleTier = Math.min(SCL.STAGES.length - 1, Math.max(0, +e.target.value | 0));
+    gvSave(); renderGameUI(); gvNewRun(); newQuestion();
+    return;
+  }
   tier = +e.target.value; focus = null; persistTier(); renderTierUI(); gvNewRun(); newQuestion();
 });
 document.getElementById('fSkip').addEventListener('click', () => {
@@ -3811,16 +4200,26 @@ document.getElementById('fSkip').addEventListener('click', () => {
   if (scaleMode()){
     const leftMs = gvFuseMs();
     if (leftMs != null && GV.phase === 'fight'){
-      GV.carryFuseMs = Math.max(0, leftMs - (performance.now() - GV.spawnAt) - 1000);
+      /* A carry has a FLOOR here. Show me late in a fuse could hand the next
+         chord ~150ms, which burnt a stage light on a chord the player never
+         touched: whatever is left, the next run gets at least 40% of a full
+         one. (Nothing is refilled — a skip is still never free time.) */
+      const left = Math.max(0, leftMs - (performance.now() - GV.spawnAt) - 1000);
+      GV.carryFuseMs = Math.max(left, Math.round(leftMs * 0.4));
     }
     scAsk();
     sess.find.streak = 0;
     gvJudge('skip');
+    scRecord(false);
     const shown = scReveal('');
-    srAnnounce(shown + ' The shape is drawn under the chord.');
+    srAnnounce(shown + ' The shape is drawn under the chord. Same chord again next.');
     GV.phase = 'hold';
     GV.breachT = performance.now();
     updateFindStats();
+    /* The same chord comes back immediately, uncredited, with the shape still
+       on screen — otherwise the drawing teaches for three seconds and the
+       game asks something else. */
+    scBookRepose();
     GV.nextQTimer = setTimeout(newQuestion, 3400);
     return;
   }
@@ -3883,12 +4282,19 @@ document.getElementById('fSkip').addEventListener('click', () => {
 /* The staff pointer in #fSub is a real link: it opens the clef teaching card
    and goes there. Delegated, because #fSub is rewritten per question. */
 document.getElementById('fSub').addEventListener('click', e => {
-  const a = e.target.closest('.gv-staffhelp-link');
+  /* Two teaching links live in this line, one per game: the clef card for a
+     staff question, and the Scale card for the word "box". Same door either
+     way — open the card and go to it. */
+  const a = e.target.closest('.gv-staffhelp-link, .gv-boxhelp-link');
   if (!a) return;
   e.preventDefault();
-  const card = document.getElementById('gvClefHelp');
+  const card = document.getElementById(a.classList.contains('gv-boxhelp-link')
+    ? 'gvScaleStudy' : 'gvClefHelp');
   if (!card) return;
-  card.open = true;
+  if (!card.open){
+    card.open = true;
+    card.dispatchEvent(new Event('toggle'));   // the card draws on open
+  }
   card.scrollIntoView({ block:'start', behavior: REDUCED ? 'auto' : 'smooth' });
 });
 document.getElementById('gvRestart').addEventListener('click', () => {
@@ -3934,8 +4340,11 @@ setInterval(() => {
      miss, and the note comes back) is what makes it worth pressing. */
   if (!nudgedThisQ){
     nudgedThisQ = true;
+    /* Two doors, not one: the free card below shows every shape and costs
+       nothing, and pointing only at the paid button read as a shakedown. */
     subWrite(scaleMode()
-      ? 'Stuck? <b>Show me</b> names the scale and draws the box.'
+      ? 'Stuck? The <a href="#" class="gv-boxhelp-link">Scale card</a> below is free — ' +
+        'or <b>Show me</b> draws this one.'
       : 'Stuck? <b>Show me</b> names it and moves you on — it comes back later.');
   }
 }, 700);

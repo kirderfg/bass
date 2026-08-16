@@ -145,6 +145,33 @@ body .mic-card{display:flex; flex-wrap:wrap; align-items:center; gap:10px;
 @media (min-width:760px){
   #secFind.gv-scales{ --gv-pips-h:22px; --gv-q-h:70px; --gv-sub-h:34px; --gv-verdict-h:76px; }
 }
+/* A phone plays scale mode with two rows Notes mode does not have (the chart
+   compartment and the pips), and the console still has to end above the nav.
+   So on a phone this mode spends less on the things that are only reading —
+   the chord is still the biggest thing on the screen, and the four session
+   figures go on one line instead of wrapping under their label. */
+@media (max-width:759px){
+  #secFind.gv-scales{ --gv-q-h:44px; --gv-sub-h:26px; --gv-stats-h:30px;
+    --gv-pips-h:16px; --gv-heard-h:15px; }
+  #secFind.gv-scales .stat-row{flex-wrap:nowrap;}
+  #secFind.gv-scales .gv-sesslabel{display:none;}
+}
+/* A SHORT phone (a 360×640 is still the commonest small screen there is) has
+   to give something up, and the last thing scale mode gives up is the "heard"
+   echo: every wrong note's verdict already names what it heard, so the line
+   was saying it twice. The seams tighten with it. */
+@media (max-width:759px) and (max-height:700px){
+  #secFind.gv-scales{ --gv-gap:3px; --gv-heard-h:0px; --gv-fuse-h:20px; }
+  #secFind.gv-scales .gv-slot-heard{display:none;}
+}
+/* The chart's type steps down with its compartment, so a low rung of the fit
+   ladder is a SMALL chart rather than a clipped one. */
+@media (max-height:700px){
+  #secFind.gv-scales .gv-chart{gap:3px;}
+  #secFind.gv-scales .gv-chart-bar{font-size:16px; padding:4px 3px;}
+  #secFind.gv-scales .gv-chart-key{font-size:10.5px;}
+  #secFind.gv-scales .gv-chart-caption{font-size:10.5px; line-height:1.15;}
+}
 /* Short screens (a laptop with browser chrome, a landscape phone): the page
    furniture gives its margins to the console. */
 @media (max-height:720px){
@@ -366,8 +393,12 @@ body .mic-card{display:flex; flex-wrap:wrap; align-items:center; gap:10px;
    emptiness, and a ::before leaves the text exactly as it was. Gated off
    while the game-over overlay is up (.gv-overon, set by gvGameOver): a
    decorative quaver under LIGHTS OUT read as a stuck note. */
-#secFind:not(.gv-overon) .verdict:not(.ok):not(.no):not(.warn)::before{
+#secFind:not(.gv-overon) .verdict:not(.ok):not(.no):not(.warn):not(.teach)::before{
   content:'♪'; color:var(--t4); opacity:.5; font-weight:400;}
+/* A line that is teaching rather than judging (what a box IS, the first time
+   scale mode is entered): the slot's own type, no verdict colour, and no
+   idle quaver beside it. */
+#secFind .verdict.teach{color:var(--t2); font-weight:600;}
 @media (prefers-reduced-motion: no-preference){
   #secFind:not(.calm) .verdict.ok, #secFind:not(.calm) .verdict.no,
   #secFind:not(.calm) .verdict.warn{
@@ -380,7 +411,8 @@ body .mic-card{display:flex; flex-wrap:wrap; align-items:center; gap:10px;
 #fQ b.gv-note{color:var(--root);}
 /* The staff teaching pointer is a real link now — in the app's colours,
    not the browser's default blue. */
-.gv-staffhelp-link{color:var(--hl); text-decoration:underline; text-underline-offset:2px;}
+.gv-staffhelp-link, .gv-boxhelp-link{color:var(--hl); text-decoration:underline;
+  text-underline-offset:2px;}
 /* The DOM chrome joins the fiction (scoped to the game only): stat tiles and
    the two game buttons take the HUD's voice — mono type, a 1px line bevel,
    a slightly darker surface. Subtle, not a redesign. */
@@ -487,6 +519,13 @@ body .mic-card{display:flex; flex-wrap:wrap; align-items:center; gap:10px;
 .gv-pips{display:flex; align-items:center; justify-content:center; gap:6px;
   height:var(--gv-pips-h); margin:0; overflow:hidden;}
 #secFind:not(.gv-scales) .gv-pips{display:none;}
+/* A repeated bar: one chord with a repeat sign, instead of four identical
+   bars pretending to be a progression. */
+.gv-chart-bar.repeat{flex:0 1 132px; position:relative; padding-left:14px; padding-right:14px;}
+.gv-chart-bar.repeat::before, .gv-chart-bar.repeat::after{content:'\01D106';
+  position:absolute; top:50%; transform:translateY(-50%); font-size:.8em; color:var(--t4);}
+.gv-chart-bar.repeat::before{left:4px; transform:translateY(-50%) scaleX(-1);}
+.gv-chart-bar.repeat::after{right:4px;}
 .gv-pips i{display:block; width:12px; height:12px; border-radius:50%;
   border:2px solid var(--line-hi); background:transparent;}
 .gv-pips i.on{background:var(--root); border-color:var(--root);
@@ -518,6 +557,22 @@ body .mic-card{display:flex; flex-wrap:wrap; align-items:center; gap:10px;
   .gv-chart-bar{flex:0 1 92px; font-size:23px; padding:12px 6px;}
   .gv-chart-caption{font-size:12.5px;}
 }
+/* The chart's type follows the height it was GIVEN (gvFitScene picks
+   --gv-media-h off the viewport), so a low rung of the fit ladder is a small
+   chart rather than a clipped one — and at the lowest rungs the header line
+   goes entirely (.gv-tight), leaving the bars and the rule. */
+.gv-chart-bar{font-size:clamp(14px, calc(var(--gv-media-h) * .21), 23px);
+  padding:clamp(3px, calc(var(--gv-media-h) * .055), 12px) 4px;}
+.gv-chart-key{font-size:clamp(9.5px, calc(var(--gv-media-h) * .105), 12px);}
+.gv-chart-caption{font-size:clamp(9.5px, calc(var(--gv-media-h) * .105), 12.5px);
+  line-height:1.2;}
+#secFind.gv-tight .gv-chart{gap:2px;}
+#secFind.gv-tight .gv-chart-key{display:none;}
+/* At the very bottom of the ladder the rule under the bars needs two lines of
+   its own, so the bars give them up: the chord is already the biggest thing
+   on the screen, and the rule is the one line that teaches. */
+#secFind.gv-tight .gv-chart-bar{padding:2px 3px; font-size:15px;}
+#secFind.gv-tight .gv-chart-caption{font-size:10px; line-height:1.15;}
 .gv-boxwrap{display:flex; justify-content:center; align-items:center; margin:0;
   max-height:100%;}
 /* Drawn at 1:1 wherever the column allows it; where a short screen scales it

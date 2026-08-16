@@ -59,7 +59,116 @@ test('every chord carries the scale it asks for and a symbol to show', () => {
     assert.ok(['minPent', 'majPent'].includes(ch.scaleKey));
     assert.equal(ch.scaleKey, S.scaleForChord(ch.quality),
       `${ch.symbol} disagrees with the chord→scale mapping`);
-    assert.match(ch.symbol, /^[A-G][#b]?(m|m7|5)?$/, `bad symbol: ${ch.symbol}`);
+    assert.match(ch.symbol, /^[A-G][♯♭]?(m|m7|5)?$/, `bad symbol: ${ch.symbol}`);
+  }
+});
+
+/* ================= how the chords are SPELLED =================
+   A chord is spelled from its degree IN THE KEY — the letter is decided by
+   the degree, the accidental by the pitch. A global sharps table printed
+   "Cm G♯ D♯ A♯" for C minor, which is not a chart anyone has ever read.
+   These tests assert the exact symbols, not the shape of a symbol. */
+
+test('C minor is spelled Cm A♭ E♭ B♭ — flats, because that is the key', () => {
+  const p = S.progression({ keyPc: 0, mode: 'minor', shape: 'i-VI-III-VII' });
+  assert.equal(p.key, 'C');
+  assert.deepEqual(p.chords.map(c => c.symbol), ['Cm', 'A♭', 'E♭', 'B♭']);
+});
+
+test('F major is spelled F B♭ C B♭ — the fourth is a B FLAT, never an A♯', () => {
+  const p = S.progression({ keyPc: 5, mode: 'major', shape: 'I-IV-V-IV' });
+  assert.equal(p.key, 'F');
+  assert.deepEqual(p.chords.map(c => c.symbol), ['F', 'B♭', 'C', 'B♭']);
+});
+
+test('E minor keeps its one sharp and spells the rest natural', () => {
+  assert.deepEqual(
+    S.progression({ keyPc: 4, mode: 'minor', shape: 'i-VII-VI-VII' })
+      .chords.map(c => c.symbol), ['Em', 'D', 'C', 'D']);
+  assert.deepEqual(
+    S.progression({ keyPc: 4, mode: 'minor', shape: 'i-VI-III-VII' })
+      .chords.map(c => c.symbol), ['Em', 'C', 'G', 'D']);
+  assert.deepEqual(
+    S.progression({ keyPc: 4, mode: 'minor', shape: 'i-iv-i-v' })
+      .chords.map(c => c.symbol), ['Em', 'Am', 'Em', 'Bm']);
+});
+
+test('sharp keys spell sharps: G♯ minor is G♯m E B F♯', () => {
+  const p = S.progression({ keyPc: 8, mode: 'minor', shape: 'i-VI-III-VII' });
+  assert.equal(p.key, 'G♯');
+  assert.deepEqual(p.chords.map(c => c.symbol), ['G♯m', 'E', 'B', 'F♯']);
+});
+
+test('D♭ major is a flat key all the way down, including its vi', () => {
+  assert.deepEqual(
+    S.progression({ keyPc: 1, mode: 'major', shape: 'I-IV-V-IV' })
+      .chords.map(c => c.symbol), ['D♭', 'G♭', 'A♭', 'G♭']);
+  assert.deepEqual(
+    S.progression({ keyPc: 1, mode: 'major', shape: 'I-V-vi-IV' })
+      .chords.map(c => c.symbol), ['D♭', 'A♭', 'B♭m', 'G♭']);
+});
+
+test('no chord nobody writes: C♭, F♭, E♯ and B♯ respell to their natural', () => {
+  // The sixth of E♭ minor is a C♭ by the letter arithmetic and a B on every
+  // chart there is — and "play a C♭" is a note a beginner cannot find.
+  const p = S.progression({ keyPc: 3, mode: 'minor', shape: 'i-VI-III-VII' });
+  assert.deepEqual(p.chords.map(c => c.symbol), ['E♭m', 'B', 'G♭', 'D♭']);
+  for (const mode of ['minor', 'major']) {
+    for (let keyPc = 0; keyPc < 12; keyPc++) {
+      for (const pick of [0, 0.5, 0.99]) {
+        for (const ch of S.progression({ keyPc, mode }, () => pick).chords) {
+          assert.doesNotMatch(ch.symbol, /^(C♭|F♭|E♯|B♯)/, 'unwritable chord: ' + ch.symbol);
+          assert.doesNotMatch(ch.symbol, /[♯♭]{2}/, 'a double accidental: ' + ch.symbol);
+        }
+      }
+    }
+  }
+});
+
+test('no key outside the pool a musician actually writes in', () => {
+  // Twelve pitch classes, twelve usable spellings per mode — no D♯ major
+  // (nine sharps), no A♯ major, no theoretical keys at all.
+  assert.deepEqual(S.KEYS.major,
+    ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B']);
+  assert.deepEqual(S.KEYS.minor,
+    ['A', 'B♭', 'B', 'C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'G♯']);
+  for (const mode of ['minor', 'major']) {
+    for (let keyPc = 0; keyPc < 12; keyPc++) {
+      for (const pick of [0, 0.5, 0.99]) {
+        for (const power of [false, true]) {
+          const p = S.progression({ keyPc, mode, power }, () => pick);
+          assert.ok(S.KEYS[mode].includes(p.key),
+            `${p.key} ${mode} is not a key anyone writes in`);
+        }
+      }
+    }
+  }
+});
+
+test('every chord in every key spells its own pitch, once, with one accidental', () => {
+  const PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+  for (const mode of ['minor', 'major']) {
+    for (let keyPc = 0; keyPc < 12; keyPc++) {
+      for (const pick of [0, 0.5, 0.99]) {
+        for (const power of [false, true]) {
+          const p = S.progression({ keyPc, mode, power }, () => pick);
+          for (const ch of p.chords) {
+            const m = /^([A-G])([♯♭]?)/.exec(ch.symbol);
+            assert.ok(m, `unspellable symbol ${ch.symbol} in ${p.key} ${mode}`);
+            const want = ((PC[m[1]] + (m[2] === '♯' ? 1 : m[2] === '♭' ? -1 : 0)) % 12 + 12) % 12;
+            assert.equal(want, ch.rootPc,
+              `${ch.symbol} in ${p.key} ${mode} does not sound what it spells`);
+            assert.equal(ch.root, m[1] + m[2], 'the chord does not carry its spelled root');
+          }
+          // Four bars, four different letters where the progression has four
+          // different degrees — a chart never spells one degree two ways.
+          const bySpelling = {};
+          for (const ch of p.chords) bySpelling[ch.rootPc] = (bySpelling[ch.rootPc] || new Set()).add(ch.root);
+          for (const k in bySpelling) assert.equal(bySpelling[k].size, 1,
+            `one pitch spelled two ways in ${p.key} ${mode}`);
+        }
+      }
+    }
   }
 });
 
@@ -121,6 +230,65 @@ test('the anchor stays inside the stage it was given', () => {
   // Nothing fits: say so rather than inventing a shape off the neck.
   assert.equal(S.anchorFor({ rootPc: 4, scaleKey: 'minPent', tuning: FIVE,
                              anchorStrings: [1], maxFret: 5 }), null);
+});
+
+test('the WHOLE box clears the open strings, not just its anchor', () => {
+  /* The major-pentatonic shape reaches one fret BELOW its anchor, so an
+     anchor merely off fret 0 still put two notes on open strings — and the
+     study card then printed a FINGER on fret 0 under a caption promising one
+     finger per fret. minFret is a floor for every note in the shape. */
+  for (const scaleKey of ['minPent', 'majPent']) {
+    for (let rootPc = 0; rootPc < 12; rootPc++) {
+      const a = S.anchorFor({ rootPc, scaleKey, tuning: FIVE });
+      assert.ok(a, `${scaleKey} from root ${rootPc} found no anchor at all`);
+      const frets = S.boxShape({ scaleKey, si: a.si, fret: a.fret, tuning: FIVE })
+        .map(t => t.fret);
+      assert.ok(Math.min.apply(null, frets) >= 1,
+        `${scaleKey} from root ${rootPc} sits on an open string: frets ${frets.join(',')}`);
+    }
+  }
+});
+
+test('a stated minFret is a floor for every note of the shape', () => {
+  for (const minFret of [1, 3, 5]) {
+    for (const scaleKey of ['minPent', 'majPent']) {
+      for (let rootPc = 0; rootPc < 12; rootPc++) {
+        const a = S.anchorFor({ rootPc, scaleKey, tuning: FIVE, minFret, maxFret: 15 });
+        if (!a) continue;
+        const frets = S.boxShape({ scaleKey, si: a.si, fret: a.fret, tuning: FIVE })
+          .map(t => t.fret);
+        assert.ok(Math.min.apply(null, frets) >= minFret,
+          `${scaleKey}/${rootPc} reached fret ${Math.min.apply(null, frets)} under minFret ${minFret}`);
+      }
+    }
+  }
+});
+
+test('every box the ladder can pose clears fret 0, on every rung', () => {
+  // The stage the player actually meets: whatever key, whatever chord,
+  // whatever position the rung allows, no note of the shape is an open string.
+  for (let i = 0; i < S.STAGES.length; i++) {
+    const st = S.STAGES[i];
+    for (const mode of st.modes) {
+      for (const keyPc of (st.roots || [0,1,2,3,4,5,6,7,8,9,10,11])) {
+        for (const pick of [0, 0.5, 0.99]) {
+          const p = S.progression({ keyPc, mode, power: st.power }, () => pick);
+          for (const ch of p.chords) {
+            for (const si of st.strings) {
+              const a = S.anchorFor({ rootPc: ch.rootPc, scaleKey: ch.scaleKey,
+                tuning: FIVE, anchorStrings: [si], minFret: st.minFret, maxFret: st.maxFret });
+              if (!a) continue;
+              const frets = S.boxShape({ scaleKey: ch.scaleKey, si: a.si, fret: a.fret,
+                tuning: FIVE }).map(t => t.fret);
+              assert.ok(Math.min.apply(null, frets) >= 1,
+                `stage ${i + 1}: ${ch.symbol} on string ${si} sits on fret ` +
+                Math.min.apply(null, frets));
+            }
+          }
+        }
+      }
+    }
+  }
 });
 
 /* ================= judging a run =================
@@ -278,14 +446,117 @@ test('the ladder never takes neck away as it climbs', () => {
   }
 });
 
-test('the run only turns around once the box is known', () => {
-  // Up only at the bottom of the ladder; descending unlocks later; and the
-  // last stage asks for both directions in one run.
-  const shapes = S.STAGES.map(st => st.shape);
-  assert.deepEqual(shapes.slice(0, 3), ['up', 'up', 'up']);
-  assert.ok(S.RUN_SHAPES.indexOf(shapes[3]) > 0, 'stage 4 stops going up only');
-  assert.equal(shapes[4], 'updown', 'stage 5 is up and back');
-  for (const s of shapes) assert.ok(S.RUN_SHAPES.indexOf(s) >= 0, 'unknown run shape: ' + s);
+test('the run only turns around once the box is known — and ascending never leaves', () => {
+  // Up only at the bottom of the ladder; coming down is its own rung, and it
+  // ADDS to going up rather than replacing it for a whole stage; the last rung
+  // asks for both in one breath.
+  const shapes = S.STAGES.map(st => st.shapes);
+  assert.deepEqual(shapes.slice(0, 3), [['up'], ['up'], ['up']]);
+  assert.ok(shapes[3].indexOf('down') >= 0, 'stage 4 never brings the box down');
+  assert.ok(shapes[3].indexOf('up') >= 0, 'stage 4 deleted ascending for a whole rung');
+  assert.ok(shapes[4].indexOf('updown') >= 0, 'stage 5 is not up and back');
+  for (const st of S.STAGES) {
+    assert.ok(st.shapes.length, st.name + ' has no run shapes');
+    for (const s of st.shapes) assert.ok(S.RUN_SHAPES.indexOf(s) >= 0, 'unknown run shape: ' + s);
+    // Every rung still names ONE default shape, for anything reading the table.
+    assert.equal(st.shape, st.shapes[0]);
+  }
+});
+
+test('stage 4 adds one thing and stage 5 adds the other', () => {
+  const [, , three, four, five] = S.STAGES;
+  // 4 is "the box comes down": the neck, the keys and the positions are
+  // exactly stage 3's, so the only new thing is the direction.
+  assert.deepEqual(four.strings, three.strings, 'stage 4 moved the neck as well');
+  assert.deepEqual(four.modes, three.modes, 'stage 4 changed the keys as well');
+  assert.equal(four.positions, three.positions, 'stage 4 moved the box as well');
+  // 5 is "more positions, more keys".
+  assert.ok(five.strings.length > four.strings.length, 'stage 5 opens no new strings');
+  assert.ok(five.modes.length > four.modes.length, 'stage 5 opens no new keys');
+  assert.equal(five.positions, 'any');
+});
+
+/* ================= the power-chord rungs =================
+   A fingering drill is fine; a fingering drill dressed as a chart is not.
+   With power chords the game grades the minor pentatonic of EVERY root, so
+   the loop has to be the one whose per-root minor pentatonics are all
+   diatonic — otherwise the graded answer contradicts the chart on screen. */
+
+test('a power-chord loop is i-iv-i-v, and every box it asks for is in the key', () => {
+  for (let keyPc = 0; keyPc < 12; keyPc++) {
+    for (const pick of [0, 0.5, 0.99]) {
+      const p = S.progression({ keyPc, mode: 'minor', power: true }, () => pick);
+      assert.equal(p.name, 'i-iv-i-v', 'a power loop is not the parallel-safe one');
+      assert.ok(p.power, 'the progression does not know it is a power loop');
+      // The natural minor of the key: every note the chart implies.
+      const inKey = new Set([0, 2, 3, 5, 7, 8, 10].map(i => (keyPc + i) % 12));
+      for (const ch of p.chords) {
+        assert.equal(ch.quality, 'power');
+        assert.equal(ch.scaleKey, 'minPent');
+        // …and the minor pentatonic the game grades over it.
+        for (const i of [0, 3, 5, 7, 10]) {
+          const n = (ch.rootPc + i) % 12;
+          assert.ok(inKey.has(n),
+            `${ch.symbol}'s box leaves the key of ${p.key} minor`);
+        }
+      }
+    }
+  }
+});
+
+test('the first two rungs draw natural-rooted chords only', () => {
+  // Stage 1 used to draw all twelve keys — D♯5 and A♯5 included — which is
+  // harder than notes-mode stage 1, where sharps do not exist yet.
+  const NAT = new Set([0, 2, 4, 5, 7, 9, 11]);
+  for (const st of S.STAGES.slice(0, 2)) {
+    assert.ok(st.roots && st.roots.length >= 4, st.name + ' has no root list');
+    for (const keyPc of st.roots) {
+      for (const pick of [0, 0.5, 0.99]) {
+        const p = S.progression({ keyPc, mode: 'minor', power: st.power }, () => pick);
+        for (const ch of p.chords) {
+          assert.ok(NAT.has(ch.rootPc), `${ch.symbol} is not a natural root`);
+          assert.match(ch.symbol, /^[A-G]5$/, 'bad early-rung symbol: ' + ch.symbol);
+        }
+      }
+    }
+  }
+});
+
+/* ================= what a wrong note actually was =================
+   One generic sentence covered the two cases that most need teaching: the
+   right note in the wrong octave, and a note that IS in the box but later. */
+
+test('a wrong note is classified so the verdict can teach', () => {
+  const box = S.boxShape({ scaleKey: 'minPent', si: 1, fret: 5, tuning: FIVE });
+  // The top of the box IS the bottom, an octave up.
+  const oct = S.missKind({ targets: box, index: 0, midi: box[5].midi });
+  assert.equal(oct.kind, 'octave');
+  assert.equal(oct.dir, 'high');
+  // A note of the box, two steps ahead.
+  const ahead = S.missKind({ targets: box, index: 1, midi: box[3].midi });
+  assert.equal(ahead.kind, 'inbox');
+  assert.equal(ahead.at, 4, 'the played note is note 4 of the run');
+  assert.equal(ahead.want, 2, 'the run is waiting on note 2');
+  // A note the box has already been through.
+  const back = S.missKind({ targets: box, index: 3, midi: box[0].midi });
+  assert.equal(back.kind, 'inbox');
+  assert.equal(back.at, 1);
+  assert.equal(back.want, 4);
+  // A genuine outsider.
+  assert.equal(S.missKind({ targets: box, index: 0, midi: box[0].midi + 1 }).kind, 'outside');
+  // The note it is actually waiting for is not a miss at all.
+  assert.equal(S.missKind({ targets: box, index: 0, midi: box[0].midi }), null);
+});
+
+test('up-and-back numbers a repeated position by where the run is', () => {
+  const targets = S.runTargets({ scaleKey: 'minPent', si: 1, fret: 5,
+                                 tuning: FIVE, shape: 'updown' });
+  // Note 7 of an up-and-back is the box's fifth note again: playing it while
+  // the run waits on note 2 is "in the box", and the nearest reading of it is
+  // the one going up.
+  const m = S.missKind({ targets, index: 1, midi: targets[4].midi });
+  assert.equal(m.kind, 'inbox');
+  assert.equal(m.at, 5, 'the nearest occurrence ahead is note 5, not note 7');
 });
 
 test('the ladder gets faster as it climbs, and never absurdly so', () => {
@@ -307,7 +578,7 @@ test('an anchor is found for every chord of a progression the stage may pose', (
   for (let i = 0; i < S.STAGES.length; i++) {
     const st = S.STAGES[i];
     for (const mode of st.modes) {
-      for (let keyPc = 0; keyPc < 12; keyPc++) {
+      for (const keyPc of (st.roots || [0,1,2,3,4,5,6,7,8,9,10,11])) {
         for (const pick of [0, 0.5, 0.99]) {
           const p = S.progression({ keyPc, mode, power: st.power }, () => pick);
           const anchors = S.anchorChords(p.chords, {
@@ -328,7 +599,7 @@ test('a stage only ever asks for the scales it claims', () => {
     const st = S.STAGES[i];
     const seen = new Set();
     for (const mode of st.modes)
-      for (let keyPc = 0; keyPc < 12; keyPc++)
+      for (const keyPc of (st.roots || [0,1,2,3,4,5,6,7,8,9,10,11]))
         for (const pick of [0, 0.5, 0.99]){
           const p = S.progression({ keyPc, mode, power: st.power }, () => pick);
           (st.vamp ? p.chords.slice(0, 1) : p.chords).forEach(ch => seen.add(ch.scaleKey));

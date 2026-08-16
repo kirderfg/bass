@@ -190,12 +190,6 @@
               <p class="t-caption gv-over-xp" id="gvOverXp"></p>
             </div>
           </div>
-          <!-- SCALE MODE'S PROGRESS ROW: one pip per note of the run, filling
-               as each note lands. Scale mode only, and its height is reserved
-               there whether the run has started or not. The pips are never the
-               only signal — the verdict line counts the same notes in words,
-               and this row carries the count as its label. -->
-          <div class="gv-pips" id="gvPips" role="img" aria-label="no notes landed yet"></div>
           <!-- The readable fuse plus, in the last five seconds, a plain seconds
                numeral — the bar alone is a guess at arm's length. -->
           <div class="gv-fusewrap">
@@ -232,11 +226,19 @@
                  same height — the console cannot move either way. -->
             <div class="gv-chart hidden" id="gvChart" role="img" aria-label="chord loop"></div>
             <div class="gv-boxwrap hidden" id="gvBoxWrap">
-              <canvas id="gvBox" width="300" height="132" role="img" aria-label="the moveable box for this chord, drawn on the neck"></canvas>
+              <canvas id="gvBox" width="300" height="132" role="img" aria-label="the hand shape for this chord, drawn on the neck"></canvas>
             </div>
           </div>
           <div class="gv-feedback">
             <div class="gv-slot gv-slot-verdict"><div class="verdict" id="fVerdict" aria-live="polite">&nbsp;</div></div>
+            <!-- SCALE MODE'S PROGRESS ROW: one pip per note of the run, filling
+                 as each note lands. It sits WITH the verdict that counts the
+                 same notes in words — up beside the stage it was a scoreboard
+                 nowhere near the sentence it belonged to. Scale mode only, and
+                 its height is reserved there whether the run has started or
+                 not. Never the only signal: #gvPipLive speaks the count. -->
+            <div class="gv-pips" id="gvPips" role="img" aria-label="no notes landed yet"></div>
+            <div class="sr-only" aria-live="polite" id="gvPipLive"></div>
             <div class="gv-slot gv-slot-heard"><div class="heard" id="fHeard">&nbsp;</div></div>
           </div>
           <!-- ONE control, and it is the only "I don't know" the game has.
@@ -321,6 +323,14 @@
             <div class="seg compact" id="gvSndSeg" role="group" aria-label="Sound" style="margin-top:4px"></div>
             <p class="t-caption gv-segcap">Little cues for hits, misses and the fuse.</p>
           </div>
+          <!-- Scale mode needs to know what is under your hands: the top rung
+               puts shapes on the low B, which a four-string bass does not
+               have. Saying so takes those positions out of the draw. -->
+          <div class="gv-setgroup gv-scalesonly">
+            <span class="t-caption">My bass has</span>
+            <div class="seg compact" id="gvStringsSeg" role="group" aria-label="How many strings your bass has" style="margin-top:4px"></div>
+            <p class="t-caption gv-segcap">Four strings? The low B is left out of the shapes you are asked for.</p>
+          </div>
           <!-- Scale mode's stage ladder, in one place: what this rung asks for,
                and what the next one adds. Notes mode has its own five meanings
                for the same control, so only one of the two is ever shown. -->
@@ -377,13 +387,14 @@
 
       <!-- ================= THE SCALE CARD =================
            Scale mode's reference, standing beside the note map: pick a root
-           and a scale and look at it, either as the MOVEABLE BOX the game
-           grades — with the finger for every note on the dot — or as every
-           place that scale lives between frets 0 and 12. Same standing as the
-           map: collapsed, outside the play flow, never opened by the game. -->
+           and a scale and look at it, either as the HAND SHAPE the game asks
+           for — with the finger for every note on the dot — or as every place
+           that scale lives between frets 0 and 12. Same standing as the map:
+           collapsed, outside the play flow, never opened by the game (the
+           word "box" in the play instruction is a door to it, though). -->
       <details class="card tight gv-scalecard" id="gvScaleStudy">
         <summary>
-          <span class="t-title3">Scale card — the box, and the whole neck</span>
+          <span class="t-title3">Scale card — the hand shape, and the whole neck</span>
           <span class="t-data gv-scalenow" id="gvScaleNow">A minor pentatonic · box</span>
         </summary>
         <div class="gv-scalebody">
@@ -396,16 +407,17 @@
             <div class="gv-setgroup">
               <span class="t-caption">Scale</span>
               <div class="seg compact" id="gvScTypeSeg" role="group" aria-label="Scale" style="margin-top:4px"></div>
+              <p class="t-caption gv-segcap"><b>Pentatonic</b> just means five notes — the two the game asks for.</p>
             </div>
             <div class="gv-setgroup">
               <span class="t-caption">Show</span>
               <div class="seg compact" id="gvScViewSeg" role="group" aria-label="Show" style="margin-top:4px"></div>
-              <p class="t-caption gv-segcap">The box is the shape the game grades.</p>
+              <p class="t-caption gv-segcap">The hand shape is what the game asks you to play.</p>
             </div>
             <div class="gv-setgroup">
               <span class="t-caption">Dots say</span>
               <div class="seg compact" id="gvScLabelSeg" role="group" aria-label="Dots say" style="margin-top:4px"></div>
-              <p class="t-caption gv-segcap">Degrees are the recipe: R ♭3 4 5 ♭7.</p>
+              <p class="t-caption gv-segcap">Step numbers count from the starting note: 1, then how far each note is from it.</p>
             </div>
           </div>
           <p class="gv-scalechips" id="gvScChips"></p>

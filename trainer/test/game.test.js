@@ -312,6 +312,22 @@ test('a difficulty multiplier scales the XP gain but never hearts or combo', () 
   assert.equal(boosted.judge('dirty', 1.5).gain, 6, 'dirty pays 4 × 1.5 = 6');
 });
 
+test('partial credit pays for work done, but never claims a find', () => {
+  /* A scale run whose fuse died with four of six notes landed did four notes
+     of work. It is paid — at the dirty rate, scaled by the caller — and it is
+     NOT a zap: the question was not answered. */
+  const run = G.createRun({ pace: 'steady' });
+  run.judge('clean');                       // a find, and a combo, to spend
+  const before = run.state.zaps;
+  const combo = run.state.combo;
+  const r = run.judge('partial', 0.4);
+  assert.ok(r.gain > 0, 'landed notes paid nothing: ' + r.gain);
+  assert.equal(r.gain, Math.round(4 * 0.4));
+  assert.equal(run.state.zaps, before, 'a partial claimed a find');
+  assert.equal(run.state.combo, combo, 'a partial touched the combo');
+  assert.equal(r.hearts, 3, 'a partial cost a stage light');
+});
+
 test('levels rise with XP and report the moment they turn over', () => {
   // The L1→L2 boundary still sits at 120 XP, curve or no curve.
   const run = G.createRun({ pace: 'chill', xp: G.XP_PER_LEVEL - 5 });
